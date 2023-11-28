@@ -9,6 +9,8 @@ members = [
 
 resolver = "1"
 
+default-members = ["dsbox"]
+
 [profile.release]
 strip = true
 opt-level = 3
