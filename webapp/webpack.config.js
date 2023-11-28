@@ -1,0 +1,31 @@
+const path = require('path');
+
+module.exports = (env) => {
+    let webpack_config = {
+        mode: env.profile === 'release' ? 'production' : 'development',
+        entry: './ts/app.ts',
+        module: {
+            rules: [
+                {
+                    test: /\.tsx?$/,
+                    use: 'ts-loader',
+                    exclude: /node_modules/,
+                },
+            ],
+        },
+        resolve: {
+            extensions: ['.tsx', '.ts', '.js'],
+        },
+        output: {
+            filename: 'app.js',
+            path: path.resolve(__dirname, 'js'),
+            library: 'App',
+        },
+    };
+
+    if (env.profile !== 'release') {
+        webpack_config.devtool = 'source-map';
+    }
+
+    return webpack_config;
+};
