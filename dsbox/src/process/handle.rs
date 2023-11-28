@@ -17,7 +17,7 @@ pub struct Handle {
     child: JoinHandle<()>,
 }
 
-static SPAWN_ID: AtomicUsize = AtomicUsize::new(0);
+static LAUNCH_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Handle {
     pub fn new(
@@ -31,32 +31,32 @@ impl Handle {
     ) -> io::Result<(Sender<ProcessCommand>, Self)> {
         let (command_sender, command_receiver) = crossbeam_channel::unbounded();
 
-        let spawn_id = SPAWN_ID.fetch_add(1, Ordering::SeqCst);
+        let launch_id = LAUNCH_ID.fetch_add(1, Ordering::SeqCst);
 
         let writer = {
             std::thread::Builder::new()
-                .name(format!("[w-{spawn_id}] {}", file.display()))
+                .name(format!("[w-{launch_id}] {}", file.display()))
                 .spawn(move || { writer_thread(stdin, command_receiver) })?
         };
 
         let reader = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[r-{spawn_id}] {}", file.display()))
+                .name(format!("[r-{launch_id}] {}", file.display()))
                 .spawn(move || { reader_thread(id, stdout, sender) })?
         };
 
         let log = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[l-{spawn_id}] {}", file.display()))
+                .name(format!("[l-{launch_id}] {}", file.display()))
                 .spawn(move || { log_thread(id, stderr, sender) })?
         };
 
         let child = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[c-{spawn_id}] {}", file.display()))
+                .name(format!("[c-{launch_id}] {}", file.display()))
                 .spawn(move || { child_thread(id, wait_child, sender) })?
         };
 

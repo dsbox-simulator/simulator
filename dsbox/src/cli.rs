@@ -1,3 +1,5 @@
+//! Command line interface for the `dsbox`.
+
 use clap::Parser;
 
 #[derive(Parser)]

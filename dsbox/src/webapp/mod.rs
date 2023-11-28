@@ -1,3 +1,13 @@
+//! A Webapp that can be used to control the execution of the simulation interactively
+//!
+//! The files (html, css, js, etc.) for the webapp are either served from a folder
+//! (`webapp` in the project root by default) in debug mode, or embedded directly into the binary in
+//! release mode. This way the binary is self-contained.
+//!
+//! The [`Webapp`] serves the `index.html` file by default, and accepts [`WebSocket`][ws] connections on `/socket`.
+//!
+//! [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -19,17 +29,21 @@ use crate::core::remote_control::RemoteCommand;
 
 mod files;
 
+/// A handle to the running webapp, mainly used to shut it down before exiting the program
 pub struct Webapp {
     handle: JoinHandle<()>,
     shutdown: oneshot::Sender<()>,
 }
 
+/// State that is passed to each request handler.
+/// Contains the [`Sender`] and [`broadcast::Receiver`] for [`Event]`s and [`RemoteCommand`]s.
 struct WebappState {
     remote_control: Sender<RemoteCommand>,
     event_receiver: broadcast::Receiver<Event>,
 }
 
 impl Webapp {
+    /// Starts the webapp in a separate [`tokio::task`], binding it to the address and port given in the [`Args`].
     pub fn run(args: &Args, remote_control: Sender<RemoteCommand>, event_receiver: broadcast::Receiver<Event>) -> Self {
         let (tx, rx) = oneshot::channel();
         let listen_address = SocketAddr::new(IpAddr::from_str(&args.listen_address).unwrap(), args.port);
@@ -54,11 +68,13 @@ impl Webapp {
         }
     }
 
+    /// Sends a shutdown notification to the webapp task, and waits for it to terminate.
     pub async fn shutdown(self) {
         self.shutdown.send(()).ok();
         self.handle.await.ok();
     }
 
+    /// Helper function to build all routes that the webapp serves.
     fn build_router() -> Router<WebappState> {
         Router::new()
             .route("/", get(serve_static))
@@ -67,6 +83,8 @@ impl Webapp {
     }
 }
 
+/// Request handler that is called for all static file requests. If `path` is `None` it serves `index.html`
+/// otherwise it looks for the specified file and serves that, or returns a 404 if it is not found.
 async fn serve_static(path: Option<Path<String>>, headers: HeaderMap) -> Result<Response, (StatusCode, String)> {
     let path = if let Some(Path(path)) = path { path } else { String::from("index.html") };
     let can_decompress = headers.get("Accept-Encoding")
@@ -98,10 +116,19 @@ async fn serve_static(path: Option<Path<String>>, headers: HeaderMap) -> Result<
     }
 }
 
+/// Request handler that is called when a new [`WebSocket`][ws] connection is being established.
+/// Finalizes the connection using the [`socket_handler`] as a handler for the [`WebSocket`][ws] connection.
+///
+/// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 async fn socket(state: State<WebappState>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(|socket| socket_handler(state, socket))
 }
 
+/// Handler for a [`WebSocket`][ws] connection. Listens for messages and attempts to send corresponding
+/// [`RemoteCommand`]s to the [`Core`](crate::core::Core), and sends published [`Event`]s from the [`Core`](crate::core::Core) into the
+/// socket.
+///
+/// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSocket) {
     loop {
         tokio::select! {
@@ -129,6 +156,10 @@ async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSoc
     }
 }
 
+/// Helper function to handle a single incoming [`WebSocket`][ws] message. Attempts to send the corresponding
+/// [`RemoteCommand`] to the [`Core`](crate::core::Core).
+///
+/// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 async fn handle_msg(msg: Message, remote_control: &mut Sender<RemoteCommand>) -> bool {
     if matches!(msg, Message::Close(_)) { return false; }
     if let Message::Text(txt) = msg {

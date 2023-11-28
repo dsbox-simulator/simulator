@@ -1,3 +1,5 @@
+//! Manages running processes for the [`Core`](crate::core::Core)
+
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 use std::path::Path;
@@ -8,33 +10,53 @@ use crossbeam_channel::Sender;
 
 use crate::process::{Launcher, Process, ProcessEvent};
 
+/// Manages running processes and their corresponding node names
+///
+/// Each running process may have one (or more) name(s) associated with it.
+/// Server processes should have exactly one name, because a server process implements a single node in the system.
+/// The (singular) client process may have multiple names, because all client nodes are implemented in a single process.
 pub struct ProcessManager {
+
+    /// A [`Launcher`] that is used for launching new processes
     launcher: Launcher,
+    /// A list of all launched processes (running and exited). The index into this [`Vec`] is the
+    /// unique id of each process. For this reason, "old" processes (that have exited) are not removed from the list
+    /// (this is ok, since [`Process`] is just a lightweight handle).
     processes: Vec<Process>,
+    /// a map of node names and their corresponding process id
     names: HashMap<String, usize>,
+    /// this sender is cloned for each new process that is launched and is passed to the process,
+    /// so that it uses it to send [`ProcessEvent`]s to the running [`Core`](crate::core::Core).
     sender: Sender<ProcessEvent>,
 }
 
 impl ProcessManager {
+    /// Creates a new [`ProcessManager`], with a given [`Sender`] that is passed to newly launched processes.
     pub fn new(sender: Sender<ProcessEvent>) -> Self {
         Self { launcher: Launcher::new(), processes: Vec::new(), names: HashMap::new(), sender }
     }
 
-    pub fn spawn(&mut self, file: &Path) -> std::io::Result<usize> {
+    /// Launches a new process from the given executable file.
+    /// Returns [`Result::Ok`] with the new processes id, if the process was launched successfully,
+    /// otherwise returns [`Result::Err`] with underlying error.
+    pub fn launch(&mut self, file: &Path) -> std::io::Result<usize> {
         let id = self.processes.len();
-        let process = self.launcher.spawn(file, &self.sender, id)?;
+        let process = self.launcher.launch(file, &self.sender, id)?;
         self.processes.push(process);
         Ok(id)
     }
 
+    /// adds a name to the given process
     pub fn add_name(&mut self, name: String, id: usize) -> Option<usize> {
         self.names.insert(name, id)
     }
 
+    /// Returns `true` if the given process has the given name associated with it
     pub fn has_name(&self, process: &Process, name: &str) -> bool {
         self.names.get(name).copied() == Some(process.id())
     }
 
+    /// Returns the id of the nodes process with the given name, or `None` if it does not exist.
     pub fn id_by_name(&mut self, name: &str) -> Option<usize> {
         self.names.get(name).copied()
     }
@@ -47,6 +69,7 @@ impl ProcessManager {
         self.into_iter()
     }
 
+    /// Clears all given names for all processes
     pub fn reset_names(&mut self) {
         self.names.clear();
     }
