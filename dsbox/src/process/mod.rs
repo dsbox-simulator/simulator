@@ -1,3 +1,5 @@
+//! Transparent handling of processes, both native and implemented as web assembly files.
+
 use std::ffi::OsStr;
 use std::io::Error;
 use std::path::{Path, PathBuf};
@@ -30,12 +32,12 @@ impl Launcher {
     pub fn new() -> Self {
         Self { wasm_launcher: None }
     }
-    pub fn spawn(&mut self, file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
+    pub fn launch(&mut self, file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
         let (command_sender, handle) = if file.extension() == Some(OsStr::new("wasm")) {
             self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-                .spawn(file, event_sender, id)
+                .launch(file, event_sender, id)
         } else {
-            native::spawn(file, event_sender, id)
+            native::launch(file, event_sender, id)
         }?;
         Ok(Process {
             handle: Some(handle),

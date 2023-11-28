@@ -1,3 +1,15 @@
+//! Events that can be used to track the execution of the simulation.
+//!
+//! An [`Event`] in this case is anything that happens during the execution of the simulation, including (for now):
+//!
+//! - the setup of the system (a list of nodes by their names)
+//! - the sending and delivering of [`Message`]s
+//! - the disconnection of a node
+//! - log lines that are written by nodes
+//!
+//! Other events may be added in the future.
+//! These events are published by the running [`Core`](super::Core).
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -7,25 +19,60 @@ use libproto::Message;
 
 use crate::timestamp::Timestamp;
 
+/// Describes a single event (in [`Event::data`]) with a timestamp (in [`Event::timestamp`])
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
+    /// the timestamp at which this event occurred. The [`Timestamp::logical`] is sometimes used
+    /// as an identifier of this [`Event`], as it is always unique.
     timestamp: Timestamp,
+    /// the specifics of the [`Event`] (what has happened)
     data: EventData,
 }
 
+/// Contains information about a single event (what has happened)
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum EventData {
-    Setup { nodes: HashMap<String, usize> },
-    SendMessage { msg: Message },
-    DeliverMessage { sent_timestamp: usize },
-    NodeDisconnected { node_id: usize },
-    Log { node_id: usize, source_file: PathBuf, line: String },
+    /// Emitted when a new test run is started with the given nodes.
+    Setup {
+        /// a map of all node names, with their corresponding ids. The ids uniquely identify
+        /// a running process (all client nodes run on the same process, whereas each server node runs on a different process)
+        /// See [`crate::core::ProcessManager`]
+        nodes: HashMap<String, usize>
+    },
+
+    /// Emitted when a [`Message`] is sent
+    SendMessage {
+        /// the [`Message`] that was sent. The sender of this message was validated at this point
+        /// but the receiver is only validated when the [`Message`] is delivered
+        msg: Message
+    },
+    /// Emitted when a [`Message`] is delivered
+    DeliverMessage {
+        /// the logical timestamp when the [`Message`] was sent. Since these are unique,
+        /// this sufficient to identify the specific [`Message`] that was delivered
+        sent_timestamp: usize
+    },
+    /// Emitted when a process exited
+    NodeDisconnected {
+        /// the id of the process that exited. See [`crate::core::ProcessManager`]
+        node_id: usize
+    },
+    /// Emitted when a node logs a line
+    Log {
+        /// the id of the process that logged a line. See [`crate::core::ProcessManager`]
+        node_id: usize,
+        /// the executable file of the process
+        source_file: PathBuf,
+        /// the logged line
+        line: String,
+    },
 }
 
 
 impl Event {
+    /// creates a new [`Event`] with the given timestamp and data
     fn new(timestamp: Timestamp, data: EventData) -> Self {
         Self {
             timestamp,
@@ -33,22 +80,28 @@ impl Event {
         }
     }
 
+    /// creates a new [`Event`] with the given timestamp and [`EventData::Setup`]
     pub fn setup(timestamp: Timestamp, nodes: HashMap<String, usize>) -> Self {
         Self::new(timestamp, EventData::Setup { nodes })
     }
 
+
+    /// creates a new [`Event`] with the given timestamp and [`EventData::SendMessage`]
     pub fn send_message(timestamp: Timestamp, msg: Message) -> Self {
         Self::new(timestamp, EventData::SendMessage { msg })
     }
 
+    /// creates a new [`Event`] with the given timestamp and [`EventData::DeliverMessage`]
     pub fn deliver_message(timestamp: Timestamp, sent_timestamp: usize) -> Self {
         Self::new(timestamp, EventData::DeliverMessage { sent_timestamp })
     }
 
+    /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
     pub fn node_disconnected(timestamp: Timestamp, node_id: usize) -> Self {
         Self::new(timestamp, EventData::NodeDisconnected { node_id })
     }
 
+    /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
     pub fn log(timestamp: Timestamp, node_id: usize, source_file: PathBuf, line: String) -> Self {
         Self::new(timestamp, EventData::Log { node_id, source_file, line })
     }

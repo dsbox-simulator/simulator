@@ -8,8 +8,8 @@ use crate::process::event::ProcessEvent;
 
 use crate::process::handle::Handle;
 
-pub(super) fn spawn(file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> io::Result<(Sender<ProcessCommand>, Handle)> {
-    log::info!("spawning process {}", file.display());
+pub(super) fn launch(file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> io::Result<(Sender<ProcessCommand>, Handle)> {
+    log::info!("launching process {}", file.display());
     let mut child = Command::new(file)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

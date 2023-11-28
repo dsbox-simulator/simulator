@@ -26,6 +26,7 @@ const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Trace;
 #[cfg(not(debug_assertions))]
 const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
+/// Main entry point for the application. Configures logging and runs the program.
 #[tokio::main]
 async fn main() {
     simple_logger::SimpleLogger::new()
@@ -44,6 +45,10 @@ async fn main() {
     log::logger().flush();
 }
 
+/// Starts a new [`Core`], initialized with the given [`Args`].
+/// Captures a [`Protocol`] of the execution, and writes it to a file after the [`Core`] finishes.
+/// If necessary, also starts the [`Webapp`].
+/// TODO: configure capturing and writing of the protocol via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
     let core = Core::new(&args)?;
 

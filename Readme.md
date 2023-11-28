@@ -31,9 +31,9 @@ cargo run -- "target/debug/echo_client" --servers "target/wasm32-wasi/debug/echo
 the `netsim_test` simply sends messages to itself and records their delay. To run the test use
 ```shell
 cargo build --release --workspace
-cargo run --release -- "target/release/netsim_test" --servers "/edv/null"
+cargo run --release -- "target/release/netsim_test" --servers "/dev/null"
 ```
-(for `--servers` any path may be given, since no server is spawned anyway)
+(for `--servers` any path may be given, since no server is launched anyway)
 
 to run `dsbox` in interactive mode using the webapp add the `-i` flag:
 ```shell

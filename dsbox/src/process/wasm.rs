@@ -39,15 +39,15 @@ impl WasmLauncher {
         Self { engine: Engine::new(&config).unwrap(), module_cache: HashMap::new() }
     }
 
-    pub(super) fn spawn(&mut self, file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
-        let (stdin, stdout, stderr, start_fn) = match self.do_spawn(file) {
+    pub(super) fn launch(&mut self, file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
+        let (stdin, stdout, stderr, start_fn) = match self.do_launch(file) {
             Ok(ret) => ret,
             Err(e) => return Err(into_io_error(e)),
         };
         Handle::new(id, file, event_sender, stdin, stdout, stderr, start_fn)
     }
 
-    fn do_spawn(&mut self, file: &Path) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
+    fn do_launch(&mut self, file: &Path) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
         let module = self.load_module(file)?;
         let (stdin, wasi_stdin) = in_memory_pipe();
         let (wasi_stdout, stdout) = in_memory_pipe();
