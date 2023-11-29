@@ -14,41 +14,64 @@ use wasmtime_wasi::WasiCtxBuilder;
 use crate::process::handle::Handle;
 use crate::process::{ProcessCommand, ProcessEvent};
 
+/// contains some state for launching Webassembly processes.
 pub struct WasmLauncher {
+    /// handle to the [`wasmtime`] [`Engine`].
     engine: Engine,
+    /// cache of loaded modules, so that files need not be loaded and compiled multiple times
+    /// for launching multiple processes form the same Webassembly file
     module_cache: HashMap<PathBuf, Module>,
 }
 
+/// An in-memory [`Read`]er. Is always paired with a corresponding [`MemoryWriter`]
+/// It implements both [`Read`] as well as [`WasiFile`] (read-only) so that it can be used in the
+/// Webassembly module as `stdin` and in the handling threads/tasks as the other end of `stdout` and `stderr`.
 struct MemoryReader {
+    /// reference to the actual [`MemoryStream`] that is shared between this [`MemoryReader`] and its corresponding [`MemoryWriter`]
     inner: Arc<MemoryStream>,
 }
 
+/// An in-memory [`Write`]r. Is always paired with a corresponding [`MemoryReader`]
+/// It implements both [`Write`] as well as [`WasiFile`] (write-only) so that it can be used in the
+/// Webassembly module as `stdout` and `stderr` and in the handling threads/tasks as the other end of `stdin`.
 struct MemoryWriter {
+    /// reference to the actual [`MemoryStream`] that is shared between this [`MemoryWriter`] and its corresponding [`MemoryReader`]
     inner: Arc<MemoryStream>,
 }
 
+/// An in-memory stream, that can be used to pass bytes between a [`MemoryReader`] and a [`MemoryWriter`]
 struct MemoryStream {
+    /// the actual bytes currently written into, but not read out of, this stream
     data: Mutex<VecDeque<u8>>,
+    /// condition variable to notify the reader, that bytes are available to read (or that the writer has been dropped).
     data_available: Condvar,
+    /// set to `true` when the writer drops.
     writer_closed: AtomicBool,
 }
 
 impl WasmLauncher {
+    /// Initializes a new [`Engine`] for launching Webassembly processes.
     pub fn new() -> Self {
         let config = Config::new();
         Self { engine: Engine::new(&config).unwrap(), module_cache: HashMap::new() }
     }
 
-    pub(super) fn launch(&mut self, file: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
-        let (stdin, stdout, stderr, start_fn) = match self.do_launch(file) {
+    /// Launches a new Webassembly process from the given `path`. The Webassembly module gets passed
+    /// two [`MemoryWriter`]s and a [`MemoryReader`] to be used for its `stdin`, `stdout` and `stderr`.
+    /// The other ends of the streams are then used to create a [`Handle`].
+    /// This function is only a helper to convert any [`wasmtime::Error`] into a [`std::io::Error`] if necessary before returning.
+    /// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
+    pub(super) fn launch(&mut self, path: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
+        let (stdin, stdout, stderr, start_fn) = match self.do_launch(path) {
             Ok(ret) => ret,
             Err(e) => return Err(into_io_error(e)),
         };
-        Handle::new(id, file, event_sender, stdin, stdout, stderr, start_fn)
+        Handle::new(id, path, event_sender, stdin, stdout, stderr, start_fn)
     }
 
-    fn do_launch(&mut self, file: &Path) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
-        let module = self.load_module(file)?;
+    /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
+    fn do_launch(&mut self, path: &Path) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
+        let module = self.load_module(path)?;
         let (stdin, wasi_stdin) = in_memory_pipe();
         let (wasi_stdout, stdout) = in_memory_pipe();
         let (wasi_stderr, stderr) = in_memory_pipe();
@@ -76,17 +99,19 @@ impl WasmLauncher {
         }))
     }
 
-    fn load_module(&mut self, file: &Path) -> Result<Module, wasmtime::Error> {
-        if let Some(module) = self.module_cache.get(file) {
+    /// Helper function to load a Webassembly module from a given `path`.
+    fn load_module(&mut self, path: &Path) -> Result<Module, wasmtime::Error> {
+        if let Some(module) = self.module_cache.get(path) {
             Ok(module.clone())
         } else {
-            let module = Module::from_file(&self.engine, file)?;
-            self.module_cache.insert(file.to_path_buf(), module.clone());
+            let module = Module::from_file(&self.engine, path)?;
+            self.module_cache.insert(path.to_path_buf(), module.clone());
             Ok(module)
         }
     }
 }
 
+/// Creates a new [`MemoryStream`] and returns a [`MemoryReader`] and [`MemoryWriter`] sharing that stream
 fn in_memory_pipe() -> (MemoryWriter, MemoryReader) {
     let inner = Arc::new(MemoryStream {
         data: Mutex::new(VecDeque::new()),
@@ -96,6 +121,7 @@ fn in_memory_pipe() -> (MemoryWriter, MemoryReader) {
     (MemoryWriter { inner: inner.clone() }, MemoryReader { inner })
 }
 
+/// Converts a [`wasmtime::Error`] into a [`std::io::Error`].
 fn into_io_error(error: wasmtime::Error) -> Error {
     for e in error.chain() {
         if let Some(e) = e.downcast_ref::<Error>() {
@@ -106,6 +132,7 @@ fn into_io_error(error: wasmtime::Error) -> Error {
 }
 
 impl MemoryReader {
+    /// helper function that waits until data is available to read or the corresponding [`MemoryWriter`] was dropped.
     fn wait_for_data(&self) -> Option<MutexGuard<VecDeque<u8>>> {
         let mut data = self.inner.data.lock().unwrap();
         while data.len() == 0 {

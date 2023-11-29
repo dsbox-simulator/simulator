@@ -112,7 +112,7 @@ impl Core {
         })
     }
 
-    /// Returns a new [`Sender`] for sending [`RemoteCommands`] to the [`Core`]
+    /// Returns a new [`Sender`] for sending [`RemoteCommand`]s to the [`Core`]
     pub fn remote_control(&self) -> Sender<RemoteCommand> {
         self.remote_sender.clone()
     }

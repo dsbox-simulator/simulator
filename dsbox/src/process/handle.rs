@@ -1,28 +1,47 @@
+//! A Handle on the threads/tasks that monitor a process.
+//!
+//! For each running process, four threads/tasks are spawned. Each one has a different function.
+//! - one waits for [`ProcessCommand`]s from the [`Core`](crate::core::Core) and delivers them to the process
+//! - one waits for lines one the processes `stdout`, attempts to deserialize them into [`Message`]s
+//!   and sends them to the [`Core`](crate::core::Core).
+//! - one waits for lines on the processes `stderr` and sends them to the [`Core`](crate::core::Core) as log lines.
+//! - one just waits for the process to exit, and sends a notification to the [`Core`](crate::core::Core)
+
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Error, Read, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{Receiver, Sender};
 
 use libproto::Message;
+
 use crate::process::command::ProcessCommand;
 use crate::process::event::{ProcessEvent, ProcessEventKind};
 
+/// A handle to all four threads/tasks of a process.
 pub struct Handle {
+    /// handle to the thread/tasks that reads [`Message`]s from the process.d
     reader: JoinHandle<()>,
+    /// handle to the thread/task that writes [`Message`]s to the process.
     writer: JoinHandle<()>,
+    /// handle to the thread/task that reads log lines.
     log: JoinHandle<()>,
+    /// handle to the thread/task that waits for the process to exit.
     child: JoinHandle<()>,
 }
 
-static LAUNCH_ID: AtomicUsize = AtomicUsize::new(0);
-
 impl Handle {
+    /// Creates a new [`Handle`]
+    /// `stdin`, `stdout` and `stderr` are generics, because they are of a different type for native
+    /// and Webassembly processes. Since they are only passed off to different threads, they do
+    /// not show up in the Signature of [`Handle`].
+    /// `wait_child` is a function that should block until the process exits. For native processes
+    /// it just waits for the child process to exit, for Webassembly this is a callback that
+    /// actually calls the `start` function in the loaded Webassembly.
     pub fn new(
         id: usize,
-        file: &Path,
+        path: &Path,
         event_sender: &Sender<ProcessEvent>,
         stdin: impl Write + Send + 'static,
         stdout: impl Read + Send + 'static,
@@ -31,38 +50,37 @@ impl Handle {
     ) -> io::Result<(Sender<ProcessCommand>, Self)> {
         let (command_sender, command_receiver) = crossbeam_channel::unbounded();
 
-        let launch_id = LAUNCH_ID.fetch_add(1, Ordering::SeqCst);
-
         let writer = {
             std::thread::Builder::new()
-                .name(format!("[w-{launch_id}] {}", file.display()))
+                .name(format!("[w-{id}] {}", path.display()))
                 .spawn(move || { writer_thread(stdin, command_receiver) })?
         };
 
         let reader = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[r-{launch_id}] {}", file.display()))
+                .name(format!("[r-{id}] {}", path.display()))
                 .spawn(move || { reader_thread(id, stdout, sender) })?
         };
 
         let log = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[l-{launch_id}] {}", file.display()))
+                .name(format!("[l-{id}] {}", path.display()))
                 .spawn(move || { log_thread(id, stderr, sender) })?
         };
 
         let child = {
             let sender = event_sender.clone();
             std::thread::Builder::new()
-                .name(format!("[c-{launch_id}] {}", file.display()))
+                .name(format!("[c-{id}] {}", path.display()))
                 .spawn(move || { child_thread(id, wait_child, sender) })?
         };
 
         Ok((command_sender, Self { reader, writer, log, child }))
     }
 
+    /// Joins all threads/tasks
     pub fn terminate(self) {
         self.child.join()
             .expect("failed to join child");
@@ -74,11 +92,13 @@ impl Handle {
             .expect("failed to join reader thread");
     }
 
+    /// Returns `true` if the thread/task that waits for process exit is still running.
     pub fn is_running(&self) -> bool {
         !self.child.is_finished()
     }
 }
 
+/// Waits for [`ProcessCommand`]s and writes them to the given [`Write`]r
 fn writer_thread(stdin: impl Write, receiver: Receiver<ProcessCommand>) {
     let mut writer = BufWriter::new(stdin);
     loop {
@@ -99,6 +119,8 @@ fn writer_thread(stdin: impl Write, receiver: Receiver<ProcessCommand>) {
     }
 }
 
+/// Reads lines from the given [`Read`]er and attempts to deserialize them into [`Message`]s to send
+/// them to the [`Core`](crate::core::Core).
 fn reader_thread(source_id: usize, stdout: impl Read, sender: Sender<ProcessEvent>) {
     let mut line = String::new();
     let mut reader = BufReader::new(stdout);
@@ -119,6 +141,7 @@ fn reader_thread(source_id: usize, stdout: impl Read, sender: Sender<ProcessEven
     warn_error(result);
 }
 
+/// Reads lines from the given [`Read`]er and sends them as log lines to the [`Core`](crate::core::Core)
 fn log_thread(source_id: usize, stderr: impl Read, sender: Sender<ProcessEvent>) {
     let mut line = String::new();
     let mut reader = BufReader::new(stderr);
@@ -138,12 +161,14 @@ fn log_thread(source_id: usize, stderr: impl Read, sender: Sender<ProcessEvent>)
     warn_error(result);
 }
 
+/// Calls the given function and then sends a notification to the [`Core`](crate::core::Core)
 fn child_thread(source_id: usize, wait_child: impl FnOnce() -> i32, sender: Sender<ProcessEvent>) {
     let code = wait_child();
     sender.send(ProcessEvent::new(source_id, ProcessEventKind::Exited(code))).ok();
 }
 
 
+/// writes a warning log message if `result` is an error.
 fn warn_error(result: Result<(), Error>) {
     if let Err(e) = result {
         if let Some(name) = std::thread::current().name() {
