@@ -5,9 +5,9 @@ use std::io::Error;
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::Sender;
+
 pub use crate::process::command::ProcessCommand;
 pub use crate::process::event::{ProcessEvent, ProcessEventKind};
-
 use crate::process::handle::Handle;
 use crate::process::wasm::WasmLauncher;
 
@@ -74,15 +74,13 @@ impl Process {
         } else { false }
     }
 
-    /// Terminate the process.
     /// This drops the `command_sender`, so that threads waiting for [`ProcessCommand`]s from the
-    /// [`Core`](crate::core::Core) stop waiting and can terminate. Then waits for all threads/tasks
-    /// to terminate.
-    pub fn terminate(&mut self) {
-        self.command_sender.take();
-        if let Some(handle) = self.handle.take() {
-            handle.terminate();
+    /// [`Core`](crate::core::Core) stop waiting and terminate.
+    pub fn begin_shutdown(&mut self) {
+        if self.is_running() {
+            log::info!("shutting down node {} (process {})", self.id(), self.path().display());
         }
+        self.command_sender.take();
     }
 
     /// Returns `true` if the process is still running

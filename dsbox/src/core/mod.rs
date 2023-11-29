@@ -32,7 +32,7 @@ use crate::core::monitor::MonitorSession;
 use crate::core::process_manager::ProcessManager;
 use crate::core::remote_control::RemoteCommand;
 use crate::network::Network;
-use crate::process::{ProcessCommand, ProcessEvent, ProcessEventKind};
+use crate::process::{Process, ProcessCommand, ProcessEvent, ProcessEventKind};
 use crate::protocol::{Protocol, ProtocolSubscriber};
 use crate::timestamp::Timestamp;
 
@@ -88,12 +88,12 @@ impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and client executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
     pub fn new(args: &Args) -> Result<Self, CoreError> {
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::bounded(0);
         let mut processes = ProcessManager::new(sender);
         processes.launch(Path::new(&args.test_path))
             .map_err(|e| CoreError::LaunchFailed(PathBuf::from(&args.test_path), e))?;
 
-        let (remote_sender, remote_receiver) = crossbeam_channel::unbounded();
+        let (remote_sender, remote_receiver) = crossbeam_channel::bounded(0);
 
         Ok(Self {
             processes,
@@ -122,13 +122,9 @@ impl Core {
     /// after [`Core::run`] returns.
     pub fn run(mut self) -> Result<(), CoreError> {
         loop {
-            if !self.processes[0].is_running() { break; }
+            if !self.processes.iter().any(Process::is_running) { break; }
 
-            self.step_one()?;
-        }
-
-        for mut process in self.processes {
-            process.terminate();
+            self.step()?;
         }
 
         Ok(())
@@ -142,7 +138,7 @@ impl Core {
         }
     }
 
-    fn step_one(&mut self) -> Result<(), CoreError> {
+    fn step(&mut self) -> Result<(), CoreError> {
         if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
             self.deliver(sent_timestamp, message)?;
             if matches!(self.state, CoreState::Stepping) {
@@ -183,6 +179,12 @@ impl Core {
             }
             ProcessEventKind::Exited(exit_code) => {
                 self.process_exited(timestamp, process_event.source_id, exit_code)?;
+                if process_event.source_id == 0 {
+                    // process 0 exited: shut down all processes gracefully
+                    for proc in &mut self.processes {
+                        proc.begin_shutdown();
+                    }
+                }
                 Ok(true)
             }
             ProcessEventKind::SerializeError(raw_message, err) => {
@@ -286,11 +288,11 @@ impl Core {
 
         let mut nodes = HashMap::new();
 
+        // all existing server nodes can shut down now
+        // technically it would not be a problem to just leave them be, but this just
+        // seems a little cleaner. Once the client process exits, all processes are shut down anyways.
         for proc in &mut self.processes[1..] {
-            if proc.is_running() {
-                log::info!("waiting for node {} (process {}) to exit", proc.id(), proc.path().display());
-                proc.terminate();
-            }
+            proc.begin_shutdown();
         }
 
         for client_name in setup.clients {
