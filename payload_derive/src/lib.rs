@@ -1,3 +1,20 @@
+//! Simple derive macro to help implementing the Payload trait from libproto.
+//!
+//! i.e. for
+//! ```
+//! #[derive(Payload)]
+//! struct Init {/*...*/}
+//! ```
+//!
+//! it simply generates
+//! ```
+//! impl Payload for Init {
+//!    const TYPE: &'static str = "Init";
+//! }
+//! ```
+//!
+//! this is used to identify message body types when deserializing messages.
+
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 use heck::ToSnakeCase;
