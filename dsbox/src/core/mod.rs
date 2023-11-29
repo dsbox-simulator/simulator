@@ -16,7 +16,7 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -62,8 +62,6 @@ pub struct Core {
     remote_sender: Sender<RemoteCommand>,
     /// used for recording all [`Event`]s and publishing them to potential subscribers (like the web app)
     protocol: Protocol,
-    /// queue for all [`ProcessEvent`]s received by all processes, that have not been handled yet
-    process_event_queue: VecDeque<(Timestamp, ProcessEvent)>,
     /// list of all active [`MonitorSession`]s
     monitor_sessions: Vec<MonitorSession>,
     /// the [`Network`] contains all [`Message`]s that are sent, but not yet delivered
@@ -72,11 +70,11 @@ pub struct Core {
 
 /// The execution state for a [`Core`]
 enum CoreState {
-    /// The [`Core`] is running.
+    /// The [`Core`] is running normally.
     Running,
-    /// The [`Core`] is paused. What this exactly means is still to be determined.
+    /// The delivery of [`Message`]s is paused. Everything else (including the sending of [`Message`]s) continues normally.
     Paused,
-    /// The [`Core`] is stepping. What this exactly means is still to be determined.
+    /// The [`Core`] is stepping, i.e. it will wait for and deliver a single [`Message`] to a node, and then return to [`CoreState::Paused`].
     Stepping,
 }
 
@@ -105,7 +103,6 @@ impl Core {
             remote_sender,
             remote_receiver,
             protocol: Protocol::new(),
-            process_event_queue: VecDeque::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
         })
@@ -127,17 +124,40 @@ impl Core {
         loop {
             if !self.processes[0].is_running() { break; }
 
-            if let Some(command) = self.pump_events() {
-                self.handle_command(command)
-            } else {
-                self.run_state()?;
-            }
+            self.step_one()?;
         }
 
         for mut process in self.processes {
             process.terminate();
         }
 
+        Ok(())
+    }
+
+    fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Message)> {
+        if !matches!(self.state, CoreState::Paused) {
+            self.network.remove_oldest()
+        } else {
+            None
+        }
+    }
+
+    fn step_one(&mut self) -> Result<(), CoreError> {
+        if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
+            self.deliver(sent_timestamp, message)?;
+            if matches!(self.state, CoreState::Stepping) {
+                self.state = CoreState::Paused;
+            }
+        } else {
+            crossbeam_channel::select! {
+                recv(self.remote_receiver) -> remote_command => {
+                    self.handle_command(remote_command.unwrap());
+                }
+                recv(self.receiver) -> process_event => {
+                    self.handle_process_event(Timestamp::now(), process_event.unwrap())?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -148,90 +168,6 @@ impl Core {
             RemoteCommand::Step => self.state = CoreState::Stepping,
             RemoteCommand::Resume => self.state = CoreState::Running,
         }
-    }
-
-    /// If a [`RemoteCommand`] was sent, it is retrieved and returned. Otherwise `None` is returned,
-    /// and all outstanding [`ProcessEvent`]s from all processes are retrieved and put into the `process_event_queue`.
-    ///
-    /// Additionally, if there are no outstanding [`ProcessEvent`]s and no [`Message`]s in the network, this function
-    /// blocks until at least one [`ProcessEvent`] or [`RemoteCommand`] is received.
-    fn pump_events(&mut self) -> Option<RemoteCommand> {
-        if self.is_idle() {
-            // nothing else to do for now: just wait for an event or a command to come in
-            crossbeam_channel::select! {
-                recv(self.remote_receiver) -> remote_command => {
-                    Some(remote_command.unwrap())
-                }
-                recv(self.receiver) -> process_event => {
-                    self.process_event_queue.push_back((Timestamp::now(), process_event.unwrap()));
-                    while let Ok(event) = self.receiver.try_recv() {
-                        self.process_event_queue.push_back((Timestamp::now(), event));
-                    }
-                    None
-                }
-            }
-        } else {
-            // other things are still left to do: check for a remote command and pump new events if any
-            if let Ok(command) = self.remote_receiver.try_recv() {
-                return Some(command);
-            }
-
-            while let Ok(event) = self.receiver.try_recv() {
-                self.process_event_queue.push_back((Timestamp::now(), event));
-            }
-            None
-        }
-    }
-
-    /// Returns `true` if there are no outstanding [`ProcessEvent`]s and no [`Message`]s in the network.
-    fn is_idle(&self) -> bool {
-        self.process_event_queue.is_empty() && self.network.is_empty()
-    }
-
-    /// Executes a single step of the current [`CoreState`].
-    fn run_state(&mut self) -> Result<(), CoreError> {
-        match self.state {
-            CoreState::Running => self.step(),
-            CoreState::Paused => self.step_paused(),
-            CoreState::Stepping => {
-                self.step()?;
-                self.state = CoreState::Paused;
-                Ok(())
-            }
-        }
-    }
-
-    /// Executes a single step (in [`CoreState::Running`] or [`CoreState::Stepping`]). What this exactly means is still to be determined.
-    /// TODO: single step execution will mean "delivery of a single message" in the future.
-    /// For now, a `step` includes handling all outstanding [`ProcessEvent`]s, until a single message was handled (i.e. all log messages, etc. up to (and including) the first message event)
-    /// or delivering a single [`Message`].
-    fn step(&mut self) -> Result<(), CoreError> {
-        loop {
-            if let Some((timestamp, process_event)) = self.process_event_queue.pop_front() {
-                let handle_more = self.handle_process_event(timestamp, process_event)?;
-                if handle_more { continue; }
-            } else if let Some((timestamp, message)) = self.network.remove_oldest() {
-                self.deliver(timestamp, message)?;
-            }
-            break;
-        }
-        Ok(())
-    }
-
-    /// Executes a single step in [`CoreState::Paused`].
-    /// When paused, log lines and other non-message events are still processed
-    fn step_paused(&mut self) -> Result<(), CoreError> {
-        // keep message events in the queue, but process any other event (like log messages etc.)
-        let capacity = self.process_event_queue.len();
-        let event_queue = std::mem::replace(&mut self.process_event_queue, VecDeque::with_capacity(capacity));
-        for (timestamp, process_event) in event_queue {
-            if !matches!(process_event.kind, ProcessEventKind::Message(_)) {
-                self.handle_process_event(timestamp, process_event)?;
-            } else {
-                self.process_event_queue.push_back((timestamp, process_event));
-            }
-        }
-        Ok(())
     }
 
     /// Handles a single [`ProcessEvent`].

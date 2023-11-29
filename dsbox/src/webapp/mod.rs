@@ -35,7 +35,7 @@ pub struct Webapp {
 }
 
 /// State that is passed to each request handler.
-/// Contains the [`Sender`] and [`broadcast::Receiver`] for [`Event]`s and [`RemoteCommand`]s.
+/// Contains the [`Sender`] and [`ProtocolSubscriber`] for [`Event]`s and [`RemoteCommand`]s.
 struct WebappState {
     remote_control: Sender<RemoteCommand>,
     event_subscriber: ProtocolSubscriber,
@@ -124,7 +124,7 @@ async fn socket(state: State<WebappState>, ws: WebSocketUpgrade) -> Response {
 }
 
 /// Handler for a [`WebSocket`][ws] connection. Listens for messages and attempts to send corresponding
-/// [`RemoteCommand`]s to the [`Core`](crate::core::Core), and sends published [`Event`]s from the [`Core`](crate::core::Core) into the
+/// [`RemoteCommand`]s to the [`Core`](crate::core::Core), and sends published [`Event`](crate::core::event::Event)s from the [`Core`](crate::core::Core) into the
 /// socket.
 ///
 /// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket

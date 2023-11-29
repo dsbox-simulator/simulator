@@ -45,7 +45,6 @@ async fn main() {
 }
 
 /// Starts a new [`Core`], initialized with the given [`Args`].
-/// Captures a [`Protocol`] of the execution, and writes it to a file after the [`Core`] finishes.
 /// If necessary, also starts the [`Webapp`].
 /// TODO: configure capturing and writing of a protocol to a file via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
