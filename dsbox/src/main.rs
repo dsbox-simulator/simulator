@@ -4,7 +4,6 @@ use log::LevelFilter;
 use crate::cli::Args;
 use crate::core::Core;
 use crate::core::error::CoreError;
-use crate::protocol::Protocol;
 use crate::webapp::Webapp;
 
 // mod proc;
@@ -48,7 +47,7 @@ async fn main() {
 /// Starts a new [`Core`], initialized with the given [`Args`].
 /// Captures a [`Protocol`] of the execution, and writes it to a file after the [`Core`] finishes.
 /// If necessary, also starts the [`Webapp`].
-/// TODO: configure capturing and writing of the protocol via the cli
+/// TODO: configure capturing and writing of a protocol to a file via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
     let core = Core::new(&args)?;
 
@@ -56,42 +55,11 @@ async fn run(args: Args) -> Result<(), CoreError> {
         Some(Webapp::run(&args, core.remote_control(), core.subscribe_events()))
     } else { None };
 
-    let protocol = Protocol::new()
-        .collect(core.subscribe_events());
-
     let result = tokio::task::spawn_blocking(|| core.run()).await
         .unwrap();
 
     if let Some(webapp) = webapp { webapp.shutdown().await; }
 
-    protocol
-        .await.unwrap()
-        .write_to_file("protocol.json")
-        .await.unwrap();
-
     result
 }
-
-// async fn run(args: Args) -> Result<(), CoreError> {
-//     let core = Core::new(log_info, &args).await?;
-//     let protocol = Protocol::new().collect(core.subscribe());
-//
-//     let webapp = if args.interactive {
-//         Some(Webapp::run(&args, core.subscribe(), core.remote_control()))
-//     } else { None };
-//
-//     core.run().await?;
-//
-//     if let Some(webapp) = webapp { webapp.shutdown().await; }
-//     protocol.await.unwrap().write_to_file("protocol.json").await.unwrap();
-//     Ok(())
-// }
-//
-// fn log_info(id: NodeId, proc_file: &Path, line: &str) {
-//     if id.is_server() {
-//         log::info!("[{};{id}]: {line}", proc_file.display());
-//     } else {
-//         log::info!("[{}]: {line}", proc_file.display());
-//     }
-// }
 

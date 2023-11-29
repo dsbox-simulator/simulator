@@ -19,13 +19,12 @@ use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
 use crossbeam_channel::Sender;
-use tokio::sync::{broadcast, oneshot};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::cli::Args;
-use crate::core::event::Event;
 use crate::core::remote_control::RemoteCommand;
+use crate::protocol::ProtocolSubscriber;
 
 mod files;
 
@@ -39,19 +38,19 @@ pub struct Webapp {
 /// Contains the [`Sender`] and [`broadcast::Receiver`] for [`Event]`s and [`RemoteCommand`]s.
 struct WebappState {
     remote_control: Sender<RemoteCommand>,
-    event_receiver: broadcast::Receiver<Event>,
+    event_subscriber: ProtocolSubscriber,
 }
 
 impl Webapp {
     /// Starts the webapp in a separate [`tokio::task`], binding it to the address and port given in the [`Args`].
-    pub fn run(args: &Args, remote_control: Sender<RemoteCommand>, event_receiver: broadcast::Receiver<Event>) -> Self {
+    pub fn run(args: &Args, remote_control: Sender<RemoteCommand>, event_subscriber: ProtocolSubscriber) -> Self {
         let (tx, rx) = oneshot::channel();
         let listen_address = SocketAddr::new(IpAddr::from_str(&args.listen_address).unwrap(), args.port);
         Self {
             handle: tokio::spawn(async move {
                 // build our application with a route
                 let router = Self::build_router()
-                    .with_state(WebappState { remote_control, event_receiver });
+                    .with_state(WebappState { remote_control, event_subscriber });
 
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
@@ -132,14 +131,10 @@ async fn socket(state: State<WebappState>, ws: WebSocketUpgrade) -> Response {
 async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSocket) {
     loop {
         tokio::select! {
-            event = state.event_receiver.recv() => {
-                match event {
-                    Ok(event) => if let Err(e) = socket.send(Message::Text(serde_json::to_string(&event).unwrap())).await {
-                        log::warn!("websocket error when sending event message: {e}");
-                        break;
-                    },
-                    Err(RecvError::Lagged(_)) => log::warn!("webapp lags behind core events"),
-                    Err(RecvError::Closed) => break,
+            event = state.event_subscriber.recv() => {
+                if let Err(e) = socket.send(Message::Text(serde_json::to_string(&event).unwrap())).await {
+                    log::warn!("websocket error when sending event message: {e}");
+                    break;
                 }
             }
             command = socket.recv() => {
@@ -181,7 +176,7 @@ impl Clone for WebappState {
     fn clone(&self) -> Self {
         Self {
             remote_control: self.remote_control.clone(),
-            event_receiver: self.event_receiver.resubscribe(),
+            event_subscriber: self.event_subscriber.resubscribe(),
         }
     }
 }

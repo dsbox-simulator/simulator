@@ -5,59 +5,61 @@
 //! which we do not want (i.e. when reloading the webapp during execution),
 //! and [`Protocol`] keeps a list of all [`Event`]s anyways...
 
-use std::path::Path;
+use std::sync::Arc;
 
-use tokio::io::AsyncWriteExt;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::task::JoinHandle;
+use tokio::sync::{Notify, RwLock};
 
 use crate::core::event::Event;
 
 /// A protocol of all [`Event`]s that happened during execution so far.
 pub struct Protocol {
-    events: Vec<Event>,
+    inner: Arc<SharedProtocolHolder>,
+}
+
+struct SharedProtocolHolder {
+    events: RwLock<Vec<Event>>,
+    new_events: Notify,
+}
+
+pub struct ProtocolSubscriber {
+    inner: Arc<SharedProtocolHolder>,
+    last_event_read: usize,
 }
 
 impl Protocol {
     /// Creates a new empty [`Protocol`]
     pub fn new() -> Self {
-        Self { events: Vec::new() }
+        Self { inner: Arc::new(SharedProtocolHolder { events: RwLock::new(Vec::new()), new_events: Notify::new() }) }
     }
 
-    /// Starts a new [`tokio::task`] that pushes all [`Event`]s broadcast to the `receiver` onto the protocol.
-    /// The returned [`JoinHandle`] can be `await`ed to get the finished [`Protocol`] back.
-    pub fn collect(mut self, mut receiver: broadcast::Receiver<Event>) -> JoinHandle<Self> {
-        tokio::spawn(async move {
-            loop {
-                match receiver.recv().await {
-                    Ok(ev) => self.events.push(ev),
-                    Err(RecvError::Lagged(_)) => {
-                        log::warn!("protocol lags behind core events");
-                        continue;
-                    }
-                    Err(RecvError::Closed) => break,
-                }
-            }
-            self
-        })
+    pub fn publish_event(&mut self, event: Event) {
+        self.inner.events.blocking_write().push(event);
+        self.inner.new_events.notify_waiters();
     }
 
-
-    /// Writes the [`Protocol`]s [`Event`]s to the given file path (creating or truncating the file)
-    /// with one line for each [`Event`].
-    pub async fn write_to_file(&self, file: impl AsRef<Path>) -> std::io::Result<()> {
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(file).await?;
-
-        for event in &self.events {
-            let mut line = serde_json::to_string(event).unwrap();
-            line.push('\n');
-            file.write_all(line.as_bytes()).await?;
+    pub fn subscribe(&self) -> ProtocolSubscriber {
+        ProtocolSubscriber {
+            inner: self.inner.clone(),
+            last_event_read: 0,
         }
-        Ok(())
+    }
+}
+
+impl ProtocolSubscriber {
+    pub async fn recv(&mut self) -> Event {
+        loop {
+            if let Some(event) = self.inner.events.read().await.get(self.last_event_read) {
+                self.last_event_read += 1;
+                return event.clone();
+            }
+            self.inner.new_events.notified().await;
+        }
+    }
+
+    pub fn resubscribe(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            last_event_read: 0,
+        }
     }
 }

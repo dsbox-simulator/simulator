@@ -20,7 +20,6 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::{Receiver, Sender};
-use tokio::sync::broadcast;
 
 use libproto::{Message, Payload};
 use libproto::init::Init;
@@ -34,6 +33,7 @@ use crate::core::process_manager::ProcessManager;
 use crate::core::remote_control::RemoteCommand;
 use crate::network::Network;
 use crate::process::{ProcessCommand, ProcessEvent, ProcessEventKind};
+use crate::protocol::{Protocol, ProtocolSubscriber};
 use crate::timestamp::Timestamp;
 
 mod process_manager;
@@ -60,8 +60,8 @@ pub struct Core {
     remote_receiver: Receiver<RemoteCommand>,
     /// is cloned and given to whoever wants to remote control this [`Core`].
     remote_sender: Sender<RemoteCommand>,
-    /// used for broadcasting [`Event`]s to all subscribers
-    event_sender: broadcast::Sender<Event>,
+    /// used for recording all [`Event`]s and publishing them to potential subscribers (like the web app)
+    protocol: Protocol,
     /// queue for all [`ProcessEvent`]s received by all processes, that have not been handled yet
     process_event_queue: VecDeque<(Timestamp, ProcessEvent)>,
     /// list of all active [`MonitorSession`]s
@@ -96,7 +96,6 @@ impl Core {
             .map_err(|e| CoreError::LaunchFailed(PathBuf::from(&args.test_path), e))?;
 
         let (remote_sender, remote_receiver) = crossbeam_channel::unbounded();
-        let (event_sender, _) = broadcast::channel(16);
 
         Ok(Self {
             processes,
@@ -105,7 +104,7 @@ impl Core {
             state: if args.interactive { CoreState::Paused } else { CoreState::Running },
             remote_sender,
             remote_receiver,
-            event_sender,
+            protocol: Protocol::new(),
             process_event_queue: VecDeque::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
@@ -117,10 +116,9 @@ impl Core {
         self.remote_sender.clone()
     }
 
-    /// Returns a new [`broadcast::Receiver`] for listening to events from the [`Core`]
-    pub fn subscribe_events(&self) -> broadcast::Receiver<Event> {
-        // todo: implement pub-sub without lagging (we keep all events in memory anyways (for the protocol), so this should be possible
-        self.event_sender.subscribe()
+    /// Returns a new [`ProtocolSubscriber`] for listening to events from the [`Core`]
+    pub fn subscribe_events(&self) -> ProtocolSubscriber {
+        self.protocol.subscribe()
     }
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
@@ -274,7 +272,7 @@ impl Core {
         }
 
         self.send_monitor_event(timestamp, &message, None);
-        self.event_sender.send(Event::send_message(timestamp, message.clone())).ok();
+        self.protocol.publish_event(Event::send_message(timestamp, message.clone()));
         self.network.insert(timestamp, message);
         Ok(())
     }
@@ -293,7 +291,7 @@ impl Core {
         };
         let timestamp = Timestamp::now();
         self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical));
-        self.event_sender.send(Event::deliver_message(timestamp, sent_timestamp.logical)).ok();
+        self.protocol.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical));
         self.processes[destination_id].send(ProcessCommand::Deliver(message));
         Ok(())
     }
@@ -379,7 +377,7 @@ impl Core {
             })));
         }
         self.processes[0].send(ProcessCommand::Deliver(Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})));
-        self.event_sender.send(Event::setup(Timestamp::now(), nodes)).ok();
+        self.protocol.publish_event(Event::setup(Timestamp::now(), nodes));
         Ok(())
     }
 
@@ -387,13 +385,13 @@ impl Core {
     fn log(&mut self, timestamp: Timestamp, source_id: usize, line: String) -> Result<(), CoreError> {
         let source_path = self.processes[source_id].path();
         log::info!("[{}]: {line}", source_path.display());
-        self.event_sender.send(Event::log(timestamp, source_id, source_path.to_owned(), line)).ok();
+        self.protocol.publish_event(Event::log(timestamp, source_id, source_path.to_owned(), line));
         Ok(())
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
     fn process_exited(&mut self, timestamp: Timestamp, source_id: usize, exit_code: i32) -> Result<(), CoreError> {
-        self.event_sender.send(Event::node_disconnected(timestamp, source_id)).ok();
+        self.protocol.publish_event(Event::node_disconnected(timestamp, source_id));
         log::info!("process {} exited with code {exit_code}", self.processes[source_id].path().display());
         Ok(())
     }
