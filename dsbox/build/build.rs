@@ -10,23 +10,22 @@ mod files;
 
 fn main() {
     let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("..").canonicalize().unwrap();
-    let webapp_root = workspace_dir.join("webapp");
-    let excludes = &["ts*", "node_modules*", "package.json", "package-lock.json", "tsconfig.json", "webpack.config.js"];
+    let webapp_root = workspace_dir.join("webapp/dist");
     if env::var("PROFILE").unwrap() == "release" {
-        embed_files(webapp_root, excludes);
+        embed_files(webapp_root);
     } else {
-        fetch_local_files(webapp_root, excludes);
+        fetch_local_files(webapp_root);
     }
 }
 
-fn embed_files(root: PathBuf, excludes: &[&str]) {
+fn embed_files(root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_files.rs");
     let mut output_file = BufWriter::new(File::create(&dest_path).unwrap());
 
     let mut map = phf_codegen::Map::new();
     let mut file_counter = 0;
-    for path in files::collect_files(&root, excludes).unwrap() {
+    for path in files::collect_files(&root).unwrap() {
         let input_file = File::open(&path).unwrap();
         let mut reader = flate2::read::GzEncoder::new(input_file, Compression::default());
         let filename = format!("{file_counter:>06}-{}.gz", path.file_name().unwrap().to_string_lossy());
@@ -49,10 +48,9 @@ fn embed_files(root: PathBuf, excludes: &[&str]) {
     ).unwrap();
 }
 
-fn fetch_local_files(root: PathBuf, excludes: &[&str]) {
+fn fetch_local_files(root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_files.rs");
     let mut output_file = BufWriter::new(File::create(&dest_path).unwrap());
     write!(&mut output_file, "static WEBAPP_ROOT: &'static str = {:?};\n", root.to_str().unwrap()).unwrap();
-    write!(&mut output_file, "static EXCLUDES: &'static[&'static str] = &{excludes:?};\n").unwrap();
 }

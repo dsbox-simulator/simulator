@@ -37,8 +37,8 @@ impl ProcessManager {
     }
 
     /// Launches a new process from the given executable file.
-    /// Returns [`Result::Ok`] with the new processes id, if the process was launched successfully,
-    /// otherwise returns [`Result::Err`] with underlying error.
+    /// Returns [`Ok`] with the new processes id, if the process was launched successfully,
+    /// otherwise returns [`Err`] with underlying error.
     pub fn launch(&mut self, file: &Path) -> std::io::Result<usize> {
         let id = self.processes.len();
         let process = self.launcher.launch(file, &self.sender, id)?;

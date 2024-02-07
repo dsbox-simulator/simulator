@@ -1,4 +1,4 @@
-//! System messages, that the core uses to communicate with it's clients.
+//! System messages, that the core uses to communicate with its clients.
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 

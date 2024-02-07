@@ -55,6 +55,7 @@ impl Webapp {
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
                 log::info!("listening on {listen_address}");
+                log::info!("open http://localhost:{}", listen_address.port());
                 let server = axum::Server::bind(&listen_address)
                     .serve(router.into_make_service());
 
@@ -124,8 +125,8 @@ async fn socket(state: State<WebappState>, ws: WebSocketUpgrade) -> Response {
 }
 
 /// Handler for a [`WebSocket`][ws] connection. Listens for messages and attempts to send corresponding
-/// [`RemoteCommand`]s to the [`Core`](crate::core::Core), and sends published [`Event`](crate::core::event::Event)s from the [`Core`](crate::core::Core) into the
-/// socket.
+/// [`RemoteCommand`]s to the [`Core`](crate::core::Core), and sends published [`Event`](crate::core::event::Event)s
+/// from the [`Core`](crate::core::Core) into the socket.
 ///
 /// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSocket) {

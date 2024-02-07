@@ -27,7 +27,6 @@ axum = { version = "0.6.18", features = ["ws"] }
 #rust-embed = { version = "6.7.0", features = ["mime-guess", "interpolate-folder-path", "include-exclude"] }
 phf = { version = "0.11.1", default-features = false }
 flate2 = "1.0.26"
-globset = "0.4.10"
 mime_guess = "2.0.4"
 
 regex = "1.8.4"
@@ -42,5 +41,4 @@ wiggle = { version = "9" }
 [build-dependencies]
 phf_codegen = "0.11.1"
 flate2 = "1.0.26"
-globset = "0.4.10"
 mime_guess = "2.0.4"

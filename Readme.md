@@ -7,8 +7,11 @@ a simulator for distributed systems.
 `dsbox` requires a `npm`, `cargo` and ideally `rustup` to be available for building and running. 
 Additionaly a nightly version of rust must be used. In order to enable nightly using `rustup` use:
 ```shell
-rustup override nightly
+rustup override set nightly
 ```
+
+*TODO* `rustup target add wasm32-wasi` 
+
 in the project directory. After that the webapp can be compiled with 
 ```shell
 npm install

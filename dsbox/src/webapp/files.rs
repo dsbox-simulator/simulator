@@ -23,21 +23,8 @@ pub async fn lookup(file: &str) -> io::Result<Option<EmbeddedFile>> { Ok(EMBEDDE
 #[cfg(debug_assertions)]
 pub async fn lookup(file: &str) -> io::Result<Option<EmbeddedFile>> {
     use std::path::Path;
-    use globset::{Glob, GlobSet, GlobSetBuilder};
-    use std::sync::OnceLock;
     use tokio::io::AsyncReadExt;
 
-    static GLOB_EXCLUDE: OnceLock<GlobSet> = OnceLock::new();
-
-    let excludes = GLOB_EXCLUDE.get_or_init(|| {
-        let mut builder = GlobSetBuilder::new();
-        for exclude in EXCLUDES {
-            builder.add(Glob::new(exclude).unwrap());
-        }
-        builder.build().unwrap()
-    });
-
-    if excludes.is_match(file) { return Ok(None); }
     let path = Path::new(WEBAPP_ROOT).join(file);
     let mut reader = match tokio::fs::File::open(&path).await {
         Ok(reader) => reader,

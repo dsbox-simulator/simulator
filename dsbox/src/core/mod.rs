@@ -290,7 +290,7 @@ impl Core {
 
         // all existing server nodes can shut down now
         // technically it would not be a problem to just leave them be, but this just
-        // seems a little cleaner. Once the client process exits, all processes are shut down anyways.
+        // seems a little cleaner. Once the client process exits, all processes are shut down anyway.
         for proc in &mut self.processes[1..] {
             proc.begin_shutdown();
         }
