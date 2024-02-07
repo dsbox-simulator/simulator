@@ -1,7 +1,7 @@
 //! Transparent handling of processes, both native and compiled to Webassembly.
 
 use std::ffi::OsStr;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::Sender;
@@ -50,18 +50,24 @@ impl Launcher {
     /// TODO: support for scripting languages (i.e. Python), where launching a process needs a path and some args.
     ///
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exists, or is not executable, etc.).
-    pub fn launch(&mut self, path: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
-        let (command_sender, handle) = if path.extension() == Some(OsStr::new("wasm")) {
+    pub fn launch(&mut self, command: &str, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
+        let Some(args) = shlex::split(command) else {
+            return Err(Error::new(ErrorKind::InvalidInput, format!("failed to parse command string: {command:?}")));
+        };
+        let (executable, args) = args.split_first().unwrap();
+        let executable = Path::new(executable);
+
+        let (command_sender, handle) = if executable.extension() == Some(OsStr::new("wasm")) {
             self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-                .launch(path, event_sender, id)
+                .launch(executable, args, event_sender, id)
         } else {
-            native::launch(path, event_sender, id)
+            native::launch(executable, args, event_sender, id)
         }?;
         Ok(Process {
             handle: Some(handle),
             command_sender: Some(command_sender),
             id,
-            path: path.to_path_buf(),
+            path: executable.to_path_buf(),
         })
     }
 }

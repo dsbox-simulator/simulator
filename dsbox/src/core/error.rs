@@ -24,7 +24,7 @@ pub enum CoreError {
     /// A core [`Message`] could not be handled, because it's type is unknown.
     UnknownCoreMessage(String),
     /// An error occurred trying to launch a process.
-    LaunchFailed(PathBuf, std::io::Error),
+    LaunchFailed(String, std::io::Error),
     /// A process wrote some text to its standard output, that could not be parsed into a [`Message`].
     SerializeError(PathBuf, String, serde_json::Error),
 }
@@ -49,8 +49,8 @@ impl Display for CoreError {
             CoreError::UnknownCoreMessage(ty) => {
                 write!(f, "unknown system message: {ty}")
             }
-            CoreError::LaunchFailed(path, err) => {
-                write!(f, "failed to launch process {}: {err}", path.display())
+            CoreError::LaunchFailed(command, err) => {
+                write!(f, "failed to launch process with command {command:?}: {err}")
             }
             CoreError::SerializeError(path, raw_message, err) => {
                 write!(f, "failed to deserialize message from process {}: {err} (raw message: {raw_message:?})", path.display())

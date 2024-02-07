@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
-use std::path::Path;
 use std::slice::{Iter, IterMut, SliceIndex};
 use std::vec::IntoIter;
 
@@ -36,12 +35,13 @@ impl ProcessManager {
         Self { launcher: Launcher::new(), processes: Vec::new(), names: HashMap::new(), sender }
     }
 
-    /// Launches a new process from the given executable file.
+    /// Launches a new process from the given command. This can be just a path to an executable
+    /// or a more complex command, like "python server.py"
     /// Returns [`Ok`] with the new processes id, if the process was launched successfully,
     /// otherwise returns [`Err`] with underlying error.
-    pub fn launch(&mut self, file: &Path) -> std::io::Result<usize> {
+    pub fn launch(&mut self, command: &str) -> std::io::Result<usize> {
         let id = self.processes.len();
-        let process = self.launcher.launch(file, &self.sender, id)?;
+        let process = self.launcher.launch(command, &self.sender, id)?;
         self.processes.push(process);
         Ok(id)
     }

@@ -17,7 +17,6 @@
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -52,8 +51,8 @@ pub struct Core {
     processes: ProcessManager,
     /// Receives [`ProcessEvent`]s. The corresponding [`Sender`] is passed to the [`ProcessManager`] for processes to send their [`ProcessEvent`]s to the core.
     receiver: Receiver<ProcessEvent>,
-    /// Path to the executable file from which server processes are launched.
-    server_path: PathBuf,
+    /// Command string from which server processes are launched.
+    server_command: String,
     /// The current execution state (i.e. running/stepping/paused...)
     state: CoreState,
     /// Receives [`RemoteCommand`]s for controlling this [`Core`]
@@ -90,15 +89,15 @@ impl Core {
     pub fn new(args: &Args) -> Result<Self, CoreError> {
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let mut processes = ProcessManager::new(sender);
-        processes.launch(Path::new(&args.test_path))
-            .map_err(|e| CoreError::LaunchFailed(PathBuf::from(&args.test_path), e))?;
+        processes.launch(&args.test_command)
+            .map_err(|e| CoreError::LaunchFailed(args.test_command.clone(), e))?;
 
         let (remote_sender, remote_receiver) = crossbeam_channel::bounded(0);
 
         Ok(Self {
             processes,
             receiver,
-            server_path: PathBuf::from(&args.server_path),
+            server_command: args.server_command.clone(),
             state: if args.interactive { CoreState::Paused } else { CoreState::Running },
             remote_sender,
             remote_receiver,
@@ -301,8 +300,8 @@ impl Core {
         };
 
         for name in &setup.servers {
-            let id = self.processes.launch(&self.server_path)
-                .map_err(|e| CoreError::LaunchFailed(self.server_path.clone(), e))?;
+            let id = self.processes.launch(&self.server_command)
+                .map_err(|e| CoreError::LaunchFailed(self.server_command.clone(), e))?;
             self.processes.add_name(name.clone(), id);
             nodes.insert(name.clone(), id);
         }

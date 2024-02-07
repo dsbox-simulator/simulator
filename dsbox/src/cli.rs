@@ -5,11 +5,11 @@ use clap::Parser;
 #[derive(Parser)]
 pub struct Args {
     /// path to the executable or wasm-file of the test-case implementation
-    pub test_path: String,
+    pub test_command: String,
 
     /// path to the executable or wasm-file of the server implementation
     #[clap(long = "servers")]
-    pub server_path: String,
+    pub server_command: String,
 
     /// start the simulation in interactive mode
     #[clap(long, short, default_value_t = false)]

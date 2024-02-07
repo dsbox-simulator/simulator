@@ -11,8 +11,8 @@ use wasi_common::WasiFile;
 use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::process::handle::Handle;
 use crate::process::{ProcessCommand, ProcessEvent};
+use crate::process::handle::Handle;
 
 /// contains some state for launching Webassembly processes.
 pub struct WasmLauncher {
@@ -61,8 +61,8 @@ impl WasmLauncher {
     /// The other ends of the streams are then used to create a [`Handle`].
     /// This function is only a helper to convert any [`wasmtime::Error`] into a [`std::io::Error`] if necessary before returning.
     /// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
-    pub(super) fn launch(&mut self, path: &Path, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
-        let (stdin, stdout, stderr, start_fn) = match self.do_launch(path) {
+    pub(super) fn launch(&mut self, path: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(Sender<ProcessCommand>, Handle), Error> {
+        let (stdin, stdout, stderr, start_fn) = match self.do_launch(path, args) {
             Ok(ret) => ret,
             Err(e) => return Err(into_io_error(e)),
         };
@@ -70,13 +70,15 @@ impl WasmLauncher {
     }
 
     /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
-    fn do_launch(&mut self, path: &Path) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
+    fn do_launch(&mut self, path: &Path, args: &[String]) -> Result<(MemoryWriter, MemoryReader, MemoryReader, impl FnOnce() -> i32), wasmtime::Error> {
+        log::info!("launching wasm file {}, args: {args:?}", path.display());
         let module = self.load_module(path)?;
         let (stdin, wasi_stdin) = in_memory_pipe();
         let (wasi_stdout, stdout) = in_memory_pipe();
         let (wasi_stderr, stderr) = in_memory_pipe();
 
         let wasi_ctx = WasiCtxBuilder::new()
+            .args(args).unwrap()
             .stdin(Box::new(wasi_stdin))
             .stdout(Box::new(wasi_stdout))
             .stderr(Box::new(wasi_stderr))
