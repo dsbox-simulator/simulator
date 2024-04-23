@@ -27,6 +27,7 @@ use crate::core::remote_control::RemoteCommand;
 use crate::protocol::ProtocolSubscriber;
 
 mod files;
+mod json_rpc;
 
 /// A handle to the running webapp, mainly used to shut it down before exiting the program
 pub struct Webapp {

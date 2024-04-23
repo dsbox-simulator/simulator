@@ -1,3 +1,6 @@
 target/
 webapp/node_modules
+webapp/dist
+.idea
 protocol.json
+__pycache__
