@@ -1,9 +1,11 @@
 use clap::Parser;
 use log::LevelFilter;
+use tokio::select;
 
 use crate::cli::Args;
 use crate::core::Core;
 use crate::core::error::CoreError;
+use crate::protocol::ProtocolSubscriber;
 use crate::webapp::Webapp;
 
 // mod proc;
@@ -54,11 +56,43 @@ async fn run(args: Args) -> Result<(), CoreError> {
         Some(Webapp::run(&args, core.remote_control(), core.subscribe_events()))
     } else { None };
 
+    let recorder = if let Some(filename) = args.save_protocol {
+        Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)
+    } else { None };
+
     let result = tokio::task::spawn_blocking(|| core.run()).await
         .unwrap();
 
     if let Some(webapp) = webapp { webapp.shutdown().await; }
-
+    if let Some(shutdown) = recorder {
+        shutdown.send(()).await.ok();
+    }
     result
 }
 
+async fn spawn_protocol_recorder(mut subscriber: ProtocolSubscriber, output_file: String) -> tokio::sync::mpsc::Sender<()> {
+    use tokio::io::AsyncWriteExt;
+    let (shutdown_sender, mut shutdown_receiver) = tokio::sync::mpsc::channel(1);
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(output_file).await
+        .expect("failed to open protocol output file");
+
+    tokio::task::spawn(async move {
+        loop {
+            select! {
+            event = subscriber.recv() => {
+                file.write_all(serde_json::to_string(&event).expect("failed to serialize event for protocol file").as_bytes()).await
+                    .expect("failed to write to protocol file");
+                file.write_all(b"\n").await
+                    .expect("failed to write to protocol file");
+            }
+            _ = shutdown_receiver.recv() => {
+                return;
+            }
+        }
+        }
+    });
+    shutdown_sender
+}

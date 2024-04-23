@@ -1,4 +1,4 @@
-from nodeutil import Message, MessageBody, log
+from pynode import Message, MessageBody, log
 
 init = Message.recv()
 assert init.body.type == "init"

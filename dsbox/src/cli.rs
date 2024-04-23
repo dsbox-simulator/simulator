@@ -22,4 +22,8 @@ pub struct Args {
     /// listen-port for the webapp
     #[clap(default_value_t = 8080)]
     pub port: u16,
+
+    /// after the program finished, write all events (as JSON-lines) to the specified file
+    #[clap(long)]
+    pub save_protocol: Option<String>
 }
