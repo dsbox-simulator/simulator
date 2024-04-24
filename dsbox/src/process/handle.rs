@@ -68,15 +68,12 @@ impl Handle {
     }
 
     /// Joins all tasks
+    #[allow(unused)]
     pub async fn terminate(self) {
-        self.child.await
-            .expect("failed to join child");
-        self.reader.await
-            .expect("failed to join reader thread");
-        self.writer.await
-            .expect("failed to join reader thread");
-        self.log.await
-            .expect("failed to join reader thread");
+        self.writer.abort();
+        self.reader.abort();
+        self.log.abort();
+        self.child.abort();
     }
 
     /// Returns `true` if the thread/task that waits for process exit is still running.
@@ -158,10 +155,6 @@ async fn child_task(source_id: usize, wait_child: impl Future<Output=i32>, sende
 /// writes a warning log message if `result` is an error.
 fn warn_error(result: Result<(), tokio::io::Error>) {
     if let Err(e) = result {
-        if let Some(name) = std::thread::current().name() {
-            log::warn!("thread \"{name}\" exited with error {e}");
-        } else {
-            log::warn!("thread exited with error {e}");
-        }
+        log::warn!("task exited with error {e}");
     }
 }

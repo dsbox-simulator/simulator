@@ -160,12 +160,11 @@ which will show up in the cores standard output (and soon in the webapp)
 
 A simple "echo" type server can be implemented in a few lines of python:
 ```python
-from pynode import Message, MessageBody, log
+from pynode import Message
 
-message = Message.recv()
-assert message.type == "init"
+assert Message.recv().type == "init"
 for message in Message.recv_iter():
-    reply = message.reply(MessageBody('echo_ok', echo=message.body.echo))
+    reply = message.reply('echo_ok', echo=message.body.echo)
     reply.send()
 ```
 this server waits for the `init` message (asserting that the first message is actually an `init` message) and then

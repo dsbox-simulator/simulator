@@ -1,9 +1,9 @@
 //! Manages running processes for the [`Core`](crate::core::Core)
 
 use std::collections::HashMap;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, RangeBounds};
 use std::slice::{Iter, IterMut, SliceIndex};
-use std::vec::IntoIter;
+use std::vec::{Drain, IntoIter};
 
 use tokio::sync::mpsc::Sender;
 
@@ -15,7 +15,6 @@ use crate::process::{Launcher, Process, ProcessEvent};
 /// Server processes should have exactly one name, because a server process implements a single node in the system.
 /// The (singular) client process may have multiple names, because all client nodes are implemented in a single process.
 pub struct ProcessManager {
-
     /// A [`Launcher`] that is used for launching new processes
     launcher: Launcher,
     /// A list of all launched processes (running and exited). The index into this [`Vec`] is the
@@ -39,9 +38,9 @@ impl ProcessManager {
     /// or a more complex command, like "python server.py"
     /// Returns [`Ok`] with the new processes id, if the process was launched successfully,
     /// otherwise returns [`Err`] with underlying error.
-    pub async fn launch(&mut self, command: &str) -> std::io::Result<usize> {
+    pub async fn launch(&mut self, command: &str, name: String) -> std::io::Result<usize> {
         let id = self.processes.len();
-        let process = self.launcher.launch(command, &self.sender, id).await?;
+        let process = self.launcher.launch(command, &self.sender, id, name).await?;
         self.processes.push(process);
         Ok(id)
     }
@@ -72,6 +71,12 @@ impl ProcessManager {
     /// Clears all given names for all processes
     pub fn reset_names(&mut self) {
         self.names.clear();
+    }
+
+    /// drains (removes) all processes in the given range. Especially useful when you want to terminate
+    /// said processes
+    pub fn drain(&mut self, range: impl RangeBounds<usize>) -> Drain<'_, Process> {
+        self.processes.drain(range)
     }
 }
 

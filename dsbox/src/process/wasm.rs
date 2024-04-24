@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream, Error};
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 use tokio::sync::RwLock;
+use wasi_common::WasiFile;
 use wasi_common::file::FileType;
 use wasi_common::tokio::WasiCtxBuilder;
-use wasi_common::WasiFile;
-use wasmtime::{Config, Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store, UpdateDeadline};
 
 use crate::process::{ProcessCommand, ProcessEvent};
 use crate::process::handle::Handle;
@@ -59,13 +59,12 @@ impl WasmLauncher {
             Ok(ret) => ret,
             Err(e) => return Err(into_io_error(e)),
         };
-        println!("launched successfully");
         Handle::new(id, event_sender, stdin, stdout, stderr, start_fn)
     }
 
     /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
     async fn do_launch(&mut self, path: &Path, args: &[String]) -> Result<(DuplexStream, DuplexStream, DuplexStream, impl Future<Output=i32>), wasmtime::Error> {
-        log::info!("launching wasm file {}, args: {args:?}", path.display());
+        log::trace!("launching wasm file {}, args: {args:?}", path.display());
         let (stdin, wasi_stdin) = tokio::io::duplex(1024);
         let (wasi_stdout, stdout) = tokio::io::duplex(1024);
         let (wasi_stderr, stderr) = tokio::io::duplex(1024);
@@ -84,7 +83,9 @@ impl WasmLauncher {
 
         let module = self.load_module(path)?;
         let mut store = Store::new(&self.engine, wasi_ctx);
-        store.epoch_deadline_async_yield_and_update(1);
+        store.epoch_deadline_callback(|_| {
+            Ok(UpdateDeadline::Yield(1))
+        });
         linker.module_async(&mut store, "", &module).await?;
 
         let start_fn = linker.get_default(&mut store, "")?
@@ -92,10 +93,7 @@ impl WasmLauncher {
         Ok((stdin, stdout, stderr, async move {
             match start_fn.call_async(store, ()).await {
                 Ok(()) => 0,
-                Err(e) => {
-                    log::error!("call_async error: {e}");
-                    -1
-                },
+                Err(_) => -1,
             }
         }))
     }

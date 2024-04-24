@@ -1,8 +1,8 @@
-import Event, {Log} from "./Event"
+import Event, {Log, NodeInfo} from "./Event"
 
 export default class State {
     all_events: Event[] = [];
-    nodes: Map<string, number> = new Map();
+    nodes: NodeInfo[] = [];
     logs: Map<number, Log[]> = new Map();
 
     public constructor(old_state: State | null = null) {
@@ -15,10 +15,10 @@ export default class State {
         this.all_events.push(event);
         switch (event.data.type) {
             case "setup":
-                this.nodes = new Map(Object.entries(event.data.nodes));
-                for (const [_, node_id] of this.nodes) {
-                    if (this.logs.get(node_id) === undefined) {
-                        this.logs.set(node_id, []);
+                this.nodes = event.data.nodes;
+                for (const node of this.nodes) {
+                    if (this.logs.get(node.id) === undefined) {
+                        this.logs.set(node.id, []);
                     }
                 }
                 break;
@@ -29,10 +29,10 @@ export default class State {
             case "node_disconnected":
                 break;
             case "log":
-                if(this.logs.get(event.data.node_id) === undefined) {
-                    this.logs.set(event.data.node_id, []);
+                if (this.logs.get(event.data.id) === undefined) {
+                    this.logs.set(event.data.id, []);
                 }
-                this.logs.get(event.data.node_id)!.push(event.data);
+                this.logs.get(event.data.id)!.push(event.data);
                 break;
 
         }

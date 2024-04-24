@@ -3,7 +3,6 @@ import {Log} from "../classes/Event";
 
 const Logs: React.FC<{ logs: Map<number, Log[]> }> = ({logs}) => {
     const nodes = Array.from(logs.keys());
-    console.log(nodes);
     return <>
         <nav>
             <div className="nav nav-tabs" id="nav-tab" role="tablist">

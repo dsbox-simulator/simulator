@@ -2,7 +2,7 @@ import Timestamp from './Timestamp';
 import Message from './Message';
 import {JsonProperty, Serializable} from "ts-jackson";
 
-type EventData = Setup | SendMessage | DeliverMessage | NodeDisconnected | Log;
+type EventData = Setup | SendMessage | DeliverMessage | NodeDisconnected | NodeLaunched | Log;
 
 @Serializable()
 export default class Event {
@@ -17,7 +17,17 @@ export class Setup {
     @JsonProperty()
     type!: "setup";
     @JsonProperty()
-    nodes!: Map<string, number>;
+    nodes!: NodeInfo[];
+}
+
+@Serializable()
+export class NodeInfo {
+    @JsonProperty()
+    name!: string
+    @JsonProperty()
+    commandline!: string
+    @JsonProperty()
+    id!: number
 }
 
 @Serializable()
@@ -37,11 +47,21 @@ export class DeliverMessage {
 }
 
 @Serializable()
+export class NodeLaunched {
+    @JsonProperty()
+    type!: "node_launched";
+    @JsonProperty()
+    id!: number;
+    @JsonProperty()
+    commandline!: string;
+}
+
+@Serializable()
 export class NodeDisconnected {
     @JsonProperty()
     type!: "node_disconnected";
     @JsonProperty()
-    node_id!: number;
+    id!: number;
 }
 
 @Serializable()
@@ -49,9 +69,7 @@ export class Log {
     @JsonProperty()
     type!: "log";
     @JsonProperty()
-    node_id!: number;
-    @JsonProperty()
-    source_file!: string;
+    id!: number;
     @JsonProperty()
     line!: string;
 }

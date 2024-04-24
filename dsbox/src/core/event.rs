@@ -10,9 +10,6 @@
 //! Other events may be added in the future.
 //! These events are published by the running [`Core`](super::Core).
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
 use libproto::Message;
@@ -36,10 +33,10 @@ pub struct Event {
 pub enum EventData {
     /// Emitted when a new test run is started with the given nodes.
     Setup {
-        /// a map of all node names, with their corresponding ids. The ids uniquely identify
+        /// a list of all nodes, with their corresponding ids. The ids uniquely identify
         /// a running process (all client nodes run on the same process, whereas each server node runs on a different process)
         /// See [`crate::core::ProcessManager`]
-        nodes: HashMap<String, usize>
+        nodes: Vec<NodeInfo>
     },
 
     /// Emitted when a [`Message`] is sent
@@ -54,20 +51,33 @@ pub enum EventData {
         /// this sufficient to identify the specific [`Message`] that was delivered
         sent_timestamp: usize
     },
-    /// Emitted when a process exited
+    /// Emitted after a process exited
     NodeDisconnected {
         /// the id of the process that exited. See [`crate::core::ProcessManager`]
-        node_id: usize
+        id: usize
+    },
+    /// Emitted after a process is started
+    NodeLaunched {
+        /// the commandline (executable + arguments) that was used to launch the process
+        commandline: String,
+        /// the id of the process that started. See [`crate::core::ProcessManager`]
+        id: usize,
     },
     /// Emitted when a node logs a line
     Log {
         /// the id of the process that logged a line. See [`crate::core::ProcessManager`]
-        node_id: usize,
-        /// the executable file of the process
-        source_file: PathBuf,
+        id: usize,
         /// the logged line
         line: String,
     },
+}
+
+/// information about a node
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub name: String,
+    pub commandline: String,
+    pub id: usize,
 }
 
 
@@ -81,7 +91,7 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Setup`]
-    pub fn setup(timestamp: Timestamp, nodes: HashMap<String, usize>) -> Self {
+    pub fn setup(timestamp: Timestamp, nodes: Vec<NodeInfo>) -> Self {
         Self::new(timestamp, EventData::Setup { nodes })
     }
 
@@ -97,12 +107,17 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_disconnected(timestamp: Timestamp, node_id: usize) -> Self {
-        Self::new(timestamp, EventData::NodeDisconnected { node_id })
+    pub fn node_launched(timestamp: Timestamp, id: usize, commandline: String) -> Self {
+        Self::new(timestamp, EventData::NodeLaunched { id, commandline })
+    }
+
+    /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
+    pub fn node_disconnected(timestamp: Timestamp, id: usize) -> Self {
+        Self::new(timestamp, EventData::NodeDisconnected { id })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
-    pub fn log(timestamp: Timestamp, node_id: usize, source_file: PathBuf, line: String) -> Self {
-        Self::new(timestamp, EventData::Log { node_id, source_file, line })
+    pub fn log(timestamp: Timestamp, id: usize, line: String) -> Self {
+        Self::new(timestamp, EventData::Log { id, line })
     }
 }

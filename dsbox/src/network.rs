@@ -27,6 +27,7 @@ impl Network {
     }
 
     /// returns `true` if there are no [`Message`]s in transit
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.messages_in_transit.is_empty()
     }
@@ -49,6 +50,7 @@ impl Network {
     }
 
     /// Removes and returns the [`Message`] with the given logical timestamp, or `None` if no message with that timestamp is in the network.
+    #[allow(unused)]
     pub fn remove_one(&mut self, logical_timestamp: usize) -> Option<(Timestamp, Message)> {
         if let Ok(idx) = self.message_by_timestamp(logical_timestamp) {
             self.messages_in_transit.remove(idx)

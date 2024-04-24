@@ -1,8 +1,9 @@
 import React from "react";
+import {NodeInfo} from "../classes/Event";
 
-const Nodes: React.FC<{ nodes: Map<string, number> }> = ({nodes}) => {
+const Nodes: React.FC<{ nodes: NodeInfo[] }> = ({nodes}) => {
     return <ul id="nodes">
-        {Array.from(nodes.keys()).map(node => <li key={node}>{node}</li>)}
+        {nodes.map(node => <li key={node.id}>{node.name}</li>)}
     </ul>
 }
 

@@ -16,8 +16,6 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
-use std::collections::HashMap;
-
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use libproto::{Message, Payload};
@@ -26,7 +24,7 @@ use libproto::system::{BeginMonitor, MonitorEvent, MonitorEventKind, Setup, Setu
 
 use crate::cli::Args;
 use crate::core::error::{CoreError, DispatchErrorKind};
-use crate::core::event::Event;
+use crate::core::event::{Event, NodeInfo};
 use crate::core::monitor::MonitorSession;
 use crate::core::process_manager::ProcessManager;
 use crate::core::remote_control::RemoteCommand;
@@ -88,14 +86,10 @@ impl Core {
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
     pub async fn new(args: &Args) -> Result<Self, CoreError> {
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
-        let mut processes = ProcessManager::new(sender);
-        processes.launch(&args.test_command).await
-            .map_err(|e| CoreError::LaunchFailed(args.test_command.clone(), e))?;
-
         let (remote_sender, remote_receiver) = tokio::sync::mpsc::channel(1);
 
-        Ok(Self {
-            processes,
+        let mut core = Self {
+            processes: ProcessManager::new(sender),
             receiver,
             server_command: args.server_command.clone(),
             state: if args.interactive { CoreState::Paused } else { CoreState::Running },
@@ -104,7 +98,9 @@ impl Core {
             protocol: Protocol::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
-        })
+        };
+        core.launch(&args.test_command, "client".to_string()).await?;
+        Ok(core)
     }
 
     /// Returns a new [`Sender`] for sending [`RemoteCommand`]s to the [`Core`]
@@ -187,7 +183,7 @@ impl Core {
                 Ok(true)
             }
             ProcessEventKind::SerializeError(raw_message, err) => {
-                Err(CoreError::SerializeError(self.processes[process_event.source_id].path().to_path_buf(), raw_message, err))
+                Err(CoreError::SerializeError(self.processes[process_event.source_id].path().to_string(), raw_message, err))
             }
         }
     }
@@ -202,7 +198,7 @@ impl Core {
         let source = &self.processes[source_id];
         if !self.processes.has_name(source, &message.src) {
             return Err(CoreError::DispatchError {
-                source: source.path().to_path_buf(),
+                source: source.path().to_string(),
                 message,
                 kind: DispatchErrorKind::SourceNameMismatch,
             });
@@ -219,9 +215,7 @@ impl Core {
         let Some(destination_id) = self.processes.id_by_name(&message.dst) else {
             let source_id = self.processes.id_by_name(&message.src).unwrap();
             return Err(CoreError::DispatchError {
-                source: self.processes[source_id]
-                    .path()
-                    .to_path_buf(),
+                source: self.processes[source_id].path().to_string(),
                 message,
                 kind: DispatchErrorKind::DestinationUnknown,
             });
@@ -257,7 +251,7 @@ impl Core {
     /// is not known, or if handling of the [`Message`] itself fails.
     async fn handle_core_message(&mut self, source_id: usize, message: Message) -> Result<(), CoreError> {
         if source_id != 0 {
-            return Err(CoreError::IllegalCoreMessage(self.processes[source_id].path().to_path_buf(), message));
+            return Err(CoreError::IllegalCoreMessage(self.processes[source_id].path().to_string(), message));
         }
         match message.body.ty.as_str() {
             Setup::TYPE => {
@@ -285,25 +279,33 @@ impl Core {
         self.processes.reset_names();
         self.monitor_sessions.clear();
 
-        let mut nodes = HashMap::new();
+        let mut nodes = Vec::new();
 
         // all existing server nodes can shut down now
         // technically it would not be a problem to just leave them be, but this just
         // seems a little cleaner. Once the client process exits, all processes are shut down anyway.
-        for proc in &mut self.processes[1..] {
-            proc.begin_shutdown();
+        for proc in &mut self.processes.drain(1..) {
+            proc.terminate().await;
         }
 
         for client_name in setup.clients {
             self.processes.add_name(client_name.clone(), 0);
-            nodes.insert(client_name, 0);
+            nodes.push(NodeInfo {
+                name: client_name,
+                commandline: self.processes[0].commandline(),
+                id: 0,
+            })
         };
 
         for name in &setup.servers {
-            let id = self.processes.launch(&self.server_command).await
-                .map_err(|e| CoreError::LaunchFailed(self.server_command.clone(), e))?;
+            let server_command = self.server_command.clone();
+            let id = self.launch(&server_command, name.clone()).await?;
             self.processes.add_name(name.clone(), id);
-            nodes.insert(name.clone(), id);
+            nodes.push(NodeInfo {
+                name: name.clone(),
+                commandline: self.processes[id].commandline(),
+                id,
+            })
         }
 
         for name in &setup.servers {
@@ -318,18 +320,29 @@ impl Core {
         Ok(())
     }
 
+    /// launches a new process
+    async fn launch(&mut self, command: &str, name: String) -> Result<usize, CoreError> {
+        let id = self.processes.launch(command, name).await
+            .map_err(|e| CoreError::LaunchFailed(command.to_string(), e))?;
+        let proc = &self.processes[id];
+        let commandline = proc.commandline();
+        log::info!("[{}] command `{commandline}` launched", proc.name());
+        self.protocol.publish_event(Event::node_launched(Timestamp::now(), id, commandline)).await;
+        Ok(id)
+    }
+
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
     async fn log(&mut self, timestamp: Timestamp, source_id: usize, line: String) -> Result<(), CoreError> {
-        let source_path = self.processes[source_id].path();
-        log::info!("[{}]: {line}", source_path.display());
-        self.protocol.publish_event(Event::log(timestamp, source_id, source_path.to_owned(), line)).await;
+        log::info!("[{}]: {line}", self.processes[source_id].name());
+        self.protocol.publish_event(Event::log(timestamp, source_id, line)).await;
         Ok(())
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
     async fn process_exited(&mut self, timestamp: Timestamp, source_id: usize, exit_code: i32) -> Result<(), CoreError> {
         self.protocol.publish_event(Event::node_disconnected(timestamp, source_id)).await;
-        log::info!("process {} exited with code {exit_code}", self.processes[source_id].path().display());
+        let proc = &self.processes[source_id];
+        log::info!("[{}] command `{}` exited with code {exit_code}", proc.name(), proc.commandline());
         Ok(())
     }
 }
