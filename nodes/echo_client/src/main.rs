@@ -15,7 +15,6 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let receiver = receiver();
-
     for num_clients in 1..=2 {
         for num_servers in 1..=2 {
             eprintln!("testing with {num_clients} clients and {num_servers} servers");

@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use crossbeam_channel::{Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use libproto::{Message, Payload};
 use libproto::init::Init;
@@ -86,13 +86,13 @@ const CLIENT_NAME: &'static str = "client";
 impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and client executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
-    pub fn new(args: &Args) -> Result<Self, CoreError> {
-        let (sender, receiver) = crossbeam_channel::bounded(0);
+    pub async fn new(args: &Args) -> Result<Self, CoreError> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
         let mut processes = ProcessManager::new(sender);
-        processes.launch(&args.test_command)
+        processes.launch(&args.test_command).await
             .map_err(|e| CoreError::LaunchFailed(args.test_command.clone(), e))?;
 
-        let (remote_sender, remote_receiver) = crossbeam_channel::bounded(0);
+        let (remote_sender, remote_receiver) = tokio::sync::mpsc::channel(1);
 
         Ok(Self {
             processes,
@@ -119,11 +119,11 @@ impl Core {
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
-    pub fn run(mut self) -> Result<(), CoreError> {
+    pub async fn run(mut self) -> Result<(), CoreError> {
         loop {
             if !self.processes.iter().any(Process::is_running) { break; }
 
-            self.step()?;
+            self.step().await?;
         }
 
         Ok(())
@@ -137,19 +137,19 @@ impl Core {
         }
     }
 
-    fn step(&mut self) -> Result<(), CoreError> {
+    async fn step(&mut self) -> Result<(), CoreError> {
         if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
-            self.deliver(sent_timestamp, message)?;
+            self.deliver(sent_timestamp, message).await?;
             if matches!(self.state, CoreState::Stepping) {
                 self.state = CoreState::Paused;
             }
         } else {
-            crossbeam_channel::select! {
-                recv(self.remote_receiver) -> remote_command => {
-                    self.handle_command(remote_command.unwrap());
+            tokio::select! {
+                remote_command = self.remote_receiver.recv() => {
+                    self.handle_command(remote_command.unwrap()).await;
                 }
-                recv(self.receiver) -> process_event => {
-                    self.handle_process_event(Timestamp::now(), process_event.unwrap())?;
+                process_event = self.receiver.recv() => {
+                    self.handle_process_event(Timestamp::now(), process_event.unwrap()).await?;
                 }
             }
         }
@@ -157,7 +157,7 @@ impl Core {
     }
 
     /// handles a single [`RemoteCommand`]
-    fn handle_command(&mut self, command: RemoteCommand) {
+    async fn handle_command(&mut self, command: RemoteCommand) {
         match command {
             RemoteCommand::Pause => self.state = CoreState::Paused,
             RemoteCommand::Step => self.state = CoreState::Stepping,
@@ -166,18 +166,18 @@ impl Core {
     }
 
     /// Handles a single [`ProcessEvent`].
-    fn handle_process_event(&mut self, timestamp: Timestamp, process_event: ProcessEvent) -> Result<bool, CoreError> {
+    async fn handle_process_event(&mut self, timestamp: Timestamp, process_event: ProcessEvent) -> Result<bool, CoreError> {
         match process_event.kind {
             ProcessEventKind::Message(message) => {
-                self.dispatch(process_event.source_id, timestamp, message)?;
+                self.dispatch(process_event.source_id, timestamp, message).await?;
                 Ok(false)
             }
             ProcessEventKind::Log(log) => {
-                self.log(timestamp, process_event.source_id, log)?;
+                self.log(timestamp, process_event.source_id, log).await?;
                 Ok(true)
             }
             ProcessEventKind::Exited(exit_code) => {
-                self.process_exited(timestamp, process_event.source_id, exit_code)?;
+                self.process_exited(timestamp, process_event.source_id, exit_code).await?;
                 if process_event.source_id == 0 {
                     // process 0 exited: shut down all processes gracefully
                     for proc in &mut self.processes {
@@ -193,10 +193,10 @@ impl Core {
     }
 
     /// Dispatches a single [`Message`] into the network.
-    fn dispatch(&mut self, source_id: usize, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
+    async fn dispatch(&mut self, source_id: usize, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
         log::trace!("dispatching message: {}", message.to_json());
         if message.dst == CORE_NAME {
-            return self.handle_core_message(source_id, message);
+            return self.handle_core_message(source_id, message).await;
         }
 
         let source = &self.processes[source_id];
@@ -208,14 +208,14 @@ impl Core {
             });
         }
 
-        self.send_monitor_event(timestamp, &message, None);
-        self.protocol.publish_event(Event::send_message(timestamp, message.clone()));
+        self.send_monitor_event(timestamp, &message, None).await;
+        self.protocol.publish_event(Event::send_message(timestamp, message.clone())).await;
         self.network.insert(timestamp, message);
         Ok(())
     }
 
     /// Delivers a single [`Message`] to the destination node.
-    fn deliver(&mut self, sent_timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
+    async fn deliver(&mut self, sent_timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
         let Some(destination_id) = self.processes.id_by_name(&message.dst) else {
             let source_id = self.processes.id_by_name(&message.src).unwrap();
             return Err(CoreError::DispatchError {
@@ -227,8 +227,8 @@ impl Core {
             });
         };
         let timestamp = Timestamp::now();
-        self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical));
-        self.protocol.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical));
+        self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical)).await;
+        self.protocol.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical)).await;
         self.processes[destination_id].send(ProcessCommand::Deliver(message));
         Ok(())
     }
@@ -236,7 +236,7 @@ impl Core {
     /// Checks whether any active monitoring session matches against the given [`Message`], and sends a [`MonitorEvent`]
     /// to the corresponding source node. If `in_reference_to` is `None`, the kind is [`MonitorEventKind::Sent`], otherwise
     /// it is [`MonitorEventKind::Delivered`].
-    fn send_monitor_event(&mut self, timestamp: Timestamp, message: &Message, in_reference_to: Option<usize>) {
+    async fn send_monitor_event(&mut self, timestamp: Timestamp, message: &Message, in_reference_to: Option<usize>) {
         for session in &self.monitor_sessions {
             if session.matches(&message) {
                 let source_id = self.processes.id_by_name(session.source()).unwrap();
@@ -255,13 +255,13 @@ impl Core {
     /// handles a single core [`Message`] (i.e. [`Setup`] or [`BeginMonitor`]).
     /// Returns an error if the [`Message`] was not send from a client node, if the [`Message`]s type
     /// is not known, or if handling of the [`Message`] itself fails.
-    fn handle_core_message(&mut self, source_id: usize, message: Message) -> Result<(), CoreError> {
+    async fn handle_core_message(&mut self, source_id: usize, message: Message) -> Result<(), CoreError> {
         if source_id != 0 {
             return Err(CoreError::IllegalCoreMessage(self.processes[source_id].path().to_path_buf(), message));
         }
         match message.body.ty.as_str() {
             Setup::TYPE => {
-                self.setup(message.payload::<Setup>().unwrap())?;
+                self.setup(message.payload::<Setup>().unwrap()).await?;
                 Ok(())
             }
             BeginMonitor::TYPE => {
@@ -281,7 +281,7 @@ impl Core {
     }
 
     /// Resets the [`Core`] and sets up a new test run with the given nodes in the [`Setup`][`Message`].
-    fn setup(&mut self, setup: Setup) -> Result<(), CoreError> {
+    async fn setup(&mut self, setup: Setup) -> Result<(), CoreError> {
         self.processes.reset_names();
         self.monitor_sessions.clear();
 
@@ -300,7 +300,7 @@ impl Core {
         };
 
         for name in &setup.servers {
-            let id = self.processes.launch(&self.server_command)
+            let id = self.processes.launch(&self.server_command).await
                 .map_err(|e| CoreError::LaunchFailed(self.server_command.clone(), e))?;
             self.processes.add_name(name.clone(), id);
             nodes.insert(name.clone(), id);
@@ -314,21 +314,21 @@ impl Core {
             })));
         }
         self.processes[0].send(ProcessCommand::Deliver(Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})));
-        self.protocol.publish_event(Event::setup(Timestamp::now(), nodes));
+        self.protocol.publish_event(Event::setup(Timestamp::now(), nodes)).await;
         Ok(())
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
-    fn log(&mut self, timestamp: Timestamp, source_id: usize, line: String) -> Result<(), CoreError> {
+    async fn log(&mut self, timestamp: Timestamp, source_id: usize, line: String) -> Result<(), CoreError> {
         let source_path = self.processes[source_id].path();
         log::info!("[{}]: {line}", source_path.display());
-        self.protocol.publish_event(Event::log(timestamp, source_id, source_path.to_owned(), line));
+        self.protocol.publish_event(Event::log(timestamp, source_id, source_path.to_owned(), line)).await;
         Ok(())
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
-    fn process_exited(&mut self, timestamp: Timestamp, source_id: usize, exit_code: i32) -> Result<(), CoreError> {
-        self.protocol.publish_event(Event::node_disconnected(timestamp, source_id));
+    async fn process_exited(&mut self, timestamp: Timestamp, source_id: usize, exit_code: i32) -> Result<(), CoreError> {
+        self.protocol.publish_event(Event::node_disconnected(timestamp, source_id)).await;
         log::info!("process {} exited with code {exit_code}", self.processes[source_id].path().display());
         Ok(())
     }

@@ -1,17 +1,18 @@
-use std::io;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
-use crossbeam_channel::Sender;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
 use crate::process::handle::Handle;
 
+use tokio::process::Command;
+
 /// launches a new native process with the given `path` to an executable and creates a new [`Handle`]
 /// from the childs `stdin`, `stdout` and `stderr`.
 /// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
-pub(super) fn launch(path: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> io::Result<(Sender<ProcessCommand>, Handle)> {
+pub(super) fn launch(path: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> tokio::io::Result<(UnboundedSender<ProcessCommand>, Handle)> {
     log::info!("launching process {}, args: {args:?}", path.display());
     let mut child = Command::new(path)
         .args(args)
@@ -24,8 +25,8 @@ pub(super) fn launch(path: &Path, args: &[String], event_sender: &Sender<Process
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
-    Handle::new(id, path, event_sender, stdin, stdout, stderr, move || {
-        child.wait()
+    Handle::new(id, event_sender, stdin, stdout, stderr, async move {
+        child.wait().await
             .expect("failed to wait for child process")
             .code()
             .unwrap_or(-1)

@@ -5,14 +5,12 @@ a simulator for distributed systems.
 ## Compiling and running
 
 `dsbox` requires a `npm`, `cargo` and ideally `rustup` to be available for building and running. 
-Additionaly a nightly version of rust must be used. In order to enable nightly using `rustup` use:
+If creating wasm nodes from rust code is desired, the `wasm32-wasi` compilation target can be installed with
 ```shell
-rustup override set nightly
+rustup target add wasm32-wasi
 ```
 
-*TODO* `rustup target add wasm32-wasi` 
-
-in the project directory. After that the webapp can be compiled with 
+After that the webapp can be compiled with 
 ```shell
 npm install
 npm run build
@@ -21,7 +19,7 @@ this will build and pack the webapp. Now to run `dsbox` and get a cli help messa
 ```shell
 cargo run
 ```
-included in the project are three types of nodes useful for testing the program. These are in the directory `nodes` and 
+included in the project are some nodes useful for testing the program. These are in the directory `nodes` and 
 can be built using:
 ```shell
 cargo build --workspace --exclude dsbox

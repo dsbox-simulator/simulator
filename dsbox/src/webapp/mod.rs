@@ -18,7 +18,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
-use crossbeam_channel::Sender;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -57,12 +57,13 @@ impl Webapp {
                 // `axum::Server` is a re-export of `hyper::Server`
                 log::info!("listening on {listen_address}");
                 log::info!("open http://localhost:{}", listen_address.port());
-                let server = axum::Server::bind(&listen_address)
-                    .serve(router.into_make_service());
-
-                let server = server.with_graceful_shutdown(async { rx.await.ok(); });
-                if let Err(e) = server.await {
-                    log::warn!("web server terminated with an error: {e}")
+                let listener = tokio::net::TcpListener::bind(listen_address).await
+                    .expect("failed to bind tcp listener");
+                let server = axum::serve(listener, router);
+                let server = server.with_graceful_shutdown(async move { rx.await.ok(); });
+                match server.await {
+                    Ok(()) => log::info!("web sever shutdown successful"),
+                    Err(e) => log::warn!("web server shutdown error: {e}"),
                 }
             }),
             shutdown: tx,
@@ -161,9 +162,9 @@ async fn handle_msg(msg: Message, remote_control: &mut Sender<RemoteCommand>) ->
     if matches!(msg, Message::Close(_)) { return false; }
     if let Message::Text(txt) = msg {
         match txt.as_str() {
-            "pause" => remote_control.send(RemoteCommand::Pause).is_ok(),
-            "resume" => remote_control.send(RemoteCommand::Resume).is_ok(),
-            "step" => remote_control.send(RemoteCommand::Step).is_ok(),
+            "pause" => remote_control.send(RemoteCommand::Pause).await.is_ok(),
+            "resume" => remote_control.send(RemoteCommand::Resume).await.is_ok(),
+            "step" => remote_control.send(RemoteCommand::Step).await.is_ok(),
             cmd => {
                 log::warn!("unknown core command: `{cmd}`");
                 true

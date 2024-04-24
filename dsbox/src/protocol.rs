@@ -38,8 +38,8 @@ impl Protocol {
 
     /// Publishes an [`Event`] for all [`ProtocolSubscriber`]s to receive. [`Event`]s are buffered
     /// indefinitely, so that new [`ProtocolSubscriber`]s can receive all old events.
-    pub fn publish_event(&mut self, event: Event) {
-        self.inner.events.blocking_write().push(event);
+    pub async fn publish_event(&mut self, event: Event) {
+        self.inner.events.write().await.push(event);
         self.inner.new_events.notify_waiters();
     }
 

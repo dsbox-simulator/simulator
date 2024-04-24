@@ -4,7 +4,7 @@ use std::ffi::OsStr;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use crossbeam_channel::Sender;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 pub use crate::process::command::ProcessCommand;
 pub use crate::process::event::{ProcessEvent, ProcessEventKind};
@@ -30,7 +30,7 @@ pub struct Process {
     /// `None` after the process exited.
     handle: Option<Handle>,
     /// [`Sender`] to send commands (only deliver [`Message`](libproto::Message)s for now).
-    command_sender: Option<Sender<ProcessCommand>>,
+    command_sender: Option<UnboundedSender<ProcessCommand>>,
     /// unique id of the process in the running [`Core`](crate::core::Core).
     id: usize,
     /// Path to the executable (or Webassembly) file. Used for debugging and log printing.
@@ -44,13 +44,12 @@ impl Launcher {
     }
 
     /// launches a new process from the given `path`. The process is passed the `event_sender` so that it can send [`ProcessEvent`]s to the core.
-    /// It is also passed it's own unique id, so that [`ProcessEvent`]s it sends can be associated with the process (since all [`ProcessEvent`]s
+    /// It is also passed its own unique id, so that [`ProcessEvent`]s it sends can be associated with the process (since all [`ProcessEvent`]s
     /// from all processes are sent via a single channel).
     /// If `path` points to a Webassembly file (ends in `.wasm`) a Webassembly process is started, otherwise a native process is started.
-    /// TODO: support for scripting languages (i.e. Python), where launching a process needs a path and some args.
     ///
-    /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exists, or is not executable, etc.).
-    pub fn launch(&mut self, command: &str, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
+    /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
+    pub async fn launch(&mut self, command: &str, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<Process, Error> {
         let Some(args) = shlex::split(command) else {
             return Err(Error::new(ErrorKind::InvalidInput, format!("failed to parse command string: {command:?}")));
         };
@@ -59,7 +58,7 @@ impl Launcher {
 
         let (command_sender, handle) = if executable.extension() == Some(OsStr::new("wasm")) {
             self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-                .launch(executable, args, event_sender, id)
+                .launch(executable, args, event_sender, id).await
         } else {
             native::launch(executable, args, event_sender, id)
         }?;

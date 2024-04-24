@@ -5,7 +5,7 @@ use std::ops::{Index, IndexMut};
 use std::slice::{Iter, IterMut, SliceIndex};
 use std::vec::IntoIter;
 
-use crossbeam_channel::Sender;
+use tokio::sync::mpsc::Sender;
 
 use crate::process::{Launcher, Process, ProcessEvent};
 
@@ -39,9 +39,9 @@ impl ProcessManager {
     /// or a more complex command, like "python server.py"
     /// Returns [`Ok`] with the new processes id, if the process was launched successfully,
     /// otherwise returns [`Err`] with underlying error.
-    pub fn launch(&mut self, command: &str) -> std::io::Result<usize> {
+    pub async fn launch(&mut self, command: &str) -> std::io::Result<usize> {
         let id = self.processes.len();
-        let process = self.launcher.launch(command, &self.sender, id)?;
+        let process = self.launcher.launch(command, &self.sender, id).await?;
         self.processes.push(process);
         Ok(id)
     }

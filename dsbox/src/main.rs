@@ -8,14 +8,9 @@ use crate::core::error::CoreError;
 use crate::protocol::ProtocolSubscriber;
 use crate::webapp::Webapp;
 
-// mod proc;
-// mod node;
 mod cli;
-// mod select;
 mod timestamp;
 mod webapp;
-// mod pubsub;
-// mod channel;
 mod process;
 mod core;
 mod network;
@@ -28,7 +23,7 @@ const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Trace;
 const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 /// Main entry point for the application. Configures logging and runs the program.
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(LevelFilter::Warn)
@@ -50,7 +45,7 @@ async fn main() {
 /// If necessary, also starts the [`Webapp`].
 /// TODO: configure capturing and writing of a protocol to a file via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
-    let core = Core::new(&args)?;
+    let core = Core::new(&args).await?;
 
     let webapp = if args.interactive {
         Some(Webapp::run(&args, core.remote_control(), core.subscribe_events()))
@@ -60,8 +55,7 @@ async fn run(args: Args) -> Result<(), CoreError> {
         Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)
     } else { None };
 
-    let result = tokio::task::spawn_blocking(|| core.run()).await
-        .unwrap();
+    let result = core.run().await;
 
     if let Some(webapp) = webapp { webapp.shutdown().await; }
     if let Some(shutdown) = recorder {
