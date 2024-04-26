@@ -21,6 +21,7 @@ use axum::routing::get;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tower_http::trace::TraceLayer;
 
 use crate::cli::Args;
 use crate::core::remote_control::RemoteCommand;
@@ -56,8 +57,7 @@ impl Webapp {
 
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
-                log::info!("listening on {listen_address}");
-                log::info!("open http://localhost:{}", listen_address.port());
+                log::info!("listening on http://{listen_address}");
                 let listener = tokio::net::TcpListener::bind(listen_address).await
                     .expect("failed to bind tcp listener");
                 let server = axum::serve(listener, router);
@@ -83,6 +83,9 @@ impl Webapp {
             .route("/", get(serve_static))
             .route("/*path", get(serve_static))
             .route("/socket", get(socket))
+            .layer(TraceLayer::new_for_http()
+                .on_request(())
+                .on_response(()))
     }
 }
 

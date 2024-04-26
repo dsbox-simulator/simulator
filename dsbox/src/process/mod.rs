@@ -73,7 +73,7 @@ impl Launcher {
         let (command_sender, handle) = if ext == Some(OsStr::new("wasm")) {
             self.launch_wasm(executable, &args, event_sender, id).await
         } else if ext == Some(OsStr::new("lua")) {
-            self.launch_lua(executable, &args, event_sender, id).await
+            self.launch_lua(executable, args.clone(), event_sender, id).await
         } else {
             native::launch(executable, &args, event_sender, id)
         }?;
@@ -99,11 +99,11 @@ impl Launcher {
     }
 
     #[cfg(feature = "lua")]
-    async fn launch_lua(&mut self, executable: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+    async fn launch_lua(&mut self, executable: &Path, args: Vec<String>, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
         lua::launch(executable, args, event_sender, id)
     }
     #[cfg(not(feature = "lua"))]
-    async fn launch_lua(&mut self, _: &Path, _: &[String], _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+    async fn launch_lua(&mut self, _: &Path, _: Vec<String>, _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
         panic!("this version of dsbox was built without lua support")
     }
 }

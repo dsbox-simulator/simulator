@@ -23,7 +23,7 @@ const EventsTable: React.FC<{ events: Event[] }> = ({events}) => {
         {events.map(event =>
             <tr key={event.timestamp.logical}>
                 <td>{event.timestamp.logical}</td>
-                <td>{event.timestamp.physical.toISOString()}</td>
+                <td>{new Date(event.timestamp.physical).toISOString()}</td>
                 <td>{event.data.type}</td>
                 <td>{JSON.stringify(event.data, removeType)}</td>
             </tr>)}

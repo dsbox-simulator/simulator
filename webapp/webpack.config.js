@@ -3,15 +3,17 @@ const autoprefixer = require('autoprefixer');
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 
 module.exports = (env) => {
+    let profile = env.profile || "debug";
+    let target_dir = path.resolve(__dirname, `target/${profile}`);
     let webpack_config = {
-        mode: env.profile === 'release' ? 'production' : 'development',
+        mode: profile === 'release' ? 'production' : 'development',
         entry: './src/ts/index.tsx',
         plugins: [
             new HtmlWebpackPlugin({ template: './src/index.html' })
         ],
         output: {
             filename: 'app.js',
-            path: path.resolve(__dirname, 'dist'),
+            path: target_dir,
             library: 'App',
         },
         resolve: {
@@ -56,7 +58,7 @@ module.exports = (env) => {
         },
     };
 
-    if (env.profile !== 'release') {
+    if (profile !== 'release') {
         webpack_config.devtool = 'source-map';
     }
 

@@ -66,6 +66,7 @@ pub struct Core {
 }
 
 /// The execution state for a [`Core`]
+#[derive(Copy, Clone, Eq, PartialEq)]
 enum CoreState {
     /// The [`Core`] is running normally.
     Running,

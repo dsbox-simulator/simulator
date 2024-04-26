@@ -9,7 +9,7 @@ use mlua::{Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
+use tokio::sync::oneshot::Receiver;
 
 use crate::process::command::ProcessCommand;
 use crate::process::event::{ProcessEvent, ProcessEventKind};
@@ -27,7 +27,7 @@ struct LuaAppData {
 }
 
 /// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
-pub(super) fn launch(file: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+pub(super) fn launch(file: &Path, args: Vec<String>, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
     log::trace!("launching lua node `{}`, args: {args:?}", file.display());
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let app_data = LuaAppData {
@@ -53,11 +53,18 @@ pub(super) fn launch(file: &Path, args: &[String], event_sender: &Sender<Process
 }
 
 // runs the given lua script a separate thread, because we cannot pre-emptively interrupt them
-fn launch_lua(file: PathBuf, args: &[String], app_data: LuaAppData) -> JoinHandle<mlua::Result<i32>> {
-    let lua = setup_lua(args, app_data)
-        .expect("failed to setup lua");
-
-    tokio::task::spawn_blocking(move || tokio::runtime::Handle::current().block_on(run_lua(lua, file)))
+fn launch_lua(file: PathBuf, args: Vec<String>, app_data: LuaAppData) -> Receiver<mlua::Result<i32>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let rt = tokio::runtime::Handle::current();
+    std::thread::Builder::new()
+        .name(format!("{}", file.display()))
+        .spawn(move || {
+            let lua = setup_lua(&args, app_data)
+                .expect("failed to setup lua");
+            let result = rt.block_on(run_lua(lua, file));
+            tx.send(result).unwrap();
+        }).unwrap();
+    rx
 }
 
 async fn run_lua(lua: Lua, file: PathBuf) -> mlua::Result<i32> {
@@ -81,7 +88,7 @@ fn setup_lua(args: &[String], app_data: LuaAppData) -> mlua::Result<Lua> {
     lua.globals().set("args", args_table)?;
     lua.globals().set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
     lua.globals().set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
-    lua.globals().set("recv_iter", lua.create_async_function(LuaAppData::lua_recv_iter)?)?;
+    lua.globals().set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
     lua.globals().set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
     lua.globals().set("sleep", lua.create_async_function(sleep)?)?;
     let message_class = lua.create_table()?;
@@ -131,7 +138,7 @@ impl LuaAppData {
 
     /// waits for a single message to be received by the core with an optional timeout given in seconds
     /// if no message is available `nil` is returned.
-    async fn lua_recv_iter<'lua>(lua: &'lua Lua, _: ()) -> mlua::Result<Option<Value<'lua>>> {
+    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Option<Value>> {
         return lua.globals().get("recv");
     }
 
@@ -175,7 +182,7 @@ impl LuaAppData {
             tokio::time::timeout(timeout, receiver.recv())
                 .await.ok().flatten()
         } else {
-            tokio::task::block_in_place(|| receiver.blocking_recv())
+            receiver.recv().await
         }
     }
 }
@@ -198,7 +205,7 @@ fn message_new<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, Value<'l
 fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
     let (message, r#type, rest) = params;
     let message_class = if let Some(metatable) = message.get_metatable() {
-        metatable
+        metatable.get("__index")?
     } else { lua.create_table()? };
     let new_message = message_new(lua, (message_class, message.get("dest")?, message.get("src")?, r#type, MultiValue::new()))?;
     let body: Table = new_message.get("body")?;

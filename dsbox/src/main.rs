@@ -3,35 +3,38 @@
 use clap::Parser;
 use log::LevelFilter;
 use tokio::select;
+use tokio::sync::mpsc::Sender;
 
 use crate::cli::Args;
 use crate::core::Core;
 use crate::core::error::CoreError;
+use crate::core::remote_control::RemoteCommand;
 use crate::protocol::ProtocolSubscriber;
-use crate::webapp::Webapp;
 
 mod cli;
 mod timestamp;
+#[cfg(feature = "webapp")]
 mod webapp;
 mod process;
 mod core;
 mod network;
 mod protocol;
 
-#[cfg(debug_assertions)]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Trace;
-
-#[cfg(not(debug_assertions))]
-const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::Info;
-
 /// Main entry point for the application. Configures logging and runs the program.
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    simple_logger::SimpleLogger::new()
-        .with_level(LevelFilter::Warn)
-        .with_module_level("dsbox", DEFAULT_LOG_LEVEL)
-        .with_module_level("axum", LevelFilter::Trace)
-        .init()
+    let mut logger = simple_logger::SimpleLogger::new()
+        .with_level(LevelFilter::Warn);
+
+    if cfg!(debug_assertions) {
+        logger = logger.with_module_level("dsbox", LevelFilter::Trace)
+            .with_module_level("tower_http", LevelFilter::Debug)
+            .with_module_level("axum", LevelFilter::Debug);
+    } else {
+        logger = logger.with_module_level("dsbox", LevelFilter::Info);
+    }
+
+    logger.init()
         .expect("failed to set logger");
 
     let args = Args::parse();
@@ -50,7 +53,7 @@ async fn run(args: Args) -> Result<(), CoreError> {
     let core = Core::new(&args).await?;
 
     let webapp = if args.interactive {
-        Some(Webapp::run(&args, core.remote_control(), core.subscribe_events()))
+        Some(run_webapp(&args, core.remote_control(), core.subscribe_events()))
     } else { None };
 
     let recorder = if let Some(filename) = args.save_protocol {
@@ -59,14 +62,15 @@ async fn run(args: Args) -> Result<(), CoreError> {
 
     let result = core.run().await;
 
-    if let Some(webapp) = webapp { webapp.shutdown().await; }
+    if let Some(webapp) = webapp { shutdown_webapp(webapp).await; }
+
     if let Some(shutdown) = recorder {
         shutdown.send(()).await.ok();
     }
     result
 }
 
-async fn spawn_protocol_recorder(mut subscriber: ProtocolSubscriber, output_file: String) -> tokio::sync::mpsc::Sender<()> {
+async fn spawn_protocol_recorder(mut subscriber: ProtocolSubscriber, output_file: String) -> Sender<()> {
     use tokio::io::AsyncWriteExt;
     let (shutdown_sender, mut shutdown_receiver) = tokio::sync::mpsc::channel(1);
     let mut file = tokio::fs::OpenOptions::new()
@@ -91,4 +95,24 @@ async fn spawn_protocol_recorder(mut subscriber: ProtocolSubscriber, output_file
         }
     });
     shutdown_sender
+}
+
+#[cfg(feature = "webapp")]
+fn run_webapp(args: &Args, remote_control: Sender<RemoteCommand>, event_subscriber: ProtocolSubscriber) -> webapp::Webapp {
+    webapp::Webapp::run(args, remote_control, event_subscriber)
+}
+
+#[cfg(not(feature = "webapp"))]
+fn run_webapp(_: &Args, _: Sender<RemoteCommand>, _: ProtocolSubscriber) -> () {
+    panic!("this version of dsbox was built without webapp support")
+}
+
+#[cfg(feature = "webapp")]
+async fn shutdown_webapp(webapp: webapp::Webapp) {
+    webapp.shutdown().await;
+}
+
+#[cfg(not(feature = "webapp"))]
+async fn shutdown_webapp(_: ()) {
+    panic!("this version of dsbox was built without webapp support")
 }

@@ -2,7 +2,7 @@ use std::io;
 
 include!(concat!(env!("OUT_DIR"), '/', "embedded_files.rs"));
 
-#[cfg(not(debug_assertions))]
+#[cfg(feature = "embedded_webapp")]
 #[derive(Copy, Clone)]
 pub struct EmbeddedFile {
     pub data: &'static [u8],
@@ -10,17 +10,17 @@ pub struct EmbeddedFile {
     pub compressed: bool,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(not(feature = "embedded_webapp"))]
 pub struct EmbeddedFile {
     pub data: Vec<u8>,
     pub mime_type: String,
     pub compressed: bool,
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(feature = "embedded_webapp")]
 pub async fn lookup(file: &str) -> io::Result<Option<EmbeddedFile>> { Ok(EMBEDDED_FILES.get(file).copied()) }
 
-#[cfg(debug_assertions)]
+#[cfg(not(feature = "embedded_webapp"))]
 pub async fn lookup(file: &str) -> io::Result<Option<EmbeddedFile>> {
     use std::path::Path;
     use tokio::io::AsyncReadExt;

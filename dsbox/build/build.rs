@@ -1,23 +1,27 @@
-use std::{env, io};
+use std::env;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use flate2::Compression;
-
+#[cfg(feature = "embedded_webapp")]
 mod files;
 
 fn main() {
     let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("..").canonicalize().unwrap();
-    let webapp_root = workspace_dir.join("webapp/dist");
-    if env::var("PROFILE").unwrap() == "release" {
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let mut webapp_root = workspace_dir;
+    webapp_root.push("webapp");
+    webapp_root.push("target");
+    webapp_root.push(profile);
+    if cfg!(feature = "embedded_webapp") {
         embed_files(webapp_root);
     } else {
         fetch_local_files(webapp_root);
     }
 }
 
+#[cfg(feature = "embedded_webapp")]
 fn embed_files(root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_files.rs");
@@ -27,10 +31,10 @@ fn embed_files(root: PathBuf) {
     let mut file_counter = 0;
     for path in files::collect_files(&root).unwrap() {
         let input_file = File::open(&path).unwrap();
-        let mut reader = flate2::read::GzEncoder::new(input_file, Compression::default());
+        let mut reader = flate2::read::GzEncoder::new(input_file, flate2::Compression::default());
         let filename = format!("{file_counter:>06}-{}.gz", path.file_name().unwrap().to_string_lossy());
         let mut writer = File::create(Path::new(&out_dir).join(&filename)).unwrap();
-        io::copy(&mut reader, &mut writer).unwrap();
+        std::io::copy(&mut reader, &mut writer).unwrap();
         let include_bytes = format!("include_bytes!(concat!(env!(\"OUT_DIR\"), '{}', {filename:?}))", std::path::MAIN_SEPARATOR);
         let path_key = format!("{}", path.strip_prefix(&root).unwrap().display());
         map.entry(path_key, &format!("EmbeddedFile {{\
@@ -47,6 +51,9 @@ fn embed_files(root: PathBuf) {
         map.build()
     ).unwrap();
 }
+
+#[cfg(not(feature = "embedded_webapp"))]
+fn embed_files(_: PathBuf) {}
 
 fn fetch_local_files(root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();

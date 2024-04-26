@@ -66,6 +66,7 @@ impl ProtocolSubscriber {
 
     /// Creates a new [`ProtocolSubscriber`] that will receive [`Event`]s published through the same [`Protocol`],
     /// but will also (re-)receive all past [`Event`]s.
+    #[cfg_attr(not(feature = "webapp"), allow(unused))]
     pub fn resubscribe(&self) -> Self {
         Self {
             inner: self.inner.clone(),

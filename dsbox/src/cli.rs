@@ -16,7 +16,7 @@ pub struct Args {
     pub interactive: bool,
 
     /// listen-address for the webapp
-    #[clap(default_value = "0.0.0.0")]
+    #[clap(default_value = "127.0.0.1")]
     pub listen_address: String,
 
     /// listen-port for the webapp

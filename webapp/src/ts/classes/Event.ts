@@ -1,6 +1,6 @@
 import Timestamp from './Timestamp';
 import Message from './Message';
-import {JsonProperty, Serializable} from "ts-jackson";
+import {JsonProperty, Serializable} from 'ts-jackson';
 
 type EventData = Setup | SendMessage | DeliverMessage | NodeDisconnected | NodeLaunched | Log;
 

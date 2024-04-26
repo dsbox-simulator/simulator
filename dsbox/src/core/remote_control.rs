@@ -1,6 +1,7 @@
 //! Commands used to control the execution of the simulation
 
 /// A command for the [`Core`](crate::core::Core) to control its execution
+#[cfg_attr(not(feature = "webapp"), allow(unused))]
 pub enum RemoteCommand {
     /// Pauses the delivery of [`Message`](libproto::Message)s in the [`Core`](crate::core::Core).
     Pause,

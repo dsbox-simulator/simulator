@@ -22,8 +22,9 @@ local num_tokens = 0
 local function do_some_work()
     sleep(1 + math.random())
     if num_tokens > 0 then
-    	local next_server = handoff_sequence:next()
+        local next_server = handoff_sequence:next()
     	Message:new(own_name, next_server, "token"):send()
+    	num_tokens = num_tokens - 1
     end
 end
 

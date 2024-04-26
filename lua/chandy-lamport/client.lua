@@ -40,5 +40,5 @@ for _, server in ipairs(server_names) do
 end
 
 while true do
-
+    sleep(10)
 end

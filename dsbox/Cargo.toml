@@ -20,13 +20,14 @@ shlex = "1.3.0"
 
 tokio = { version = "1.37.0", features = ["full"] }
 
-axum = { version = "0.7.5", features = ["ws"] }
-phf = { version = "0.11.2", default-features = false }
-flate2 = "1.0.28"
-mime_guess = "2.0.4"
-
 regex = "1.10.4"
 chrono = { version = "0.4", features = ["serde"] }
+
+axum = { version = "0.7.5", features = ["ws"], optional = true}
+tower-http = { version = "0.5.2", features = ["trace"], optional = true}
+phf = { version = "0.11.2", default-features = false , optional = true}
+flate2 = { version = "1.0.28" , optional = true}
+mime_guess = { version = "2.0.4" , optional = true}
 
 mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize"], optional = true }
 
@@ -36,11 +37,13 @@ wasi-common = { version = "20", features = ["tokio"], optional = true }
 wiggle = { version = "20", optional = true }
 
 [build-dependencies]
-phf_codegen = "0.11.2"
-flate2 = "1.0.28"
-mime_guess = "2.0.4"
+phf_codegen = { version = "0.11.2" , optional = true}
+flate2 = { version = "1.0.28" , optional = true}
+mime_guess = { version = "2.0.4" , optional = true}
 
 [features]
 lua = ["dep:mlua"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasi-common", "dep:wiggle"]
-default = ["lua", "wasm"]
+webapp = ["dep:axum", "dep:tower-http", "dep:phf", "dep:flate2", "dep:mime_guess", "dep:phf_codegen"]
+embedded_webapp = ["webapp"]
+default = ["lua", "wasm", "webapp"]
