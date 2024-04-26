@@ -147,6 +147,70 @@ For example:
 ```
 Servers should not reply to this message. After that, they can start communications.
 
+### Lua support
+By default, `dsbox` builds with Lua 5.4 support. Nodes can be implemented as Lua scripts, and are run directly by the simulator.
+The simluator provides the lua script with a couple of functions and a `Message` class for convenience. These are imported 
+into global scope before starting a lua script, and look roughly like this:
+```lua
+--- a table (array) of arguments passed to the script on the commanline
+-- internally dsbox used the `shlex` crate to split commands into their executable and argumetns
+-- so when dsbox is invoke with e.g. "script.lua arg1, 'args 2'" then args would {"arg1", "args 2"}
+args = {--[[...]]}
+
+--- sends a message
+-- The message must follow the same structure as the above described JSON Objects, but is passed here as a Lua table
+-- use the provided `Message` class to conviniently create well-formed messages
+-- @param message the message to be sent.
+-- @return `true` if the message was successfully sent (which should always be the case)   
+function send(message)
+end
+
+--- receives a message
+-- if given, waits for the specified timeout in seconds (can be a float) and returns `nil` if no message is received in that time
+-- @param timeout the timeout (in seconds) to wait for a message. Can be `nil` or ommited to wait indefinitely
+-- @return the received message or `nil` if not message was received
+function recv(timeout)
+end
+
+--- receives messages as an iterator that can be used in a for-loop (without any timeout)
+-- @return an iterator of received messages
+function recv_iter()
+end
+
+--- sleeps the given number of seconds (can be a float)
+function sleep(timeout)
+end
+
+--- takes any nunmber of arguments, converts them to a string and sends them to the core as a log message (delimited by a single space)
+--- tables are attempt to be converted to a JSON representation, and if successfull, they are logged as such. Otherwise the default fallback is to log them as "table: 0xabcdefg".
+--- e.g. a call to `log("got", {key="value"})` would send the log message 'got {"key": "value"}' to the core
+function log(...)
+end
+
+--- a class for coventiently creating/replying to and sending messages 
+Message = {}
+
+--- creates a new Message
+-- @param src the source of the message (required, must be this nodes name)
+-- @param dest the destination of th message (required)
+-- @param type the type of the message (required)
+-- @param body a table to values to be stored in the messages body, in addition to the type (optional)
+function Message:new(src, dest, type, body)
+end
+
+--- sends the message
+-- equivalent to `send(message)`
+function Message:send()
+end
+
+--- creates a new message as a reply to the given message
+-- this new message has the correct source and destination set, as well as the in_reply_to field 
+-- @param type the type of the reply (required, same as in `Message:new`)
+-- @param body a table of values to be stored in the message body (optional, same as in `Message:new`)
+function Message:reply(type, body)
+end
+```
+
 ### Python module
 In the `python` directory resides a `pynode` module which contains some convenience code to implement servers or clients.
 The `Message` and `MessageBody` can be used to serialize/deserialize messages to and from json strings. Additionally

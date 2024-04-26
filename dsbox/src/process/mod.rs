@@ -1,4 +1,4 @@
-//! Transparent handling of processes, both native and compiled to Webassembly.
+//! Transparent handling of processes, both native, compiled to Webassembly and in the form of a lua script.
 
 use std::ffi::OsStr;
 use std::io::{Error, ErrorKind};
@@ -9,18 +9,24 @@ use tokio::sync::mpsc::{Sender, UnboundedSender};
 pub use crate::process::command::ProcessCommand;
 pub use crate::process::event::{ProcessEvent, ProcessEventKind};
 use crate::process::handle::Handle;
+#[cfg(feature = "wasm")]
 use crate::process::wasm::WasmLauncher;
 
 mod native;
+#[cfg(feature = "wasm")]
 mod wasm;
+
+#[cfg(feature = "lua")]
+mod lua;
 mod handle;
 mod event;
 mod command;
 
-/// Used to launch new processes. No state is necessary for native processes,
+/// Used to launch new processes. No state is necessary for native processes or lua scripts,
 /// but for Webassembly it is useful to have some persistent state between launching processes.
 pub struct Launcher {
     /// Some state used for launching Webassembly processes, initialized as needed.
+    #[cfg(feature = "wasm")]
     wasm_launcher: Option<WasmLauncher>,
 }
 
@@ -46,13 +52,15 @@ pub struct Process {
 impl Launcher {
     /// Creates a new [`Launcher`] ready to launch processes.
     pub fn new() -> Self {
-        Self { wasm_launcher: None }
+        Self { #[cfg(feature = "wasm")]wasm_launcher: None }
     }
 
     /// launches a new process from the given `path`. The process is passed the `event_sender` so that it can send [`ProcessEvent`]s to the core.
     /// It is also passed its own unique id, so that [`ProcessEvent`]s it sends can be associated with the process (since all [`ProcessEvent`]s
     /// from all processes are sent via a single channel).
-    /// If `path` points to a Webassembly file (ends in `.wasm`) a Webassembly process is started, otherwise a native process is started.
+    /// If `path` points to a Webassembly file (ends in `.wasm`) a Webassembly process is started,
+    /// if it points to a lua script (ends in `.lua`) that script is loaded and started,
+    /// otherwise a native process is started.
     ///
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
     pub async fn launch(&mut self, command: &str, event_sender: &Sender<ProcessEvent>, id: usize, name: String) -> Result<Process, Error> {
@@ -61,13 +69,15 @@ impl Launcher {
         };
         let path = args.remove(0);
         let executable = Path::new(&path);
-
-        let (command_sender, handle) = if executable.extension() == Some(OsStr::new("wasm")) {
-            self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-                .launch(executable, &args, event_sender, id).await
+        let ext = executable.extension();
+        let (command_sender, handle) = if ext == Some(OsStr::new("wasm")) {
+            self.launch_wasm(executable, &args, event_sender, id).await
+        } else if ext == Some(OsStr::new("lua")) {
+            self.launch_lua(executable, &args, event_sender, id).await
         } else {
             native::launch(executable, &args, event_sender, id)
         }?;
+
         Ok(Process {
             handle,
             command_sender: Some(command_sender),
@@ -76,6 +86,25 @@ impl Launcher {
             path,
             args,
         })
+    }
+
+    #[cfg(feature = "wasm")]
+    async fn launch_wasm(&mut self, executable: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+        self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
+            .launch(executable, &args, event_sender, id).await
+    }
+    #[cfg(not(feature = "wasm"))]
+    async fn launch_wasm(&mut self, _: &Path, _: &[String], _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+        panic!("this version of dsbox was built without wasm support")
+    }
+
+    #[cfg(feature = "lua")]
+    async fn launch_lua(&mut self, executable: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+        lua::launch(executable, args, event_sender, id)
+    }
+    #[cfg(not(feature = "lua"))]
+    async fn launch_lua(&mut self, _: &Path, _: &[String], _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+        panic!("this version of dsbox was built without lua support")
     }
 }
 

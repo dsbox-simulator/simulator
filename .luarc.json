@@ -1,0 +1,10 @@
+{
+    "diagnostics.globals": [
+        "Message",
+        "recv",
+        "log",
+        "send",
+        "recv_iter",
+        "sleep"
+    ]
+}

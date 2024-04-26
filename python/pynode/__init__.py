@@ -4,7 +4,7 @@ from typing import Any, Dict, Generator, Optional
 
 
 class MessageBody:
-    def __init__(self, type: str, msg_id:  Optional[int] = None, in_reply_to:  Optional[int] = None, **kwargs):
+    def __init__(self, type: str, msg_id: Optional[int] = None, in_reply_to: Optional[int] = None, **kwargs):
         self.type = type
         self.msg_id = msg_id
         self.in_reply_to = in_reply_to
@@ -14,7 +14,7 @@ class MessageBody:
 
 class Message:
 
-    def __init__(self, src: str, dest: str, type: str, msg_id:  Optional[int] = None, in_reply_to:  Optional[int] = None,
+    def __init__(self, src: str, dest: str, type: str, msg_id: Optional[int] = None, in_reply_to: Optional[int] = None,
                  **kwargs):
         self.src: str = src
         self.dest: str = dest
