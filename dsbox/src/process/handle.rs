@@ -6,6 +6,8 @@
 //!   and sends them to the [`Core`](crate::core::Core).
 //! - one waits for lines on the processes `stderr` and sends them to the [`Core`](crate::core::Core) as log lines.
 //! - one just waits for the process to exit, and sends a notification to the [`Core`](crate::core::Core)
+//!
+//! For lua scripts, a single [`std::thread::Thread`] is spawned that runs the lua code
 
 use std::future::Future;
 
@@ -31,12 +33,12 @@ pub struct Handle {
 }
 
 impl Handle {
-    /// Creates a new [`Handle`]
+    /// Creates a new [`Handle`] for a process
     /// `stdin`, `stdout` and `stderr` are generics, because they are of a different type for native
     /// and Webassembly processes. Since they are only passed off to different tasks, they do
     /// not show up in the Signature of [`Handle`].
     /// `wait_child` is as Future that resolves when the child process/wasm process finishes
-    pub fn new(
+    pub fn for_process(
         id: usize,
         event_sender: &Sender<ProcessEvent>,
         stdin: impl AsyncWrite + Unpin + Send + 'static,
@@ -67,6 +69,20 @@ impl Handle {
         Ok((command_sender, Self { reader, writer, log, child }))
     }
 
+    /// Creates a new [`Handle`] fo a lua thread
+    /// `wait_child` is as Future that resolves when the lua thread finishes
+    /// for now the tasks that are usually used for monitoring I/O in native/wasm processes
+    /// are just dummies for lua nodes, because they aren't needed.
+    #[cfg(feature = "lua")]
+    pub fn for_lua(id: usize, sender: Sender<ProcessEvent>, wait_child: impl Future<Output=i32> + Send + 'static) -> Self {
+        Self {
+            reader: tokio::task::spawn(async {}),
+            writer: tokio::task::spawn(async {}),
+            log: tokio::task::spawn(async {}),
+            child: tokio::task::spawn(async move { child_task(id, wait_child, sender).await }),
+        }
+    }
+
     /// Joins all tasks
     #[allow(unused)]
     pub async fn terminate(self) {
@@ -82,7 +98,7 @@ impl Handle {
     }
 }
 
-/// Waits for [`ProcessCommand`]s and writes them to the given [`Write`]r
+/// Waits for [`ProcessCommand`]s and writes them to the given [`AsyncWrite`]r
 async fn writer_task(stdin: impl AsyncWrite + Unpin, mut receiver: UnboundedReceiver<ProcessCommand>) {
     let mut writer = BufWriter::new(stdin);
     loop {
@@ -103,7 +119,7 @@ async fn writer_task(stdin: impl AsyncWrite + Unpin, mut receiver: UnboundedRece
     }
 }
 
-/// Reads lines from the given [`Read`]er and attempts to deserialize them into [`Message`]s to send
+/// Reads lines from the given [`AsyncRead`]er and attempts to deserialize them into [`Message`]s to send
 /// them to the [`Core`](crate::core::Core).
 async fn reader_task(source_id: usize, stdout: impl AsyncRead + Unpin, sender: Sender<ProcessEvent>) {
     let mut line = String::new();
@@ -117,7 +133,10 @@ async fn reader_task(source_id: usize, stdout: impl AsyncRead + Unpin, sender: S
         }
         let send_result = match Message::from_json(&line) {
             Ok(message) => sender.send(ProcessEvent::new(source_id, ProcessEventKind::Message(message))).await,
-            Err(error) => sender.send(ProcessEvent::new(source_id, ProcessEventKind::SerializeError(line.clone(), error))).await
+            Err(error) => sender.send(ProcessEvent::new(source_id, ProcessEventKind::SerializeError {
+                raw_message: line.clone(),
+                error: error.to_string(),
+            })).await
         };
         if send_result.is_err() { break Ok(()); }
     };
@@ -125,7 +144,7 @@ async fn reader_task(source_id: usize, stdout: impl AsyncRead + Unpin, sender: S
     warn_error(result);
 }
 
-/// Reads lines from the given [`Read`]er and sends them as log lines to the [`Core`](crate::core::Core)
+/// Reads lines from the given [`AsyncRead`]er and sends them as log lines to the [`Core`](crate::core::Core)
 async fn log_task(source_id: usize, stderr: impl AsyncRead + Unpin, sender: Sender<ProcessEvent>) {
     let mut line = String::new();
     let mut reader = BufReader::new(stderr);

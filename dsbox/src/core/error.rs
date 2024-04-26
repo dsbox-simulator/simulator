@@ -25,7 +25,7 @@ pub enum CoreError {
     /// An error occurred trying to launch a process.
     LaunchFailed(String, std::io::Error),
     /// A process wrote some text to its standard output, that could not be parsed into a [`Message`].
-    SerializeError(String, String, serde_json::Error),
+    SerializeError(String, String, String),
 }
 
 /// Gives a reason why a [`Message`] could not be dispatched

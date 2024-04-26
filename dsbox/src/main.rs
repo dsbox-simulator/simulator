@@ -1,3 +1,5 @@
+#![doc = include_str!("../../Readme.md")]
+
 use clap::Parser;
 use log::LevelFilter;
 use tokio::select;

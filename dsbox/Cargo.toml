@@ -28,12 +28,19 @@ mime_guess = "2.0.4"
 regex = "1.10.4"
 chrono = { version = "0.4", features = ["serde"] }
 
-wasmtime = { version = "20" }
-wasmtime-wasi = { version = "20"}
-wasi-common = { version = "20", features = ["tokio"] }
-wiggle = { version = "20" }
+mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize"], optional = true }
+
+wasmtime = { version = "20", optional = true }
+wasmtime-wasi = { version = "20", optional = true }
+wasi-common = { version = "20", features = ["tokio"], optional = true }
+wiggle = { version = "20", optional = true }
 
 [build-dependencies]
 phf_codegen = "0.11.2"
 flate2 = "1.0.28"
 mime_guess = "2.0.4"
+
+[features]
+lua = ["dep:mlua"]
+wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasi-common", "dep:wiggle"]
+default = ["lua", "wasm"]

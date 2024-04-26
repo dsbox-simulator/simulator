@@ -21,7 +21,7 @@ pub enum ProcessEventKind {
     /// The process exited
     Exited(i32),
     /// Something was written to the processes `stdout` that could not be deserialized into a [`Message`]
-    SerializeError(String, serde_json::Error),
+    SerializeError { raw_message: String, error: String },
 }
 
 impl ProcessEvent {

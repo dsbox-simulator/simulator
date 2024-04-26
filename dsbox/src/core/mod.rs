@@ -182,8 +182,8 @@ impl Core {
                 }
                 Ok(true)
             }
-            ProcessEventKind::SerializeError(raw_message, err) => {
-                Err(CoreError::SerializeError(self.processes[process_event.source_id].path().to_string(), raw_message, err))
+            ProcessEventKind::SerializeError { raw_message, error } => {
+                Err(CoreError::SerializeError(self.processes[process_event.source_id].path().to_string(), raw_message, error))
             }
         }
     }

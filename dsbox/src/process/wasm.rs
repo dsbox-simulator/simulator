@@ -59,12 +59,12 @@ impl WasmLauncher {
             Ok(ret) => ret,
             Err(e) => return Err(into_io_error(e)),
         };
-        Handle::new(id, event_sender, stdin, stdout, stderr, start_fn)
+        Handle::for_process(id, event_sender, stdin, stdout, stderr, start_fn)
     }
 
     /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
     async fn do_launch(&mut self, path: &Path, args: &[String]) -> Result<(DuplexStream, DuplexStream, DuplexStream, impl Future<Output=i32>), wasmtime::Error> {
-        log::trace!("launching wasm file {}, args: {args:?}", path.display());
+        log::trace!("launching wasm node `{}`, args: {args:?}", path.display());
         let (stdin, wasi_stdin) = tokio::io::duplex(1024);
         let (wasi_stdout, stdout) = tokio::io::duplex(1024);
         let (wasi_stderr, stderr) = tokio::io::duplex(1024);
