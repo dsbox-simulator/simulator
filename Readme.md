@@ -149,8 +149,7 @@ Servers should not reply to this message. After that, they can start communicati
 
 ### Lua support
 By default, `dsbox` builds with Lua 5.4 support. Nodes can be implemented as Lua scripts, and are run directly by the simulator.
-The simluator provides the lua script with a couple of functions and a `Message` class for convenience. These are imported 
-into global scope before starting a lua script, and look roughly like this:
+The simulator provides the lua script with a preloaded module called "dsbox". This module looks roughly like this:
 ```lua
 --- a table (array) of arguments passed to the script on the commanline
 -- internally dsbox used the `shlex` crate to split commands into their executable and argumetns
@@ -210,9 +209,17 @@ end
 function Message:reply(type, body)
 end
 ```
+A simple "echo" server in lua would look like this:
+```lua
+local dsbox = require("dsbox")
+assert(dsbox.recv().body.type == "init")
+for message in dsbox.recv_iter() do
+    message:reply("echo_ok", {echo=message.body.echo}):send()
+end
+```
 
 ### Python module
-In the `python` directory resides a `pynode` module which contains some convenience code to implement servers or clients.
+In the `python` directory resides a `dsbox` module which contains some convenience code to implement servers or clients.
 The `Message` and `MessageBody` can be used to serialize/deserialize messages to and from json strings. Additionally
 `Message.recv()` can be used to receive (blocking) a single message and `Message.recv_iter()` can be used to receive 
 any number of messages as an iterable. `Message` also has some properties for e.g. the message id or type, so that
@@ -222,11 +229,12 @@ and if the original message had an id, the `in_reply_to` field set. The `Message
 json to the standard output. Additionally, a `log` function is provided to print logging/debug messages (to standard error)
 which will show up in the cores standard output (and soon in the webapp)
 
-A simple "echo" type server can be implemented in a few lines of python:
+A simple "echo" server can be implemented in a few lines of python:
 ```python
-from pynode import Message
+from .dsbox import Message
 
-assert Message.recv().type == "init"
+init = Message.recv()
+assert init.body.type == "init"
 for message in Message.recv_iter():
     reply = message.reply('echo_ok', echo=message.body.echo)
     reply.send()

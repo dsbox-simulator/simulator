@@ -1,3 +1,5 @@
+local dsbox = require('dsbox');
+
 function table.shuffle(table)
     for i = #table, 2, -1 do
         local j            = math.random(i)
@@ -21,24 +23,24 @@ for i = 1, num_servers do
     server_names[i] = string.format("s%d", i)
 end
 
-Message:new("client", "core", "setup", { clients = { "c0" }, servers = server_names }):send()
-assert(recv().body.type == "setup_ok")
+dsbox.Message:new("client", "core", "setup", { clients = { "c0" }, servers = server_names }):send()
+assert(dsbox.recv().body.type == "setup_ok")
 math.randomseed(12345)
 
-log("creating handoff order")
+dsbox.log("creating handoff order")
 for _, server in ipairs(server_names) do
     local order = table.copy(server_names)
     table.shuffle(order)
-    Message:new("c0", server, "handoff_order", { order = order }):send()
+    dsbox.Message:new("c0", server, "handoff_order", { order = order }):send()
 end
 
-log("distributing tokens")
+dsbox.log("distributing tokens")
 for _, server in ipairs(server_names) do
     for _ = 1, num_tokens / num_servers do
-        Message:new("c0", server, "token"):send()
+        dsbox.Message:new("c0", server, "token"):send()
     end
 end
 
 while true do
-    sleep(10)
+    dsbox.sleep(10)
 end

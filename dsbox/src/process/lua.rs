@@ -5,7 +5,7 @@ use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mlua::{Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
+use mlua::{IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::Mutex;
@@ -59,7 +59,7 @@ fn launch_lua(file: PathBuf, args: Vec<String>, app_data: LuaAppData) -> Receive
     std::thread::Builder::new()
         .name(format!("{}", file.display()))
         .spawn(move || {
-            let lua = setup_lua(&args, app_data)
+            let lua = setup_lua(&file, &args, app_data)
                 .expect("failed to setup lua");
             let result = rt.block_on(run_lua(lua, file));
             tx.send(result).unwrap();
@@ -75,7 +75,7 @@ async fn run_lua(lua: Lua, file: PathBuf) -> mlua::Result<i32> {
 
 /// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
 /// functions, a Message class etc.
-fn setup_lua(args: &[String], app_data: LuaAppData) -> mlua::Result<Lua> {
+fn setup_lua(lua_file: &Path, args: &[String], app_data: LuaAppData) -> mlua::Result<Lua> {
     let lua = Lua::new_with(
         StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::PACKAGE,
         LuaOptions::new(),
@@ -85,17 +85,48 @@ fn setup_lua(args: &[String], app_data: LuaAppData) -> mlua::Result<Lua> {
     for arg in args {
         args_table.push(arg.as_str())?;
     }
-    lua.globals().set("args", args_table)?;
-    lua.globals().set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
-    lua.globals().set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
-    lua.globals().set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
-    lua.globals().set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
-    lua.globals().set("sleep", lua.create_async_function(sleep)?)?;
+    let mod_dsbox = lua.create_table()?;
+
+    mod_dsbox.set("args", args_table)?;
+    mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
+    mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
+    mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
+    mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
+    mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
     let message_class = lua.create_table()?;
     message_class.set("new", lua.create_function(message_new)?)?;
     message_class.set("reply", lua.create_function(message_reply)?)?;
     message_class.set("send", lua.create_async_function(message_send)?)?;
-    lua.globals().set("Message", message_class)?;
+    mod_dsbox.set("Message", message_class)?;
+
+    // for some reason the borrow checker does not like having the local variables `package` and `preload`
+    // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
+    {
+        let package: Table = lua.globals().get("package")?;
+        let loaded: Table = package.get("loaded")?;
+        loaded.set("dsbox", mod_dsbox)?;
+
+        // setup luarocks support
+        let version: String = lua.globals().get("_VERSION")?;
+        let source_path = lua_file.parent().unwrap();
+        let mut package_path1 = source_path.to_path_buf();
+        package_path1.push("lua_modules");
+        package_path1.push("share");
+        package_path1.push("lua");
+        package_path1.push(&version[4..]);
+        package_path1.push("?.lua");
+        let mut package_path2 = source_path.to_path_buf();
+        package_path2.push("lua_modules");
+        package_path2.push("share");
+        package_path2.push("lua");
+        package_path2.push(&version[4..]);
+        package_path2.push("?");
+        package_path2.push("init.lua");
+
+        let path: String = package.get("path")?;
+        let full_path = format!("{};{};{path}", package_path1.display(), package_path2.display());
+        package.set("path", full_path)?;
+    }
 
     Ok(lua)
 }
@@ -128,7 +159,11 @@ impl LuaAppData {
                 let value = lua.to_value(&message)?;
                 if let Some(value) = value.as_table() {
                     let index = lua.create_table()?;
-                    index.set("__index", lua.globals().get::<&str, Value>("Message")?)?;
+                    let message_class: Table = lua.globals().get::<&str, Table>("package")?
+                        .get::<&str, Table>("loaded")?
+                        .get::<&str, Table>("dsbox")?
+                        .get("Message")?;
+                    index.set("__index", message_class)?;
                     value.set_metatable(Some(index));
                 }
                 Ok(Some(value))
@@ -138,8 +173,11 @@ impl LuaAppData {
 
     /// waits for a single message to be received by the core with an optional timeout given in seconds
     /// if no message is available `nil` is returned.
-    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Option<Value>> {
-        return lua.globals().get("recv");
+    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
+        lua.globals().get::<&str, Table>("package")?
+            .get::<&str, Table>("loaded")?
+            .get::<&str, Table>("dsbox")?
+            .get("recv")
     }
 
     async fn lua_log(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
@@ -207,10 +245,11 @@ fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiV
     let message_class = if let Some(metatable) = message.get_metatable() {
         metatable.get("__index")?
     } else { lua.create_table()? };
+    let body: Table = message.get("body")?;
     let new_message = message_new(lua, (message_class, message.get("dest")?, message.get("src")?, r#type, MultiValue::new()))?;
-    let body: Table = new_message.get("body")?;
-    body.set("in_reply_to", message.get::<&str, Value>("id")?)?;
-    merge_into_table(&body, rest)?;
+    let new_body: Table = new_message.get("body")?;
+    new_body.set("in_reply_to", body.get::<&str, Value>("msg_id")?)?;
+    merge_into_table(&new_body, rest)?;
     Ok(new_message)
 }
 
