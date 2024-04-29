@@ -191,6 +191,10 @@ impl LuaAppData {
         Ok(app_data.send_event(ProcessEventKind::Log(message)).await.is_ok())
     }
 
+    // for some reason the IDE considers `Value::Vector` to be a variant of the `Value` enum
+    // but that is only true when the `luau` feature is enabled for `mlua`. So we disable the
+    // inspection here for now.
+    // noinspection RsNonExhaustiveMatch
     fn serialize(value: Value<'_>) -> String {
         match value {
             Value::Nil => "nil".to_string(),
