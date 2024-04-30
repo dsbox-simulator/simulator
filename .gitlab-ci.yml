@@ -1,0 +1,17 @@
+# Official language image. Look for the different tagged releases at:
+# https://hub.docker.com/r/library/rust/tags/
+image: "rust:latest"
+
+before_script:
+  - apt-get update -yqq
+  - apt-get install -yqq --no-install-recommends curl
+  # Install Node Version Manager (NVM) so we can change the node version 
+  - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.36.0/install.sh | bash
+  - ". ~/.nvm/nvm.sh"
+  - nvm --version 
+  - nvm install latest
+  - nvm use latest
+
+build:
+    stage: build
+    script: ./build_release.sh
