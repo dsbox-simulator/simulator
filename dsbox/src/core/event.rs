@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use libproto::Message;
+use crate::core::node::NodeId;
 
 use crate::timestamp::Timestamp;
 
@@ -54,19 +55,19 @@ pub enum EventData {
     /// Emitted after a process exited
     NodeDisconnected {
         /// the id of the process that exited. See [`crate::core::ProcessManager`]
-        id: usize
+        id: NodeId
     },
     /// Emitted after a process is started
     NodeLaunched {
         /// the commandline (executable + arguments) that was used to launch the process
         commandline: String,
         /// the id of the process that started. See [`crate::core::ProcessManager`]
-        id: usize,
+        id: NodeId,
     },
     /// Emitted when a node logs a line
     Log {
         /// the id of the process that logged a line. See [`crate::core::ProcessManager`]
-        id: usize,
+        id: NodeId,
         /// the logged line
         line: String,
     },
@@ -77,7 +78,7 @@ pub enum EventData {
 pub struct NodeInfo {
     pub name: String,
     pub commandline: String,
-    pub id: usize,
+    pub id: NodeId,
 }
 
 
@@ -107,17 +108,17 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_launched(timestamp: Timestamp, id: usize, commandline: String) -> Self {
+    pub fn node_launched(timestamp: Timestamp, id: NodeId, commandline: String) -> Self {
         Self::new(timestamp, EventData::NodeLaunched { id, commandline })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_disconnected(timestamp: Timestamp, id: usize) -> Self {
+    pub fn node_disconnected(timestamp: Timestamp, id: NodeId) -> Self {
         Self::new(timestamp, EventData::NodeDisconnected { id })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
-    pub fn log(timestamp: Timestamp, id: usize, line: String) -> Self {
+    pub fn log(timestamp: Timestamp, id: NodeId, line: String) -> Self {
         Self::new(timestamp, EventData::Log { id, line })
     }
 }

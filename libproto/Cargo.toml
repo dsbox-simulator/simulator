@@ -12,5 +12,6 @@ serde_json = "1"
 chrono = { version = "0.4", optional = true, features = ["serde"] }
 
 [features]
-default = []
+middleware = []
 system_messages = ["dep:chrono"]
+default = ["middleware"]

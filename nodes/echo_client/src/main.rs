@@ -37,7 +37,7 @@ fn test(receiver: &Receiver<Message>, num_servers: usize, num_clients: usize) ->
     Message::new("client", "core", None, Setup {
         clients: client_names,
         servers: server_names.clone(),
-        proxy: None,
+        ..Default::default()
     }).send();
     receiver.recv().unwrap().payload::<SetupOk>().unwrap();
     eprintln!("setup ok!");

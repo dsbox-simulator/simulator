@@ -10,11 +10,14 @@ use crate::Payload;
 /// to be launched as a "proxy" for each server process. Every message from and to that server
 /// will first be delivered to the "proxy", which can then decide what to do with it, and weather
 /// or not it wants to forward the message or consume it.
-#[derive(Payload, Serialize, Deserialize)]
+#[derive(Default, Payload, Serialize, Deserialize)]
 pub struct Setup {
     pub clients: Vec<String>,
     pub servers: Vec<String>,
-    pub proxy: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub middleware_before: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub middleware_after: Vec<String>,
 }
 
 /// Reply to a [`Setup`] message from the core, after initialization completes successfully.
@@ -47,14 +50,4 @@ pub struct MonitorEvent {
 pub enum MonitorEventKind {
     Sent,
     Delivered,
-}
-
-/// when sent from a proxy process to the core, forwards a given message
-/// - if the message was a message sent **to** the server, it will then be delivered to the actual server process
-/// - if the message was a message sent **from** the actual server process, it will be delivered to its destination
-/// when sent from the core to the proxy, it informs the proxy that a new message was either sent
-/// from the server, or should be delivered to the server
-#[derive(Payload, Serialize, Deserialize)]
-pub struct Proxy {
-    pub message: Message,
 }

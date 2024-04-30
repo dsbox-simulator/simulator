@@ -8,14 +8,17 @@ use std::io::stdin;
 
 use serde::{Deserialize, Serialize};
 
-pub use crate::payload::Payload;
 pub use payload_derive::Payload;
+
+pub use crate::payload::Payload;
 
 mod payload;
 pub mod init;
 pub mod echo;
 #[cfg(feature = "system_messages")]
 pub mod system;
+#[cfg(feature = "middleware")]
+pub mod middleware;
 
 
 /// A single message that can be sent between the nodes

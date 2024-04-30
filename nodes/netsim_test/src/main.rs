@@ -11,7 +11,7 @@ use libproto::system::{Setup, SetupOk};
 struct Empty {}
 
 fn main() -> Result<(), Box<dyn Error>> {
-    Message::new("client", "core", None, Setup { clients: vec!["c".to_owned()], servers: vec![], proxy: None }).send();
+    Message::new("client", "core", None, Setup { clients: vec!["c".to_owned()], ..Default::default() }).send();
     Message::recv().unwrap().unwrap().payload::<SetupOk>().unwrap();
 
     const NUM_TRIPS: u32 = 10000;

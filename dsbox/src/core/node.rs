@@ -1,111 +1,142 @@
 use std::cell::RefCell;
+use std::fmt::{Display, Formatter};
+use std::future::Future;
 use std::rc::Rc;
+use std::task::{Context, Poll};
 
-use tokio::select;
+use serde::{Deserialize, Serialize};
 
 use crate::process::{Process, ProcessCommand, ProcessEvent};
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct NodeId(pub usize);
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(transparent)]
+pub struct MiddlewareId(pub usize);
+
 pub struct Node {
-    pub id: usize,
+    pub id: NodeId,
     pub name: String,
     pub is_client: bool,
-    process: Rc<RefCell<Process>>,
-    proxy: Option<Rc<RefCell<Process>>>,
+    process_stack: Vec<Rc<RefCell<Process>>>,
+    primary_index: usize,
 }
 
 impl Node {
     pub fn new(name: String, is_client: bool, process: Process) -> Self {
         Self {
-            id: 0,
+            id: NodeId(0),
             name,
             is_client,
-            process: Rc::new(RefCell::new(process)),
-            proxy: None,
+            process_stack: vec![Rc::new(RefCell::new(process))],
+            primary_index: 0,
         }
     }
 
-    pub fn commandline(&self) -> String {
-        self.process.borrow().commandline()
+    pub fn commandline(&self, middleware_id: MiddlewareId) -> String {
+        self.process_stack[middleware_id.0].borrow().commandline()
     }
 
     pub fn alias(&self, name: String) -> Self {
         Self {
-            id: 0,
+            id: NodeId(0),
             name,
             is_client: self.is_client,
-            process: Rc::clone(&self.process),
-            proxy: self.proxy.clone(),
+            process_stack: Vec::clone(&self.process_stack),
+            primary_index: self.primary_index,
         }
     }
 
     pub fn is_same_process(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.process, &other.process)
+        Rc::ptr_eq(&self.process_stack[self.primary_index], &other.process_stack[other.primary_index])
     }
 
-    pub fn set_proxy(&mut self, proxy: Option<Process>) {
-        self.proxy = proxy.map(RefCell::new).map(Rc::new);
-    }
-    pub fn has_proxy(&self) -> bool {
-        self.proxy.is_some()
+    pub fn push_middleware_before(&mut self, middleware: Process) {
+        self.process_stack.insert(0, Rc::new(RefCell::new(middleware)));
+        self.primary_index += 1;
     }
 
-    pub fn send(&self, command: ProcessCommand) -> (bool, bool) {
-        if let Some(proxy) = &self.proxy {
-            (proxy.borrow().send(command), true)
-        } else {
-            (self.process.borrow().send(command), false)
-        }
+    pub fn push_middleware_after(&mut self, middleware: Process) {
+        self.process_stack.push(Rc::new(RefCell::new(middleware)))
     }
 
-    pub async fn recv(&self) -> (Option<ProcessEvent>, bool) {
-        if let Some(proxy) = &self.proxy {
-            let (mut proxy, mut node) = (proxy.borrow_mut(), self.process.borrow_mut());
-            select! {
-                from_proxy = proxy.recv() => {
-                    (from_proxy, true)
-                }
-                from_node = node.recv() => {
-                    (from_node, false)
-                }
+    pub fn has_middleware(&self, middleware_id: MiddlewareId) -> bool {
+        middleware_id.0 < self.process_stack.len()
+    }
+
+    pub fn send(&self, command: ProcessCommand) -> bool {
+        self.send_to_middleware(command, MiddlewareId(0))
+    }
+
+    pub fn send_to_middleware(&self, command: ProcessCommand, middleware_id: MiddlewareId) -> bool {
+        self.process_stack[middleware_id.0].borrow().send(command)
+    }
+
+    pub fn poll_recv_any(&self, cx: &mut Context<'_>) -> Poll<Option<(ProcessEvent, MiddlewareId)>> {
+        let mut num_closed = 0;
+        for (idx, process) in self.process_stack.iter().enumerate() {
+            let mut borrowed = process.borrow_mut();
+            let pinned = std::pin::pin!(borrowed.recv());
+            match pinned.poll(cx) {
+                Poll::Ready(Some(event)) => return Poll::Ready(Some((event, MiddlewareId(idx)))),
+                Poll::Ready(None) => num_closed += 1,
+                _ => {}
             }
-        } else {
-            (self.process.borrow_mut().recv().await, false)
         }
-    }
-
-    pub fn send_ignore_proxy(&self, command: ProcessCommand) -> bool {
-        self.process.borrow().send(command)
-    }
-
-    pub fn send_proxy(&self, command: ProcessCommand) -> bool {
-        self.proxy.as_ref().unwrap().borrow().send(command)
-    }
-
-    pub async fn recv_ignore_proxy(&self) -> Option<ProcessEvent> {
-        self.process.borrow_mut().recv().await
+        if num_closed < self.process_stack.len() {
+            Poll::Pending
+        } else {
+            Poll::Ready(None)
+        }
     }
 
     pub fn has_finished(&self) -> bool {
-        self.process.borrow_mut().has_finished()
+        self.process_stack.iter().any(|p| p.borrow_mut().has_finished())
     }
 
     pub fn begin_shutdown(&mut self) {
-        if let Some(unique_proc) = Rc::get_mut(&mut self.process) {
-            unique_proc.get_mut().begin_shutdown()
-        }
-        if let Some(unique_proxy) = self.proxy.as_mut().and_then(Rc::get_mut) {
-            unique_proxy.get_mut().begin_shutdown();
+        for process in &mut self.process_stack {
+            if let Some(unique_proc) = Rc::get_mut(process) {
+                unique_proc.get_mut().begin_shutdown()
+            }
         }
     }
 
     pub async fn terminate(self) {
-        if let Some(unique_proc) = Rc::into_inner(self.process) {
-            let proc = RefCell::into_inner(unique_proc);
-            proc.terminate().await
+        for process in self.process_stack {
+            if let Some(unique_proc) = Rc::into_inner(process) {
+                let proc = RefCell::into_inner(unique_proc);
+                proc.terminate().await
+            }
         }
-        if let Some(unique_proxy) = self.proxy.and_then(Rc::into_inner) {
-            let proc = RefCell::into_inner(unique_proxy);
-            proc.terminate().await
-        }
+    }
+}
+
+impl MiddlewareId {
+    pub fn is_top(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn above(self) -> Self {
+        Self(self.0 - 1)
+    }
+
+    pub fn below(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
+impl Display for MiddlewareId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
     }
 }

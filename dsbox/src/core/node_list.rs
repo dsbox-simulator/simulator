@@ -7,7 +7,7 @@ use std::slice::{Iter, IterMut, SliceIndex};
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
 
-use crate::core::node::Node;
+use crate::core::node::{MiddlewareId, Node, NodeId};
 use crate::process::ProcessEvent;
 
 pub struct NodeList {
@@ -28,7 +28,7 @@ impl NodeList {
     }
 
     pub fn push(&mut self, mut node: Node) -> &mut Node {
-        node.id = self.len();
+        node.id = NodeId(self.len());
         self.names.insert(node.name.clone(), self.len());
         self.nodes.push(node);
         self.nodes.last_mut().unwrap()
@@ -66,7 +66,7 @@ impl NodeList {
         }
     }
 
-    pub fn recv_any<'a>(&'a self) -> impl Future<Output=Option<(ProcessEvent, bool, usize)>> + Unpin + 'a {
+    pub fn recv_any<'a>(&'a self) -> impl Future<Output=Option<(ProcessEvent, NodeId, MiddlewareId)>> + Unpin + 'a {
         RecvAny {
             nodes: &self.nodes,
         }
@@ -86,6 +86,20 @@ impl<I> IndexMut<I> for NodeList
     where I: SliceIndex<[Node]> {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         self.nodes.index_mut(index)
+    }
+}
+
+impl Index<NodeId> for NodeList {
+    type Output = Node;
+
+    fn index(&self, index: NodeId) -> &Self::Output {
+        &self.nodes[index.0]
+    }
+}
+
+impl IndexMut<NodeId> for NodeList {
+    fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
+        &mut self.nodes[index.0]
     }
 }
 
@@ -152,15 +166,14 @@ pub struct RecvAny<'a> {
 }
 
 impl<'a> Future for RecvAny<'a> {
-    type Output = Option<(ProcessEvent, bool, usize)>;
+    type Output = Option<(ProcessEvent, NodeId, MiddlewareId)>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut num_closed = 0;
-        for (idx, node) in self.nodes.iter().enumerate() {
-            let pinned = std::pin::pin!(node.recv());
-            match pinned.poll(cx) {
-                Poll::Ready((Some(event), from_proxy)) => return Poll::Ready(Some((event, from_proxy, idx))),
-                Poll::Ready((None, _)) => num_closed += 1,
+        for node in self.nodes.iter() {
+            match node.poll_recv_any(cx) {
+                Poll::Ready(Some((event, middleware_idx))) => return Poll::Ready(Some((event, node.id, middleware_idx))),
+                Poll::Ready(None) => num_closed += 1,
                 _ => {}
             }
         }
