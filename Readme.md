@@ -186,6 +186,13 @@ end
 function log(...)
 end
 
+--- sometimes it is necessary to force a table to be deserialized as an array (e.g. when you want to pass an empty array somewhere)
+--- by default an empty table or a table that has non-integer keys is deserialized as a map. This function overrides
+--- this behaviour. It takes a table as a parameter and returns it, setting the metatable to a special sentinel value
+--- that ensures that the table will be deserialized as an array.
+function array(table)
+end
+
 --- a class for coventiently creating/replying to and sending messages 
 Message = {}
 
@@ -198,16 +205,22 @@ function Message:new(src, dest, type, body)
 end
 
 --- sends the message
--- equivalent to `send(message)`
-function Message:send()
+--  when called without parameters, equivalent to `send(message)`
+--  otherwise it takes the same parameters as `Message:new` in order to create a new message and send it immediately
+function Message:send(...)
 end
 
 --- creates a new message as a reply to the given message
 -- this new message has the correct source and destination set, as well as the in_reply_to field 
 -- @param type the type of the reply (required, same as in `Message:new`)
 -- @param body a table of values to be stored in the message body (optional, same as in `Message:new`)
+function Message:create_reply(type, body)
+end
+
+--- creates a new relpy and sends it immediately. Equivalent to `message:create_reply(type, body):send()`
 function Message:reply(type, body)
 end
+
 ```
 A simple "echo" server in lua would look like this:
 ```lua

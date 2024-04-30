@@ -38,13 +38,13 @@ local sequence = {}
 
 function store_primary(message)
     for i = 2, #all_servers do
-        dsbox.Message:new(own_name, all_servers[i], "update", { value = message.body.value }):send()
+        dsbox.Message:send(own_name, all_servers[i], "update", { value = message.body.value })
     end
     sequence[#sequence + 1] = message.body.value
     for i = 2, #all_servers do
         wait_for(all_servers[i], "ack")
     end
-    message:reply("ack"):send()
+    message:reply("ack")
 end
 function store_secondary(message)
     -- forward to primary
@@ -54,7 +54,7 @@ function store_secondary(message)
 end
 function update(message)
     sequence[#sequence + 1] = message.body.value
-    message:reply("ack"):send()
+    message:reply("ack")
 end
 
 local function run()
@@ -76,7 +76,7 @@ local function run()
             message.body.msg_id = nil
             message:send()
         elseif message.body.type == "load" then
-            message:reply("load_ok", { sequence = sequence }):send()
+            message:reply("load_ok", { sequence = sequence })
         end
     end
 end

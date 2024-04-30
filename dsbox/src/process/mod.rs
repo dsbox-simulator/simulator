@@ -4,11 +4,14 @@ use std::ffi::OsStr;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::error::TryRecvError;
+use tokio::task::JoinHandle;
 
+use crate::cli::Args;
 pub use crate::process::command::ProcessCommand;
-pub use crate::process::event::{ProcessEvent, ProcessEventKind};
-use crate::process::handle::Handle;
+pub use crate::process::event::ProcessEvent;
 #[cfg(feature = "wasm")]
 use crate::process::wasm::WasmLauncher;
 
@@ -18,9 +21,9 @@ mod wasm;
 
 #[cfg(feature = "lua")]
 mod lua;
-mod handle;
 mod event;
 mod command;
+mod io_helper;
 
 /// Used to launch new processes. No state is necessary for native processes or lua scripts,
 /// but for Webassembly it is useful to have some persistent state between launching processes.
@@ -28,31 +31,29 @@ pub struct Launcher {
     /// Some state used for launching Webassembly processes, initialized as needed.
     #[cfg(feature = "wasm")]
     wasm_launcher: Option<WasmLauncher>,
+    #[cfg(feature = "lua")]
+    allow_unsafe: bool,
 }
 
 /// Handle to a running process
 pub struct Process {
-    /// the handle (containing the tasks that monitor the process). See [`Handle`].
-    handle: Handle,
-    /// [`Sender`] to send commands (only deliver [`Message`](libproto::Message)s for now).
-    command_sender: Option<UnboundedSender<ProcessCommand>>,
-    /// unique id of the process in the running [`Core`](crate::core::Core).
-    id: usize,
-
-    /// a name of the process for easier identification in the logs (typically "client" or "server")
-    name: String,
-
-    /// Path to the executable (or Webassembly) file. Used for debugging and log printing.
-    path: String,
-
-    /// args that were passed when launching the process
-    args: Vec<String>,
+    sender: Option<UnboundedSender<ProcessCommand>>,
+    receiver: Receiver<ProcessEvent>,
+    join_handle: JoinHandle<()>,
+    finished: oneshot::Receiver<()>,
+    pub path: String,
+    pub args: Vec<String>,
 }
 
 impl Launcher {
     /// Creates a new [`Launcher`] ready to launch processes.
-    pub fn new() -> Self {
-        Self { #[cfg(feature = "wasm")]wasm_launcher: None }
+    pub fn new(#[allow(unused)]args: &Args) -> Self {
+        Self {
+            #[cfg(feature = "wasm")]
+            wasm_launcher: None,
+            #[cfg(feature = "lua")]
+            allow_unsafe: args.lua_unsafe,
+        }
     }
 
     /// launches a new process from the given `path`. The process is passed the `event_sender` so that it can send [`ProcessEvent`]s to the core.
@@ -63,102 +64,94 @@ impl Launcher {
     /// otherwise a native process is started.
     ///
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
-    pub async fn launch(&mut self, command: &str, event_sender: &Sender<ProcessEvent>, id: usize, name: String) -> Result<Process, Error> {
+    pub async fn launch(&mut self, command: &str, for_client: bool) -> Result<Process, Error> {
+        let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
         let Some(mut args) = shlex::split(command) else {
             return Err(Error::new(ErrorKind::InvalidInput, format!("failed to parse command string: {command:?}")));
         };
         let path = args.remove(0);
         let executable = Path::new(&path);
         let ext = executable.extension();
-        let (command_sender, handle) = if ext == Some(OsStr::new("wasm")) {
-            self.launch_wasm(executable, &args, event_sender, id).await
+        let (join_handle, finished) = if ext == Some(OsStr::new("wasm")) {
+            self.launch_wasm(executable, &args, command_receiver, event_sender).await?
         } else if ext == Some(OsStr::new("lua")) {
-            self.launch_lua(executable, args.clone(), event_sender, id).await
+            self.launch_lua(executable, &args, for_client, command_receiver, event_sender).await?
         } else {
-            native::launch(executable, &args, event_sender, id)
-        }?;
+            native::launch(executable, &args, command_receiver, event_sender)?
+        };
 
         Ok(Process {
-            handle,
-            command_sender: Some(command_sender),
-            id,
-            name,
+            sender: Some(command_sender),
+            receiver: event_receiver,
+            join_handle,
+            finished,
             path,
             args,
         })
     }
 
     #[cfg(feature = "wasm")]
-    async fn launch_wasm(&mut self, executable: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+    async fn launch_wasm(&mut self, path: &Path, args: &[String], command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-            .launch(executable, &args, event_sender, id).await
+            .launch(path, args, command_receiver, event_sender).await
     }
     #[cfg(not(feature = "wasm"))]
-    async fn launch_wasm(&mut self, _: &Path, _: &[String], _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+    async fn launch_wasm(&mut self, _: &Path, _: &[String], _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without wasm support")
     }
 
     #[cfg(feature = "lua")]
-    async fn launch_lua(&mut self, executable: &Path, args: Vec<String>, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
-        lua::launch(executable, args, event_sender, id)
+    async fn launch_lua(&self, path: &Path, args: &[String], for_client: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+        lua::launch(path, args.to_vec(), self.allow_unsafe && for_client, command_receiver, event_sender)
     }
     #[cfg(not(feature = "lua"))]
-    async fn launch_lua(&mut self, _: &Path, _: Vec<String>, _: &Sender<ProcessEvent>, _: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+    async fn launch_lua(&self, _: &Path, _: &[String], _: bool, _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without lua support")
     }
 }
 
 impl Process {
     /// Send a [`ProcessCommand`] to the process.
-    pub fn send(&mut self, value: ProcessCommand) -> bool {
-        if let Some(sender) = &mut self.command_sender {
+    pub fn send(&self, value: ProcessCommand) -> bool {
+        if let Some(sender) = &self.sender {
             sender.send(value).is_ok()
         } else { false }
+    }
+
+    pub async fn recv(&mut self) -> Option<ProcessEvent> {
+        self.receiver.recv().await
     }
 
     /// This drops the `command_sender`, so that threads waiting for [`ProcessCommand`]s from the
     /// [`Core`](crate::core::Core) stop waiting and terminate.
     pub fn begin_shutdown(&mut self) {
-        if self.is_running() {
-            log::trace!("shutting down node {} (process {})", self.id(), self.path());
+        if self.sender.is_some() {
+            log::trace!("beginning shutdown of process `{}`", self.commandline());
         }
-        self.command_sender.take();
+        self.sender.take();
     }
 
     /// This waits for the tasks that handle the processes IO to finish
     pub async fn terminate(mut self) {
         self.begin_shutdown();
-        self.handle.terminate().await
+        self.receiver.close();
+        self.join_handle.await.ok();
     }
 
-    /// Returns `true` if the process is still running
-    pub fn is_running(&self) -> bool {
-        self.handle.is_running()
-    }
-
-    /// Returns the unique id of the process.
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    /// Returns the unique id of the process (typically "client" or "server").
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the path to the executable (or Webassembly) file from which the process was launched
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
-    /// returns the arguments that were passed to the executable (or Webassembly module)
-    pub fn args(&self) -> &[String] {
-        &self.args
+    /// Returns `true` if the process has stopped running and all messages have been received
+    pub fn has_finished(&mut self) -> bool {
+        if !self.receiver.is_empty() { return false; }
+        match self.finished.try_recv() {
+            Err(TryRecvError::Empty) => false,
+            _ => true,
+        }
     }
 
     /// returns the full commandline (path + args) that was used to launch the process
     pub fn commandline(&self) -> String {
-        let parts = std::iter::once(self.path()).chain(self.args.iter().map(|s| s.as_str()));
+        let parts = std::iter::once(self.path.as_str()).chain(self.args.iter().map(|s| s.as_str()));
         shlex::try_join(parts).unwrap()
     }
 }
+

@@ -24,7 +24,7 @@ local function do_some_work()
     dsbox.sleep(1 + math.random())
     if num_tokens > 0 then
         local next_server = handoff_sequence:next()
-    	dsbox.Message:new(own_name, next_server, "token"):send()
+    	dsbox.Message:send(own_name, next_server, "token")
     	num_tokens = num_tokens - 1
     end
 end

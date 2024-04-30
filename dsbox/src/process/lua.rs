@@ -1,25 +1,21 @@
 //! lua scripts can be used as an implementation of a node
 //! todo: more documentation
 
-use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mlua::{IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
-use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
+use mlua::{FromLua, FromLuaMulti, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
+use tokio::sync::{Mutex, oneshot};
+use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::Mutex;
-use tokio::sync::oneshot::Receiver;
+use tokio::task::JoinHandle;
 
 use crate::process::command::ProcessCommand;
-use crate::process::event::{ProcessEvent, ProcessEventKind};
-use crate::process::handle::Handle;
+use crate::process::event::ProcessEvent;
 
 /// gets passed to the lua instance via [`Lua::set_app_data`] and is then available in the
 /// native function implementations
 struct LuaAppData {
-    /// the id of the "process", used when sending events to the core
-    id: usize,
     /// a sender to send events to the core
     sender: Sender<ProcessEvent>,
     /// a receiver to receive commands (currently only messages) from the core
@@ -27,59 +23,51 @@ struct LuaAppData {
 }
 
 /// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
-pub(super) fn launch(file: &Path, args: Vec<String>, event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
+pub(super) fn launch(file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
     log::trace!("launching lua node `{}`, args: {args:?}", file.display());
-    let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let app_data = LuaAppData {
-        id,
-        sender: event_sender.clone(),
+        sender: event_sender,
         receiver: Mutex::new(command_receiver),
     };
 
-    let lua_thread = launch_lua(file.to_path_buf(), args, app_data);
-
-    let finish_handle = {
-        let file = file.to_path_buf();
-        async move {
-            let result = lua_thread.await.unwrap();
-            if let Err(e) = &result {
-                log::warn!("script `{}` exited with an error: {e}", file.display());
-            }
-            result.unwrap_or_else(|_| -1)
-        }
-    };
-
-    Ok((command_sender, Handle::for_lua(id, event_sender.clone(), finish_handle)))
+    let (finished_tx, finished_rx) = oneshot::channel();
+    let lua_thread = launch_lua(file.to_path_buf(), args, allow_os_libs, app_data, finished_tx);
+    Ok((lua_thread, finished_rx))
 }
 
 // runs the given lua script a separate thread, because we cannot pre-emptively interrupt them
-fn launch_lua(file: PathBuf, args: Vec<String>, app_data: LuaAppData) -> Receiver<mlua::Result<i32>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let rt = tokio::runtime::Handle::current();
-    std::thread::Builder::new()
-        .name(format!("{}", file.display()))
-        .spawn(move || {
-            let lua = setup_lua(&file, &args, app_data)
-                .expect("failed to setup lua");
-            let result = rt.block_on(run_lua(lua, file));
-            tx.send(result).unwrap();
-        }).unwrap();
-    rx
+fn launch_lua(file: PathBuf, args: Vec<String>, allow_os_libs: bool, app_data: LuaAppData, finished: oneshot::Sender<()>) -> JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+        let lua = setup_lua(&file, &args, allow_os_libs, app_data)
+            .expect("failed to setup lua");
+        rt.block_on(run_lua(lua, &file));
+        finished.send(()).ok();
+    })
 }
 
-async fn run_lua(lua: Lua, file: PathBuf) -> mlua::Result<i32> {
+async fn run_lua(lua: Lua, file: &Path) {
     let chunk = lua.load(file);
-    let result: Value = chunk.call_async(()).await?;
-    Ok(result.as_i32().unwrap_or(0))
+    let result = chunk.call_async(()).await
+        .map(|v: Value| v.as_i32().unwrap_or(0));
+    if let Err(e) = &result {
+        log::warn!("script `{}` exited with an error: {e}", file.display());
+    }
+    let exit_code = result.as_ref().ok().copied().unwrap_or(-1);
+    let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
+    app_data.sender.send(ProcessEvent::Exited(exit_code)).await.ok();
 }
 
 /// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
 /// functions, a Message class etc.
-fn setup_lua(lua_file: &Path, args: &[String], app_data: LuaAppData) -> mlua::Result<Lua> {
-    let lua = Lua::new_with(
-        StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::PACKAGE,
-        LuaOptions::new(),
-    )?;
+fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: LuaAppData) -> mlua::Result<Lua> {
+    let libs = StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::COROUTINE | StdLib::MATH | StdLib::PACKAGE;
+    let lua = if allow_os_libs {
+        unsafe {
+            Lua::unsafe_new_with(libs | StdLib::OS | StdLib::IO, LuaOptions::new())
+        }
+    } else { Lua::new_with(libs, LuaOptions::new())? };
+    if allow_os_libs {}
     lua.set_app_data(app_data);
     let args_table = lua.create_table()?;
     for arg in args {
@@ -93,9 +81,11 @@ fn setup_lua(lua_file: &Path, args: &[String], app_data: LuaAppData) -> mlua::Re
     mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
     mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
     mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
+    mod_dsbox.set("array", lua.create_function(lua_array)?)?;
     let message_class = lua.create_table()?;
     message_class.set("new", lua.create_function(message_new)?)?;
-    message_class.set("reply", lua.create_function(message_reply)?)?;
+    message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
+    message_class.set("reply", lua.create_async_function(message_reply)?)?;
     message_class.set("send", lua.create_async_function(message_send)?)?;
     mod_dsbox.set("Message", message_class)?;
 
@@ -106,25 +96,25 @@ fn setup_lua(lua_file: &Path, args: &[String], app_data: LuaAppData) -> mlua::Re
         let loaded: Table = package.get("loaded")?;
         loaded.set("dsbox", mod_dsbox)?;
 
+        macro_rules! join_path {
+            ($($p:expr),*) => {{
+                let mut path = PathBuf::new();
+                $(path.push($p);)*
+                path
+            }};
+        }
+
         // setup luarocks support
         let version: String = lua.globals().get("_VERSION")?;
         let source_path = lua_file.parent().unwrap();
-        let mut package_path1 = source_path.to_path_buf();
-        package_path1.push("lua_modules");
-        package_path1.push("share");
-        package_path1.push("lua");
-        package_path1.push(&version[4..]);
-        package_path1.push("?.lua");
-        let mut package_path2 = source_path.to_path_buf();
-        package_path2.push("lua_modules");
-        package_path2.push("share");
-        package_path2.push("lua");
-        package_path2.push(&version[4..]);
-        package_path2.push("?");
-        package_path2.push("init.lua");
+        let local_path = join_path!(source_path, "lua_modules", "share", "lua", &version[4..]);
+        let search1 = join_path!(&local_path, "?.lua");
+        let search2 = join_path!(&local_path, "?", "init.lua");
+
+        // let home_path = join_path!("~")
 
         let path: String = package.get("path")?;
-        let full_path = format!("{};{};{path}", package_path1.display(), package_path2.display());
+        let full_path = format!("{};{};{path}", search1.display(), search2.display());
         package.set("path", full_path)?;
     }
 
@@ -141,11 +131,11 @@ impl LuaAppData {
             Err(e) => {
                 let raw_message = serde_json::to_string(&message)
                     .unwrap();
-                app_data.send_event(ProcessEventKind::SerializeError { raw_message, error: e.to_string() }).await.ok();
+                app_data.send_event(ProcessEvent::SerializeError { raw_message, error: e.to_string() }).await.ok();
                 return Ok(false);
             }
         };
-        Ok(app_data.send_event(ProcessEventKind::Message(message)).await.is_ok())
+        Ok(app_data.send_event(ProcessEvent::Message(message)).await.is_ok())
     }
 
     /// waits for a single message to be received by the core with an optional timeout given in seconds
@@ -159,10 +149,7 @@ impl LuaAppData {
                 let value = lua.to_value(&message)?;
                 if let Some(value) = value.as_table() {
                     let index = lua.create_table()?;
-                    let message_class: Table = lua.globals().get::<&str, Table>("package")?
-                        .get::<&str, Table>("loaded")?
-                        .get::<&str, Table>("dsbox")?
-                        .get("Message")?;
+                    let message_class: Table = get_dsbox(lua, "Message")?;
                     index.set("__index", message_class)?;
                     value.set_metatable(Some(index));
                 }
@@ -174,10 +161,7 @@ impl LuaAppData {
     /// waits for a single message to be received by the core with an optional timeout given in seconds
     /// if no message is available `nil` is returned.
     fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
-        lua.globals().get::<&str, Table>("package")?
-            .get::<&str, Table>("loaded")?
-            .get::<&str, Table>("dsbox")?
-            .get("recv")
+        get_dsbox(lua, "recv")
     }
 
     async fn lua_log(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
@@ -188,7 +172,7 @@ impl LuaAppData {
             if first { first = false; } else { message.push(' '); }
             message.push_str(&Self::serialize(item))
         }
-        Ok(app_data.send_event(ProcessEventKind::Log(message)).await.is_ok())
+        Ok(app_data.send_event(ProcessEvent::Log(message)).await.is_ok())
     }
 
     // for some reason the IDE considers `Value::Vector` to be a variant of the `Value` enum
@@ -214,8 +198,8 @@ impl LuaAppData {
         }
     }
 
-    async fn send_event(&self, kind: ProcessEventKind) -> Result<(), SendError<ProcessEvent>> {
-        self.sender.send(ProcessEvent::new(self.id, kind)).await
+    async fn send_event(&self, event: ProcessEvent) -> Result<(), SendError<ProcessEvent>> {
+        self.sender.send(event).await
     }
 
     async fn recv_command(&self, timeout: Option<Duration>) -> Option<ProcessCommand> {
@@ -244,7 +228,7 @@ fn message_new<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, Value<'l
     Ok(new_message)
 }
 
-fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
+fn message_create_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
     let (message, r#type, rest) = params;
     let message_class = if let Some(metatable) = message.get_metatable() {
         metatable.get("__index")?
@@ -257,9 +241,19 @@ fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiV
     Ok(new_message)
 }
 
-async fn message_send<'lua>(lua: &'lua Lua, params: (Value<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
-    let (message, _rest) = params;
-    LuaAppData::lua_send(lua, message).await
+async fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
+    let message = message_create_reply(lua, params)?;
+    message_send(lua, (message, MultiValue::new())).await
+}
+
+async fn message_send<'lua>(lua: &'lua Lua, params: (Table<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
+    let (mut message, mut rest) = params;
+    let message_class: Table = get_dsbox(lua, "Message")?;
+    if message == message_class {
+        rest.push_front(message_class.into_lua(lua)?);
+        message = message_new(lua, FromLuaMulti::from_lua_multi(rest, lua)?)?;
+    }
+    LuaAppData::lua_send(lua, message.into_lua(lua)?).await
 }
 
 fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {
@@ -276,4 +270,16 @@ async fn sleep<'lua>(_: &'lua Lua, params: (f64, MultiValue<'lua>)) -> mlua::Res
     let (secs, _rest) = params;
     tokio::time::sleep(Duration::from_secs_f64(secs)).await;
     Ok(())
+}
+
+fn lua_array<'lua>(lua: &'lua Lua, table: Table<'lua>) -> mlua::Result<Table<'lua>> {
+    table.set_metatable(Some(lua.array_metatable()));
+    Ok(table)
+}
+
+fn get_dsbox<'lua, K: IntoLua<'lua>, V: FromLua<'lua>>(lua: &'lua Lua, key: K) -> mlua::Result<V> {
+    lua.globals().get::<&str, Table>("package")?
+        .get::<&str, Table>("loaded")?
+        .get::<&str, Table>("dsbox")?
+        .get(key)
 }

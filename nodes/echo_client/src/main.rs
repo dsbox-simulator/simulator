@@ -37,6 +37,7 @@ fn test(receiver: &Receiver<Message>, num_servers: usize, num_clients: usize) ->
     Message::new("client", "core", None, Setup {
         clients: client_names,
         servers: server_names.clone(),
+        proxy: None,
     }).send();
     receiver.recv().unwrap().payload::<SetupOk>().unwrap();
     eprintln!("setup ok!");
@@ -61,7 +62,8 @@ fn test(receiver: &Receiver<Message>, num_servers: usize, num_clients: usize) ->
     }
 
     let mut ok = true;
-    for (_, (_, thread)) in clients {
+    for (_, (sender, thread)) in clients {
+        drop(sender);
         ok &= thread.join().unwrap()
     }
 

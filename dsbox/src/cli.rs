@@ -25,5 +25,10 @@ pub struct Args {
 
     /// after the program finished, write all events (as JSON-lines) to the specified file
     #[clap(long)]
-    pub save_protocol: Option<String>
+    pub save_protocol: Option<String>,
+
+    /// allow lua client scripts to access the os library and load C modules?
+    #[cfg(feature = "lua")]
+    #[clap(long, default_value_t = false)]
+    pub lua_unsafe: bool,
 }

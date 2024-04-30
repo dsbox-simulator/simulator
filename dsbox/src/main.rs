@@ -38,10 +38,10 @@ async fn main() {
         .expect("failed to set logger");
 
     let args = Args::parse();
-
     if let Err(e) = run(args).await {
         log::error!("{e}")
     }
+
 
     log::logger().flush();
 }
@@ -69,6 +69,7 @@ async fn run(args: Args) -> Result<(), CoreError> {
     }
     result
 }
+
 
 async fn spawn_protocol_recorder(mut subscriber: ProtocolSubscriber, output_file: String) -> Sender<()> {
     use tokio::io::AsyncWriteExt;

@@ -16,28 +16,33 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
+use std::slice::SliceIndex;
+
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::{Duration, Instant};
 
 use libproto::{Message, Payload};
 use libproto::init::Init;
-use libproto::system::{BeginMonitor, MonitorEvent, MonitorEventKind, Setup, SetupOk};
+use libproto::system::{BeginMonitor, MonitorEvent, MonitorEventKind, Proxy, Setup, SetupOk};
+use node::Node;
 
 use crate::cli::Args;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::{Event, NodeInfo};
 use crate::core::monitor::MonitorSession;
-use crate::core::process_manager::ProcessManager;
+use crate::core::node_list::NodeList;
 use crate::core::remote_control::RemoteCommand;
 use crate::network::Network;
-use crate::process::{Process, ProcessCommand, ProcessEvent, ProcessEventKind};
+use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::protocol::{Protocol, ProtocolSubscriber};
 use crate::timestamp::Timestamp;
 
-mod process_manager;
-pub mod error;
-pub mod remote_control;
 mod monitor;
+mod node_list;
+mod node;
+pub mod error;
 pub mod event;
+pub mod remote_control;
 
 /// The core of the simulation
 ///
@@ -45,10 +50,10 @@ pub mod event;
 /// by collecting [`ProcessEvent`]s from processes, delivering [`Message`]s and listening for
 /// remote control commands.
 pub struct Core {
-    /// Manages all processes that are participating in the simulation
-    processes: ProcessManager,
-    /// Receives [`ProcessEvent`]s. The corresponding [`Sender`] is passed to the [`ProcessManager`] for processes to send their [`ProcessEvent`]s to the core.
-    receiver: Receiver<ProcessEvent>,
+    /// Manages all nodes that are participating in the simulation
+    nodes: NodeList,
+    /// launches new processes
+    launcher: Launcher,
     /// Command string from which server processes are launched.
     server_command: String,
     /// The current execution state (i.e. running/stepping/paused...)
@@ -63,6 +68,11 @@ pub struct Core {
     monitor_sessions: Vec<MonitorSession>,
     /// the [`Network`] contains all [`Message`]s that are sent, but not yet delivered
     network: Network,
+    /// the next setup that will be run.
+    /// when the client sends a setup message, some stuff has to be finished/cleaned up before
+    /// the new setup can be initialized and the simulation restarted,
+    /// so we save the next setup here while we wait for everything to become ready
+    next_setup: Option<Setup>,
 }
 
 /// The execution state for a [`Core`]
@@ -86,12 +96,11 @@ impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and client executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
     pub async fn new(args: &Args) -> Result<Self, CoreError> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
         let (remote_sender, remote_receiver) = tokio::sync::mpsc::channel(1);
 
         let mut core = Self {
-            processes: ProcessManager::new(sender),
-            receiver,
+            nodes: NodeList::new(),
+            launcher: Launcher::new(args),
             server_command: args.server_command.clone(),
             state: if args.interactive { CoreState::Paused } else { CoreState::Running },
             remote_sender,
@@ -99,8 +108,9 @@ impl Core {
             protocol: Protocol::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
+            next_setup: None,
         };
-        core.launch(&args.test_command, "client".to_string()).await?;
+        assert_eq!(core.launch(Some(&args.test_command), true, CLIENT_NAME.to_string()).await?.id, 0, "expected client to have id 0");
         Ok(core)
     }
 
@@ -117,12 +127,32 @@ impl Core {
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
     pub async fn run(mut self) -> Result<(), CoreError> {
+        let mut deadline = None;
         loop {
-            if !self.processes.iter().any(Process::is_running) { break; }
+            let mut num_running = 0;
+            let mut num_servers = 0;
+            for node in &self.nodes {
+                if node.has_finished() { continue; }
+                num_running += 1;
+                if !node.is_client { num_servers += 1; }
+            }
+            if num_running == 0 { break; }
 
-            self.step().await?;
+            self.step(deadline.is_some()).await?;
+            if self.next_setup.is_some() && self.network.is_empty() {
+                if deadline.is_none() {
+                    deadline = Some(Instant::now() + Duration::from_secs(1));
+                } else if num_servers == 0 || Instant::now() > deadline.unwrap() {
+                    deadline = None;
+                    let setup = self.next_setup.take().unwrap();
+                    self.setup(setup).await?
+                }
+            }
         }
-
+        let deadline = Instant::now() + Duration::from_secs(1);
+        for node in self.nodes.drain(..) {
+            tokio::time::timeout_at(deadline, node.terminate()).await.ok();
+        }
         Ok(())
     }
 
@@ -134,20 +164,25 @@ impl Core {
         }
     }
 
-    async fn step(&mut self) -> Result<(), CoreError> {
+    async fn step(&mut self, dont_wait: bool) -> Result<(), CoreError> {
         if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
             self.deliver(sent_timestamp, message).await?;
             if matches!(self.state, CoreState::Stepping) {
                 self.state = CoreState::Paused;
             }
         } else {
+            let timeout = async move { if dont_wait { tokio::time::sleep(Duration::from_millis(10)).await } };
             tokio::select! {
+                biased;
                 remote_command = self.remote_receiver.recv() => {
                     self.handle_command(remote_command.unwrap()).await;
                 }
-                process_event = self.receiver.recv() => {
-                    self.handle_process_event(Timestamp::now(), process_event.unwrap()).await?;
+                process_event = self.nodes.recv_any() => {
+                    if let Some((event, from_proxy, node_id)) = process_event {
+                        self.handle_process_event(Timestamp::now(), node_id, from_proxy, event).await?;
+                    }
                 }
+                _ = timeout, if dont_wait => {}
             }
         }
         Ok(())
@@ -163,43 +198,47 @@ impl Core {
     }
 
     /// Handles a single [`ProcessEvent`].
-    async fn handle_process_event(&mut self, timestamp: Timestamp, process_event: ProcessEvent) -> Result<bool, CoreError> {
-        match process_event.kind {
-            ProcessEventKind::Message(message) => {
-                self.dispatch(process_event.source_id, timestamp, message).await?;
+    async fn handle_process_event(&mut self, timestamp: Timestamp, node_id: usize, from_proxy: bool, process_event: ProcessEvent) -> Result<bool, CoreError> {
+        match process_event {
+            ProcessEvent::Message(message) => {
+                let node = &self.nodes[node_id];
+                if node.has_proxy() && !from_proxy {
+                    let node = &self.nodes[node_id];
+                    node.send_proxy(ProcessCommand::Deliver(Message::new("core", &node.name, None, Proxy { message })));
+                } else {
+                    self.dispatch(node_id, from_proxy, timestamp, message).await?;
+                }
                 Ok(false)
             }
-            ProcessEventKind::Log(log) => {
-                self.log(timestamp, process_event.source_id, log).await?;
+            ProcessEvent::Log(log) => {
+                self.log(timestamp, node_id, log).await?;
                 Ok(true)
             }
-            ProcessEventKind::Exited(exit_code) => {
-                self.process_exited(timestamp, process_event.source_id, exit_code).await?;
-                if process_event.source_id == 0 {
+            ProcessEvent::Exited(exit_code) => {
+                self.process_exited(timestamp, node_id, exit_code).await?;
+                if node_id == 0 {
                     // process 0 exited: shut down all processes gracefully
-                    for proc in &mut self.processes {
-                        proc.begin_shutdown();
-                    }
+                    self.begin_shutdown(..)?;
                 }
                 Ok(true)
             }
-            ProcessEventKind::SerializeError { raw_message, error } => {
-                Err(CoreError::SerializeError(self.processes[process_event.source_id].path().to_string(), raw_message, error))
+            ProcessEvent::SerializeError { raw_message, error } => {
+                Err(CoreError::SerializeError(self.nodes[node_id].commandline(), raw_message, error))
             }
         }
     }
 
     /// Dispatches a single [`Message`] into the network.
-    async fn dispatch(&mut self, source_id: usize, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
+    async fn dispatch(&mut self, source_id: usize, from_proxy: bool, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
         log::trace!("dispatching message: {}", message.to_json());
         if message.dst == CORE_NAME {
-            return self.handle_core_message(source_id, message).await;
+            return self.handle_core_message(source_id, from_proxy, message).await;
         }
 
-        let source = &self.processes[source_id];
-        if !self.processes.has_name(source, &message.src) {
+        let source = &self.nodes[source_id];
+        if !self.nodes.is_alias_of(source, &message.src) {
             return Err(CoreError::DispatchError {
-                source: source.path().to_string(),
+                source: source.commandline(),
                 message,
                 kind: DispatchErrorKind::SourceNameMismatch,
             });
@@ -213,10 +252,10 @@ impl Core {
 
     /// Delivers a single [`Message`] to the destination node.
     async fn deliver(&mut self, sent_timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
-        let Some(destination_id) = self.processes.id_by_name(&message.dst) else {
-            let source_id = self.processes.id_by_name(&message.src).unwrap();
+        let Some(destination_id) = self.nodes.lookup(&message.dst).map(|n| n.id) else {
+            let source_node = self.nodes.lookup(&message.src).unwrap();
             return Err(CoreError::DispatchError {
-                source: self.processes[source_id].path().to_string(),
+                source: source_node.commandline(),
                 message,
                 kind: DispatchErrorKind::DestinationUnknown,
             });
@@ -224,7 +263,7 @@ impl Core {
         let timestamp = Timestamp::now();
         self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical)).await;
         self.protocol.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical)).await;
-        self.processes[destination_id].send(ProcessCommand::Deliver(message));
+        self.nodes[destination_id].send(ProcessCommand::Deliver(message));
         Ok(())
     }
 
@@ -234,8 +273,8 @@ impl Core {
     async fn send_monitor_event(&mut self, timestamp: Timestamp, message: &Message, in_reference_to: Option<usize>) {
         for session in &self.monitor_sessions {
             if session.matches(&message) {
-                let source_id = self.processes.id_by_name(session.source()).unwrap();
-                self.processes[source_id]
+                let monitor_node = self.nodes.lookup(session.source()).unwrap();
+                monitor_node
                     .send(ProcessCommand::Deliver(Message::new(CORE_NAME, session.source(), None, MonitorEvent {
                         kind: if in_reference_to.is_some() { MonitorEventKind::Delivered } else { MonitorEventKind::Sent },
                         timestamp_logical: timestamp.logical,
@@ -250,13 +289,21 @@ impl Core {
     /// handles a single core [`Message`] (i.e. [`Setup`] or [`BeginMonitor`]).
     /// Returns an error if the [`Message`] was not send from a client node, if the [`Message`]s type
     /// is not known, or if handling of the [`Message`] itself fails.
-    async fn handle_core_message(&mut self, source_id: usize, message: Message) -> Result<(), CoreError> {
-        if source_id != 0 {
-            return Err(CoreError::IllegalCoreMessage(self.processes[source_id].path().to_string(), message));
+    async fn handle_core_message(&mut self, source_id: usize, from_proxy: bool, message: Message) -> Result<(), CoreError> {
+        let is_client = self.nodes[source_id].is_client;
+        let is_proxy_message = from_proxy && message.body.ty == Proxy::TYPE;
+        if !(is_client || is_proxy_message) {
+            return Err(CoreError::IllegalCoreMessage(self.nodes[source_id].commandline(), message));
         }
         match message.body.ty.as_str() {
             Setup::TYPE => {
-                self.setup(message.payload::<Setup>().unwrap()).await?;
+                self.next_setup = Some(message.payload::<Setup>().unwrap());
+                self.begin_shutdown(1..)?;
+                Ok(())
+            }
+            Proxy::TYPE => {
+                let payload = message.payload::<Proxy>().unwrap();
+                self.nodes[source_id].send_ignore_proxy(ProcessCommand::Deliver(payload.message));
                 Ok(())
             }
             BeginMonitor::TYPE => {
@@ -275,66 +322,74 @@ impl Core {
         }
     }
 
+    fn begin_shutdown<R>(&mut self, range: R) -> Result<(), CoreError>
+        where R: SliceIndex<[Node], Output=[Node]> {
+        for proc in &mut self.nodes[range] {
+            proc.begin_shutdown();
+        }
+        Ok(())
+    }
+
     /// Resets the [`Core`] and sets up a new test run with the given nodes in the [`Setup`][`Message`].
     async fn setup(&mut self, setup: Setup) -> Result<(), CoreError> {
-        self.processes.reset_names();
+        self.nodes.drain(1..);
         self.monitor_sessions.clear();
 
-        let mut nodes = Vec::new();
 
-        // all existing server nodes can shut down now
-        // technically it would not be a problem to just leave them be, but this just
-        // seems a little cleaner. Once the client process exits, all processes are shut down anyway.
-        for proc in &mut self.processes.drain(1..) {
-            proc.terminate().await;
-        }
-
+        let mut nodes = Vec::with_capacity(setup.clients.len() + setup.servers.len());
         for client_name in setup.clients {
-            self.processes.add_name(client_name.clone(), 0);
+            let node = self.nodes.push(self.nodes[0].alias(client_name));
             nodes.push(NodeInfo {
-                name: client_name,
-                commandline: self.processes[0].commandline(),
-                id: 0,
+                name: node.name.clone(),
+                commandline: node.commandline(),
+                id: node.id,
             })
         };
 
         for name in &setup.servers {
-            let server_command = self.server_command.clone();
-            let id = self.launch(&server_command, name.clone()).await?;
-            self.processes.add_name(name.clone(), id);
+            let proxy = if let Some(proxy) = &setup.proxy {
+                Some(self.launch_proc(Some(proxy), false).await?)
+            } else { None };
+            let node = self.launch(None, false, name.clone()).await?;
+            node.set_proxy(proxy);
             nodes.push(NodeInfo {
-                name: name.clone(),
-                commandline: self.processes[id].commandline(),
-                id,
+                name: node.name.clone(),
+                commandline: node.commandline(),
+                id: node.id,
             })
         }
 
         for name in &setup.servers {
-            let server_id = self.processes.id_by_name(name).unwrap();
-            self.processes[server_id].send(ProcessCommand::Deliver(Message::new(CORE_NAME, name, None, Init {
+            self.nodes.lookup(name).unwrap().send(ProcessCommand::Deliver(Message::new(CORE_NAME, name, None, Init {
                 name: name.clone(),
                 servers: setup.servers.clone(),
             })));
         }
-        self.processes[0].send(ProcessCommand::Deliver(Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})));
+
+        self.nodes[0].send(ProcessCommand::Deliver(Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})));
         self.protocol.publish_event(Event::setup(Timestamp::now(), nodes)).await;
         Ok(())
     }
 
-    /// launches a new process
-    async fn launch(&mut self, command: &str, name: String) -> Result<usize, CoreError> {
-        let id = self.processes.launch(command, name).await
-            .map_err(|e| CoreError::LaunchFailed(command.to_string(), e))?;
-        let proc = &self.processes[id];
-        let commandline = proc.commandline();
-        log::info!("[{}] command `{commandline}` launched", proc.name());
-        self.protocol.publish_event(Event::node_launched(Timestamp::now(), id, commandline)).await;
-        Ok(id)
+    /// launches a new process and creates the corresponding node
+    async fn launch(&mut self, command: Option<&str>, is_client: bool, name: String) -> Result<&mut Node, CoreError> {
+        let proc = self.launch_proc(command, is_client).await?;
+        let node = self.nodes.push(Node::new(name, is_client, proc));
+        let commandline = node.commandline();
+        log::info!("[{}] command `{commandline}` launched", node.name);
+        self.protocol.publish_event(Event::node_launched(Timestamp::now(), node.id, commandline)).await;
+        Ok(node)
+    }
+
+    async fn launch_proc(&mut self, command: Option<&str>, is_client: bool) -> Result<Process, CoreError> {
+        let command = command.unwrap_or(&self.server_command);
+        self.launcher.launch(command, is_client).await
+            .map_err(|e| CoreError::LaunchFailed(command.to_string(), e))
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
     async fn log(&mut self, timestamp: Timestamp, source_id: usize, line: String) -> Result<(), CoreError> {
-        log::info!("[{}]: {line}", self.processes[source_id].name());
+        log::info!("[{}]: {line}", self.nodes[source_id].name);
         self.protocol.publish_event(Event::log(timestamp, source_id, line)).await;
         Ok(())
     }
@@ -342,8 +397,8 @@ impl Core {
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
     async fn process_exited(&mut self, timestamp: Timestamp, source_id: usize, exit_code: i32) -> Result<(), CoreError> {
         self.protocol.publish_event(Event::node_disconnected(timestamp, source_id)).await;
-        let proc = &self.processes[source_id];
-        log::info!("[{}] command `{}` exited with code {exit_code}", proc.name(), proc.commandline());
+        let node = &self.nodes[source_id];
+        log::info!("[{}] command `{}` exited with code {exit_code}", node.name, node.commandline());
         Ok(())
     }
 }

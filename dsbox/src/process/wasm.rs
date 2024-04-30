@@ -1,19 +1,19 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::future::Future;
 use std::io::{IoSlice, IoSliceMut};
 use std::path::{Path, PathBuf};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream, Error};
-use tokio::sync::mpsc::{Sender, UnboundedSender};
-use tokio::sync::RwLock;
-use wasi_common::WasiFile;
+use tokio::sync::{oneshot, RwLock};
+use tokio::sync::mpsc::{Sender, UnboundedReceiver};
+use tokio::task::JoinHandle;
+use wasi_common::{WasiCtx, WasiFile};
 use wasi_common::file::FileType;
 use wasi_common::tokio::WasiCtxBuilder;
-use wasmtime::{Config, Engine, Linker, Module, Store, UpdateDeadline};
+use wasmtime::{Config, Engine, Linker, Module, Store, TypedFunc, UpdateDeadline};
 
 use crate::process::{ProcessCommand, ProcessEvent};
-use crate::process::handle::Handle;
+use crate::process::io_helper::process_io_helper;
 
 /// contains some state for launching Webassembly processes.
 pub struct WasmLauncher {
@@ -54,27 +54,39 @@ impl WasmLauncher {
     /// The other ends of the streams are then used to create a [`Handle`].
     /// This function is only a helper to convert any [`wasmtime::Error`] into a [`std::io::Error`] if necessary before returning.
     /// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
-    pub(super) async fn launch(&mut self, path: &Path, args: &[String], event_sender: &Sender<ProcessEvent>, id: usize) -> Result<(UnboundedSender<ProcessCommand>, Handle), Error> {
-        let (stdin, stdout, stderr, start_fn) = match self.do_launch(path, args).await {
-            Ok(ret) => ret,
-            Err(e) => return Err(into_io_error(e)),
-        };
-        Handle::for_process(id, event_sender, stdin, stdout, stderr, start_fn)
-    }
-
-    /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
-    async fn do_launch(&mut self, path: &Path, args: &[String]) -> Result<(DuplexStream, DuplexStream, DuplexStream, impl Future<Output=i32>), wasmtime::Error> {
-        log::trace!("launching wasm node `{}`, args: {args:?}", path.display());
+    pub(super) async fn launch(&mut self, path: &Path, args: &[String], command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         let (stdin, wasi_stdin) = tokio::io::duplex(1024);
         let (wasi_stdout, stdout) = tokio::io::duplex(1024);
         let (wasi_stderr, stderr) = tokio::io::duplex(1024);
 
+        let (store, start_fn) = match self.do_launch(path, args, wasi_stdin, wasi_stdout, wasi_stderr).await {
+            Ok(ret) => ret,
+            Err(e) => return Err(into_io_error(e)),
+        };
+        let wait_child = async move {
+            let exit_code = match tokio::task::spawn(async move { start_fn.call_async(store, ()).await }).await {
+                Ok(Ok(())) => 0,
+                _ => -1
+            };
+            exit_code
+        };
+
+        let (finished_tx, finished_rx) = oneshot::channel();
+        Ok((tokio::task::spawn(async move {
+            process_io_helper(event_sender, command_receiver, stdin, stdout, stderr, wait_child, finished_tx).await
+        }), finished_rx))
+    }
+
+    /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].
+    async fn do_launch(&mut self, path: &Path, args: &[String], stdin: DuplexStream, stdout: DuplexStream, stderr: DuplexStream) -> wasmtime::Result<(Store<WasiCtx>, TypedFunc<(), ()>)> {
+        log::trace!("launching wasm node `{}`, args: {args:?}", path.display());
+
         let wasi_ctx = WasiCtxBuilder::new()
             .args(args)?
             .inherit_env()?
-            .stdin(DuplexStreamFile::new(wasi_stdin))
-            .stdout(DuplexStreamFile::new(wasi_stdout))
-            .stderr(DuplexStreamFile::new(wasi_stderr))
+            .stdin(DuplexStreamFile::new(stdin))
+            .stdout(DuplexStreamFile::new(stdout))
+            .stderr(DuplexStreamFile::new(stderr))
             .build();
 
 
@@ -90,12 +102,7 @@ impl WasmLauncher {
 
         let start_fn = linker.get_default(&mut store, "")?
             .typed::<(), ()>(&mut store)?;
-        Ok((stdin, stdout, stderr, async move {
-            match start_fn.call_async(store, ()).await {
-                Ok(()) => 0,
-                Err(_) => -1,
-            }
-        }))
+        Ok((store, start_fn))
     }
 
     /// Helper function to load a Webassembly module from a given `path`.
