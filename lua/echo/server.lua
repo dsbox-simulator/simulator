@@ -16,6 +16,6 @@ end
 
 forward(init)
 for message in dsbox.recv_iter() do
-    dsbox.log("[SERVER]", message)
+    print(string.format("[SERVER] %s", message))
     forward(message)
 end

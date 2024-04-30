@@ -127,7 +127,7 @@ impl Process {
     /// [`Core`](crate::core::Core) stop waiting and terminate.
     pub fn begin_shutdown(&mut self) {
         if self.sender.is_some() {
-            log::trace!("beginning shutdown of process `{}`", self.commandline());
+            log::trace!("begin shutdown of process `{}`", self.commandline());
         }
         self.sender.take();
     }

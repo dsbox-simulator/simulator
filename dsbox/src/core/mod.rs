@@ -380,7 +380,7 @@ impl Core {
                 id: node.id,
             });
             let node_id = node.id;
-            for middleware in &setup.middleware_before {
+            for middleware in setup.middleware_before.iter().rev() {
                 let middleware = self.launch_proc(Some(middleware), false).await?;
                 self.nodes[node_id].push_middleware_before(middleware)
             }

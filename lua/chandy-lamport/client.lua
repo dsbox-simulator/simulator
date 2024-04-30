@@ -27,14 +27,14 @@ dsbox.Message:send("client", "core", "setup", { clients = { "c0" }, servers = se
 assert(dsbox.recv().body.type == "setup_ok")
 math.randomseed(12345)
 
-dsbox.log("creating handoff order")
+print("creating handoff order")
 for _, server in ipairs(server_names) do
     local order = table.copy(server_names)
     table.shuffle(order)
     dsbox.Message:send("c0", server, "handoff_order", { order = order })
 end
 
-dsbox.log("distributing tokens")
+print("distributing tokens")
 for _, server in ipairs(server_names) do
     for _ = 1, num_tokens / num_servers do
         dsbox.Message:send("c0", server, "token")

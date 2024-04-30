@@ -20,7 +20,7 @@ while true do
         total = total + rtt
     end
     local avg = total / num_trips
-    dsbox.log(string.format("round trips ok: avg %.3fms, min %.3fms, max %.3fms",
+    print(string.format("round trips ok: avg %.3fms, min %.3fms, max %.3fms",
             avg * 1000,
             min * 1000,
             max * 1000));

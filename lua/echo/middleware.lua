@@ -1,7 +1,7 @@
 local dsbox = require("dsbox")
 
 local middleware_type = dsbox.args[1]
-dsbox.log(middleware_type)
+print(middleware_type)
 
 local init = dsbox.recv()
 assert(init.body.type == "init")
@@ -20,7 +20,7 @@ end
 if middleware_type ~= "last" then
     forward(init)
     for message in dsbox.recv_iter() do
-        dsbox.log(string.format("[MIDDLEWARE %s]", middleware_type), message)
+        print(string.format("[MIDDLEWARE %s] %s", middleware_type, message))
         forward(message)
     end
 else

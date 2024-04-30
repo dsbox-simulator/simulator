@@ -94,7 +94,7 @@ impl Node {
     }
 
     pub fn has_finished(&self) -> bool {
-        self.process_stack.iter().any(|p| p.borrow_mut().has_finished())
+        self.process_stack.iter().all(|p| p.borrow_mut().has_finished())
     }
 
     pub fn begin_shutdown(&mut self) {

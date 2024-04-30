@@ -31,7 +31,7 @@ end
 for _ = 1, #store_sequence do
     local ack = dsbox.recv(1)
     if ack == nil then
-        dsbox.log("ack timed out")
+        print("ack timed out")
         return
     else
         assert(ack.body.type == "ack")
@@ -55,14 +55,14 @@ for _, server in ipairs(server_names) do
     dsbox.Message:send("c0", server, "load")
     local response = dsbox.recv(1.0)
     if response == nil then
-        dsbox.log("ERROR: (server", server, ") timeout")
+        print(string.format("ERROR: (server %s) timeout", server))
     else
         local sequence = response.body.sequence
         if expected_sequence == nil then
             expected_sequence = sequence
         else
             if not check_sequence(expected_sequence, sequence) then
-                dsbox.log("ERROR: (server", server, ") expected sequence", expected_sequence, "but got", sequence)
+                print(string.format("ERROR: (server %s) expected sequence %s, but got %s", server, expected_sequence, sequence))
             end
         end
     end

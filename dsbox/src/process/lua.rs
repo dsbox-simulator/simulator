@@ -4,11 +4,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mlua::{FromLua, FromLuaMulti, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
+use mlua::{FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
 use tokio::sync::{Mutex, oneshot};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinHandle;
+
+use libproto::Message;
 
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
@@ -79,7 +81,6 @@ fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: Lu
     mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
     mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
     mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
-    mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
     mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
     mod_dsbox.set("array", lua.create_function(lua_array)?)?;
     let message_class = lua.create_table()?;
@@ -87,7 +88,10 @@ fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: Lu
     message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
     message_class.set("reply", lua.create_async_function(message_reply)?)?;
     message_class.set("send", lua.create_async_function(message_send)?)?;
+    message_class.set("tostring", lua.create_function(message_to_string)?)?;
     mod_dsbox.set("Message", message_class)?;
+
+    lua.globals().set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
 
     // for some reason the borrow checker does not like having the local variables `package` and `preload`
     // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
@@ -147,11 +151,9 @@ impl LuaAppData {
         match message {
             ProcessCommand::Deliver(message) => {
                 let value = lua.to_value(&message)?;
-                if let Some(value) = value.as_table() {
-                    let index = lua.create_table()?;
+                if let Some(message) = value.as_table() {
                     let message_class: Table = get_dsbox(lua, "Message")?;
-                    index.set("__index", message_class)?;
-                    value.set_metatable(Some(index));
+                    message_set_metatable(lua, message, &message_class)?;
                 }
                 Ok(Some(value))
             }
@@ -164,38 +166,15 @@ impl LuaAppData {
         get_dsbox(lua, "recv")
     }
 
-    async fn lua_log(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
+    async fn lua_print(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let mut message = String::new();
-        let mut first = false;
+        let mut first = true;
         for item in items {
-            if first { first = false; } else { message.push(' '); }
-            message.push_str(&Self::serialize(item))
+            if first { first = false; } else { message.push('\t'); }
+            message.push_str(&lua.globals().get::<&str, Function>("tostring")?.call::<Value, String>(item)?);
         }
         Ok(app_data.send_event(ProcessEvent::Log(message)).await.is_ok())
-    }
-
-    // for some reason the IDE considers `Value::Vector` to be a variant of the `Value` enum
-    // but that is only true when the `luau` feature is enabled for `mlua`. So we disable the
-    // inspection here for now.
-    // noinspection RsNonExhaustiveMatch
-    fn serialize(value: Value<'_>) -> String {
-        match value {
-            Value::Nil => "nil".to_string(),
-            Value::Boolean(v) => v.to_string(),
-            Value::LightUserData(v) => format!("userdata: {:#x}", v.0 as usize),
-            Value::Integer(v) => v.to_string(),
-            Value::Number(v) => v.to_string(),
-            Value::String(v) => v.to_string_lossy().to_string(),
-            Value::Table(v) => {
-                serde_json::to_string(&v)
-                    .unwrap_or_else(|_| format!("table: {:#x}", v.to_pointer() as usize))
-            }
-            Value::Function(v) => format!("function: {:#x}", v.to_pointer() as usize),
-            Value::Thread(v) => format!("thread: {:#x}", v.to_pointer() as usize),
-            Value::UserData(v) => format!("userdata: {:#x}", v.to_pointer() as usize),
-            Value::Error(e) => e.to_string(),
-        }
     }
 
     async fn send_event(&self, event: ProcessEvent) -> Result<(), SendError<ProcessEvent>> {
@@ -216,16 +195,23 @@ impl LuaAppData {
 fn message_new<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, Value<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
     let (message_class, src, dst, r#type, rest) = params;
     let new_message = lua.create_table()?;
-    let index = lua.create_table()?;
-    index.set("__index", message_class)?;
-    new_message.set_metatable(Some(index));
     new_message.set("src", src)?;
     new_message.set("dest", dst)?;
     let body = lua.create_table()?;
     body.set("type", r#type)?;
     merge_into_table(&body, rest)?;
     new_message.set("body", body)?;
+    message_set_metatable(lua, &new_message, &message_class)?;
     Ok(new_message)
+}
+
+fn message_set_metatable(lua: &Lua, message: &Table, message_class: &Table) -> mlua::Result<()> {
+    let metatable = lua.create_table()?;
+    let tostring: Function = message_class.get("tostring")?;
+    metatable.set("__tostring", tostring)?;
+    metatable.set("__index", message_class)?;
+    message.set_metatable(Some(metatable));
+    Ok(())
 }
 
 fn message_create_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
@@ -254,6 +240,11 @@ async fn message_send<'lua>(lua: &'lua Lua, params: (Table<'lua>, MultiValue<'lu
         message = message_new(lua, FromLuaMulti::from_lua_multi(rest, lua)?)?;
     }
     LuaAppData::lua_send(lua, message.into_lua(lua)?).await
+}
+
+fn message_to_string(lua: &Lua, message: Value) -> mlua::Result<String> {
+    let message: Message = lua.from_value(message)?;
+    Ok(message.to_json())
 }
 
 fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {

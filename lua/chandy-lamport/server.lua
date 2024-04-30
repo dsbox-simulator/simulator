@@ -16,7 +16,7 @@ function handoff_sequence:next()
     return next
 end
 
-dsbox.log("handoff order:", handoff_sequence.order)
+print(string.format("handoff order: %s", handoff_sequence.order))
 
 local num_tokens = 0
 
@@ -35,7 +35,7 @@ while true do
     	do_some_work()
     else
         assert(message.body.type == "token")
-        dsbox.log("got token from", message.src)
+        print(string.format("got token from %s", message.src))
         num_tokens = num_tokens + 1
     end
 end
