@@ -2,40 +2,25 @@ local dsbox = require('dsbox')
 local init = dsbox.recv()
 assert(init.body.type == "init")
 local own_name = init.body.name
+local servers = init.body.servers
 
-local handoff_order = dsbox.recv()
-assert(handoff_order.body.type == "handoff_order")
-
-local handoff_sequence = { current = 1, order = handoff_order.body.order }
-function handoff_sequence:next()
-    local next = self.order[self.current]
-    self.current = self.current + 1
-    if self.current > #self.order then
-        self.current = 1
-    end
-    return next
-end
-
-print(string.format("handoff order: %s", handoff_sequence.order))
-
-local num_tokens = 0
+local tasks = {}
 
 local function do_some_work()
-    dsbox.sleep(1 + math.random())
-    if num_tokens > 0 then
-        local next_server = handoff_sequence:next()
-    	dsbox.Message:send(own_name, next_server, "token")
-    	num_tokens = num_tokens - 1
+    dsbox.sleep(0.1 + math.random() * 0.1)
+    if #tasks > 0 then
+        local next_server = servers[math.random(#servers)]
+        dsbox.Message:send(own_name, next_server, "task", { task = table.remove(tasks, 1) })
     end
 end
 
 while true do
     local message = dsbox.recv(0.0)
     if message == nil then
-    	do_some_work()
-    else
-        assert(message.body.type == "token")
-        print(string.format("got token from %s", message.src))
-        num_tokens = num_tokens + 1
+        do_some_work()
+    elseif message.body.type == "task" then
+        tasks[#tasks + 1] = message.body.task
+    elseif message.body.type == "state" then
+        message:reply("state", { state = tasks })
     end
 end

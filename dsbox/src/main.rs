@@ -23,19 +23,18 @@ mod protocol;
 /// Main entry point for the application. Configures logging and runs the program.
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let mut logger = simple_logger::SimpleLogger::new()
-        .with_level(LevelFilter::Warn);
+    let mut logger = env_logger::builder();
+    logger.filter_level(LevelFilter::Warn);
 
     if cfg!(debug_assertions) {
-        logger = logger.with_module_level("dsbox", LevelFilter::Trace)
-            .with_module_level("tower_http", LevelFilter::Debug)
-            .with_module_level("axum", LevelFilter::Debug);
+        logger.filter_module("dsbox", LevelFilter::Trace)
+            .filter_module("tower_http", LevelFilter::Debug)
+            .filter_module("axum", LevelFilter::Debug);
     } else {
-        logger = logger.with_module_level("dsbox", LevelFilter::Info);
+        logger.filter_module("dsbox", LevelFilter::Info);
     }
-
-    logger.init()
-        .expect("failed to set logger");
+    logger.parse_default_env();
+    logger.init();
 
     let args = Args::parse();
     if let Err(e) = run(args).await {

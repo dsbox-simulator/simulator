@@ -10,8 +10,6 @@ use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinHandle;
 
-use libproto::Message;
-
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
 
@@ -83,12 +81,12 @@ fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: Lu
     mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
     mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
     mod_dsbox.set("array", lua.create_function(lua_array)?)?;
+    mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
     let message_class = lua.create_table()?;
     message_class.set("new", lua.create_function(message_new)?)?;
     message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
     message_class.set("reply", lua.create_async_function(message_reply)?)?;
     message_class.set("send", lua.create_async_function(message_send)?)?;
-    message_class.set("tostring", lua.create_function(message_to_string)?)?;
     mod_dsbox.set("Message", message_class)?;
 
     lua.globals().set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
@@ -108,18 +106,32 @@ fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: Lu
             }};
         }
 
-        // setup luarocks support
+        // setup module search paths
         let version: String = lua.globals().get("_VERSION")?;
+        let mut path: String = package.get("path")?;
+        let mut push_path = |next_path: PathBuf| {
+            path.push(';');
+            path.push_str(next_path.to_string_lossy().as_ref())
+        };
+
         let source_path = lua_file.parent().unwrap();
+        // search for modules in the current scripts directory
+        // search for a file named `<modname>.lua`
+        push_path(join_path!(source_path, "?.lua"));
+        // or search for a folder named `<modname>` with a file called `init.lua`
+        push_path(join_path!(source_path, "?", "init.lua"));
+
+        // search for rocks installed in the current scripts directory, in a subfolder called `lua_modules`
+        // search in `lua_modules/share/lua/<lua version>/
         let local_path = join_path!(source_path, "lua_modules", "share", "lua", &version[4..]);
-        let search1 = join_path!(&local_path, "?.lua");
-        let search2 = join_path!(&local_path, "?", "init.lua");
+        // search there for a file named `<modname>.lua`
+        push_path(join_path!(&local_path, "?.lua"));
+        // or search there for a folder named `<modname>` with a file called `init.lua`
+        push_path(join_path!(&local_path, "?", "init.lua"));
 
         // let home_path = join_path!("~")
 
-        let path: String = package.get("path")?;
-        let full_path = format!("{};{};{path}", search1.display(), search2.display());
-        package.set("path", full_path)?;
+        package.set("path", path)?;
     }
 
     Ok(lua)
@@ -207,7 +219,7 @@ fn message_new<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, Value<'l
 
 fn message_set_metatable(lua: &Lua, message: &Table, message_class: &Table) -> mlua::Result<()> {
     let metatable = lua.create_table()?;
-    let tostring: Function = message_class.get("tostring")?;
+    let tostring: Function = get_dsbox(lua, "to_json")?;
     metatable.set("__tostring", tostring)?;
     metatable.set("__index", message_class)?;
     message.set_metatable(Some(metatable));
@@ -242,9 +254,9 @@ async fn message_send<'lua>(lua: &'lua Lua, params: (Table<'lua>, MultiValue<'lu
     LuaAppData::lua_send(lua, message.into_lua(lua)?).await
 }
 
-fn message_to_string(lua: &Lua, message: Value) -> mlua::Result<String> {
-    let message: Message = lua.from_value(message)?;
-    Ok(message.to_json())
+fn lua_to_json(lua: &Lua, value: Value) -> mlua::Result<String> {
+    let value: serde_json::Value = lua.from_value(value)?;
+    Ok(serde_json::to_string(&value).unwrap())
 }
 
 fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {

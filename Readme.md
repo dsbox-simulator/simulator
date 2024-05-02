@@ -252,9 +252,9 @@ end
 function Message:reply(type, body)
 end
 
---- converts a message to its JSON representation as a string
+--- converts a value to its JSON representation as a string
 --  this method is also added as the `__tostring` metatable entry for each created message object, for convenience 
-function Message:tostring(message)
+function to_json(value)
 end
 ```
 
