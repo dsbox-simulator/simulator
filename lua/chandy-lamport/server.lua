@@ -4,6 +4,12 @@ assert(init.body.type == "init")
 local own_name = init.body.name
 local servers = init.body.servers
 
+for i, server in ipairs(servers) do
+    if server == own_name then
+        table.remove(servers, i)
+    end
+end
+
 local tasks = {}
 
 local function do_some_work()

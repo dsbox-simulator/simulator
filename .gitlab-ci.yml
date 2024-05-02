@@ -16,7 +16,6 @@ before_script:
 build:
     stage: build
     script: ./build_release.sh
-    when: manual
     artifacts:
       when: on_success
       paths:
