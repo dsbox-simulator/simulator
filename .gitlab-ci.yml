@@ -16,3 +16,8 @@ before_script:
 build:
     stage: build
     script: ./build_release.sh
+    artifacts:
+      when: on_success
+      paths:
+        - target/release/dsbox
+      expire_in: 1 week
