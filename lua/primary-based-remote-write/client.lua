@@ -29,7 +29,7 @@ for i, value in ipairs(store_sequence) do
 end
 
 for _ = 1, #store_sequence do
-    local ack = dsbox.recv(1)
+    local ack = dsbox.recv()
     if ack == nil then
         print("ack timed out")
         return
