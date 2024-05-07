@@ -22,6 +22,12 @@ struct LuaAppData {
     receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
 }
 
+/// possibly returned by the `receive` function in order to distinguish a timeout from a closed sender
+enum RecvError {
+    Timeout,
+    Closed,
+}
+
 /// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
 pub(super) fn launch(file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
     log::trace!("launching lua node `{}`, args: {args:?}", file.display());
@@ -154,13 +160,44 @@ impl LuaAppData {
         Ok(app_data.send_event(ProcessEvent::Message(message)).await.is_ok())
     }
 
-    /// waits for a single message to be received by the core with an optional timeout given in seconds
-    /// if no message is available `nil` is returned.
+    /// waits for a single message to be received by the core with an optional timeout given in seconds.
+    /// If no message is available after the timeout `nil` is returned.
+    /// If the receiver cannot receive any more messages, an error is returned
     async fn lua_recv<'lua>(lua: &'lua Lua, params: (Option<f64>, MultiValue<'lua>)) -> mlua::Result<Option<Value<'lua>>> {
         let (timeout, _rest) = params;
+        Self::lua_recv_helper(lua, timeout.map(Duration::from_secs_f64), true).await
+    }
+
+    /// returns an iterator that iterates over all received messages until there are no more
+    /// messages to be received (i.e. when the simulation shuts down)
+    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
+        lua.create_async_function(Self::lua_recv_for_iter)
+            .and_then(|f| f.into_lua(lua))
+    }
+
+    /// same as `lua_recv`, but returns nil even if the receiver is closed. This is useful for `recv_iter`
+    /// where a closed receiver should just stop the iteration
+    async fn lua_recv_for_iter(lua: &Lua, _: ()) -> mlua::Result<Option<Value>> {
+        Self::lua_recv_helper(lua, None, false).await
+    }
+
+    /// waits for a single message to be received by the core with an optional timeout given in seconds.
+    /// If no message is available after the timeout `nil` is returned.
+    /// If the receiver cannot receive any more messages and the `error` flag is true, an error is returned. Otherwise, `nil` is returned as well.
+    async fn lua_recv_helper(lua: &Lua, timeout: Option<Duration>, error: bool) -> mlua::Result<Option<Value>> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
-        let Some(message) = app_data.recv_command(timeout.map(Duration::from_secs_f64)).await else { return Ok(None); };
-        match message {
+        let command = match app_data.recv_command(timeout).await {
+            Ok(command) => command,
+            Err(RecvError::Timeout) => return Ok(None),
+            Err(RecvError::Closed) => {
+                return if error {
+                    Err(mlua::Error::external("receiver closed"))
+                } else {
+                    Ok(None)
+                };
+            }
+        };
+        match command {
             ProcessCommand::Deliver(message) => {
                 let value = lua.to_value(&message)?;
                 if let Some(message) = value.as_table() {
@@ -170,12 +207,6 @@ impl LuaAppData {
                 Ok(Some(value))
             }
         }
-    }
-
-    /// waits for a single message to be received by the core with an optional timeout given in seconds
-    /// if no message is available `nil` is returned.
-    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
-        get_dsbox(lua, "recv")
     }
 
     async fn lua_print(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
@@ -193,13 +224,16 @@ impl LuaAppData {
         self.sender.send(event).await
     }
 
-    async fn recv_command(&self, timeout: Option<Duration>) -> Option<ProcessCommand> {
+    async fn recv_command(&self, timeout: Option<Duration>) -> Result<ProcessCommand, RecvError> {
         let mut receiver = self.receiver.lock().await;
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, receiver.recv())
-                .await.ok().flatten()
+            match tokio::time::timeout(timeout, receiver.recv()).await {
+                Ok(Some(cmd)) => Ok(cmd),
+                Ok(None) => Err(RecvError::Closed),
+                Err(_) => Err(RecvError::Timeout),
+            }
         } else {
-            receiver.recv().await
+            receiver.recv().await.ok_or(RecvError::Closed)
         }
     }
 }

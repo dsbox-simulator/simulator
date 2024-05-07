@@ -1,7 +1,6 @@
 [workspace]
 
 members = [
-    "nodes/*",
     "dsbox",
     "libproto",
     "payload_derive"

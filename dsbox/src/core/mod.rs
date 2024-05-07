@@ -166,14 +166,21 @@ impl Core {
         }
     }
 
-    async fn step(&mut self, dont_wait: bool) -> Result<(), CoreError> {
+    async fn step(&mut self, dont_block: bool) -> Result<(), CoreError> {
+        // TODO: if processes spam messages and never receive any, they can force the receiving
+        //       queues to fill up, which will waste a lot of RAM and possibly de-stabilize the system
+        //       possible solution: before picking up a message from a process, check if the other
+        //       ends' receiving queue has space for that message? (could probably lead to deadlocks in tricky situations)
+        //       other possible solution: regularly check receiving queues of all processes, and if they
+        //       reach a total threshold of buffered messages (say, 1,000,000) panic as a last resort?
+
         if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
             self.deliver(sent_timestamp, message).await?;
             if matches!(self.state, CoreState::Stepping) {
                 self.state = CoreState::Paused;
             }
         } else {
-            let timeout = async move { if dont_wait { tokio::time::sleep(Duration::from_millis(10)).await } };
+            let timeout = async move { if dont_block { tokio::time::sleep(Duration::from_millis(10)).await } };
             tokio::select! {
                 biased;
                 remote_command = self.remote_receiver.recv() => {
@@ -184,7 +191,7 @@ impl Core {
                         self.handle_process_event(Timestamp::now(), node_id, middleware_idx, event).await?;
                     }
                 }
-                _ = timeout, if dont_wait => {}
+                _ = timeout, if dont_block => {}
             }
         }
         Ok(())
