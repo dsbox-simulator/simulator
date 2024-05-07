@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use crate::cli::Args;
 pub use crate::process::command::ProcessCommand;
 pub use crate::process::event::ProcessEvent;
+use crate::process::lua::LuaLauncher;
 #[cfg(feature = "wasm")]
 use crate::process::wasm::WasmLauncher;
 
@@ -32,7 +33,9 @@ pub struct Launcher {
     #[cfg(feature = "wasm")]
     wasm_launcher: Option<WasmLauncher>,
     #[cfg(feature = "lua")]
-    allow_unsafe: bool,
+    allow_lua_unsafe: bool,
+    #[cfg(feature = "lua")]
+    lua_launcher: Option<LuaLauncher>,
 }
 
 /// Handle to a running process
@@ -52,7 +55,9 @@ impl Launcher {
             #[cfg(feature = "wasm")]
             wasm_launcher: None,
             #[cfg(feature = "lua")]
-            allow_unsafe: args.lua_unsafe,
+            allow_lua_unsafe: args.lua_unsafe,
+            #[cfg(feature = "lua")]
+            lua_launcher: None,
         }
     }
 
@@ -102,11 +107,15 @@ impl Launcher {
     }
 
     #[cfg(feature = "lua")]
-    async fn launch_lua(&self, path: &Path, args: &[String], for_client: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
-        lua::launch(path, args.to_vec(), self.allow_unsafe && for_client, command_receiver, event_sender)
+    async fn launch_lua(&mut self, path: &Path, args: &[String], for_client: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+        if self.lua_launcher.is_none() {
+            self.lua_launcher = Some(LuaLauncher::new().await)
+        }
+        self.lua_launcher.as_mut().unwrap()
+            .launch(path, args.to_vec(), self.allow_lua_unsafe && for_client, command_receiver, event_sender)
     }
     #[cfg(not(feature = "lua"))]
-    async fn launch_lua(&self, _: &Path, _: &[String], _: bool, _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    async fn launch_lua(&mut self, _: &Path, _: &[String], _: bool, _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without lua support")
     }
 }

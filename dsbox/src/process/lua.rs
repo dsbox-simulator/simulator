@@ -2,6 +2,7 @@
 //! todo: more documentation
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::Duration;
 
 use mlua::{FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
@@ -13,6 +14,171 @@ use tokio::task::JoinHandle;
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
 
+pub struct LuaLauncher {
+    luarocks_path: Option<String>,
+    luarocks_cpath: Option<String>,
+}
+
+impl LuaLauncher {
+    pub async fn new() -> Self {
+        let (path, cpath) = if let Ok((path, cpath)) = Self::query_luarocks_path().await {
+            (Some(path), Some(cpath))
+        } else { (None, None) };
+        Self {
+            luarocks_path: path,
+            luarocks_cpath: cpath,
+        }
+    }
+
+    async fn query_luarocks_path() -> tokio::io::Result<(String, String)> {
+        let path = tokio::process::Command::new("luarocks")
+            .args(["path", "--lr-path"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+            .wait_with_output().await?;
+        let cpath = tokio::process::Command::new("luarocks")
+            .args(["path", "--lr-cpath"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+            .wait_with_output().await?;
+        let path = String::from_utf8_lossy(&path.stdout).to_string();
+        let cpath = String::from_utf8_lossy(&cpath.stdout).to_string();
+        Ok((path, cpath))
+    }
+
+    /// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
+    pub fn launch(&self, file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+        log::trace!("launching lua node `{}`, args: {args:?}", file.display());
+        let app_data = LuaAppData {
+            sender: event_sender,
+            receiver: Mutex::new(command_receiver),
+        };
+
+        let (finished_tx, finished_rx) = oneshot::channel();
+        let lua_thread = self.launch_lua(file.to_path_buf(), args, allow_os_libs, app_data, finished_tx);
+        Ok((lua_thread, finished_rx))
+    }
+
+
+    // runs the given lua script a separate thread, because we cannot pre-emptively interrupt them
+    fn launch_lua(&self, file: PathBuf, args: Vec<String>, allow_os_libs: bool, app_data: LuaAppData, finished: oneshot::Sender<()>) -> JoinHandle<()> {
+        let path = self.luarocks_path.clone();
+        let cpath = self.luarocks_cpath.clone();
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Handle::current();
+            let lua = Self::setup_lua(&file, &args, allow_os_libs, path, cpath, app_data)
+                .expect("failed to setup lua");
+            rt.block_on(Self::run_lua(lua, &file));
+            finished.send(()).ok();
+        })
+    }
+
+    async fn run_lua(lua: Lua, file: &Path) {
+        let chunk = lua.load(file);
+        let result = chunk.call_async(()).await
+            .map(|v: Value| v.as_i32().unwrap_or(0));
+        if let Err(e) = &result {
+            log::warn!("script `{}` exited with an error: {e}", file.display());
+        }
+        let exit_code = result.as_ref().ok().copied().unwrap_or(-1);
+        let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
+        app_data.sender.send(ProcessEvent::Exited(exit_code)).await.ok();
+    }
+
+    /// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
+    /// functions, a Message class etc.
+    fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, path: Option<String>, cpath: Option<String>, app_data: LuaAppData) -> mlua::Result<Lua> {
+        let libs = StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::COROUTINE | StdLib::MATH | StdLib::PACKAGE;
+        let lua = if allow_os_libs {
+            unsafe {
+                Lua::unsafe_new_with(libs | StdLib::OS | StdLib::IO, LuaOptions::new())
+            }
+        } else { Lua::new_with(libs, LuaOptions::new())? };
+        if allow_os_libs {}
+        lua.set_app_data(app_data);
+        let args_table = lua.create_table()?;
+        for arg in args {
+            args_table.push(arg.as_str())?;
+        }
+        let mod_dsbox = lua.create_table()?;
+
+        mod_dsbox.set("args", args_table)?;
+        mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
+        mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
+        mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
+        mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
+        mod_dsbox.set("array", lua.create_function(lua_array)?)?;
+        mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
+        let message_class = lua.create_table()?;
+        message_class.set("new", lua.create_function(message_new)?)?;
+        message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
+        message_class.set("reply", lua.create_async_function(message_reply)?)?;
+        message_class.set("send", lua.create_async_function(message_send)?)?;
+        mod_dsbox.set("Message", message_class)?;
+
+        lua.globals().set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
+
+        // for some reason the borrow checker does not like having the local variables `package` and `preload`
+        // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
+        {
+            let package: Table = lua.globals().get("package")?;
+            let loaded: Table = package.get("loaded")?;
+            loaded.set("dsbox", mod_dsbox)?;
+
+            macro_rules! join_path {
+                ($($p:expr),*) => {{
+                    let mut path = PathBuf::new();
+                    $(path.push($p);)*
+                    path
+                }};
+            }
+
+            // setup module search paths
+            let version: String = lua.globals().get("_VERSION")?;
+            let mut path = if let Some(path) = path { path } else { package.get("path")? };
+            let mut cpath = if let Some(cpath) = cpath { cpath } else { package.get("cpath")? };
+            let mut push_path = |next_path: PathBuf| {
+                path.push(';');
+                path.push_str(next_path.to_string_lossy().as_ref())
+            };
+
+            let source_path = lua_file.parent().unwrap();
+            // search for modules in the current scripts directory
+            // search for a file named `<modname>.lua`
+            push_path(join_path!(source_path, "?.lua"));
+            // or search for a folder named `<modname>` with a file called `init.lua`
+            push_path(join_path!(source_path, "?", "init.lua"));
+
+            // search for rocks installed in the current scripts directory, in a subfolder called `lua_modules`
+            // search in `lua_modules/share/lua/<lua version>/
+            let local_path = join_path!(source_path, "lua_modules", "share", "lua", &version[4..]);
+            // search there for a file named `<modname>.lua`
+            push_path(join_path!(&local_path, "?.lua"));
+            // or search there for a folder named `<modname>` with a file called `init.lua`
+            push_path(join_path!(&local_path, "?", "init.lua"));
+
+            let mut push_cpath = |next_path: PathBuf| {
+                cpath.push(';');
+                cpath.push_str(next_path.to_string_lossy().as_ref())
+            };
+            // search for C modules in the current scripts directory
+            // search for a file named `<modname>.so`
+            push_cpath(join_path!(source_path, "?.so"));
+
+            // search for rocks installed in the current scripts directory, in a subfolder called `lua_modules`
+            // search in `lua_modules/lib64/lua/<lua version>/<modname>.so
+            push_cpath(join_path!(source_path, "lua_modules", "lib64", "lua", &version[4..], "?.so"));
+
+            package.set("path", path)?;
+            package.set("cpath", cpath)?;
+        }
+
+        Ok(lua)
+    }
+}
+
 /// gets passed to the lua instance via [`Lua::set_app_data`] and is then available in the
 /// native function implementations
 struct LuaAppData {
@@ -20,127 +186,6 @@ struct LuaAppData {
     sender: Sender<ProcessEvent>,
     /// a receiver to receive commands (currently only messages) from the core
     receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
-}
-
-/// possibly returned by the `receive` function in order to distinguish a timeout from a closed sender
-enum RecvError {
-    Timeout,
-    Closed,
-}
-
-/// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
-pub(super) fn launch(file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
-    log::trace!("launching lua node `{}`, args: {args:?}", file.display());
-    let app_data = LuaAppData {
-        sender: event_sender,
-        receiver: Mutex::new(command_receiver),
-    };
-
-    let (finished_tx, finished_rx) = oneshot::channel();
-    let lua_thread = launch_lua(file.to_path_buf(), args, allow_os_libs, app_data, finished_tx);
-    Ok((lua_thread, finished_rx))
-}
-
-// runs the given lua script a separate thread, because we cannot pre-emptively interrupt them
-fn launch_lua(file: PathBuf, args: Vec<String>, allow_os_libs: bool, app_data: LuaAppData, finished: oneshot::Sender<()>) -> JoinHandle<()> {
-    tokio::task::spawn_blocking(move || {
-        let rt = tokio::runtime::Handle::current();
-        let lua = setup_lua(&file, &args, allow_os_libs, app_data)
-            .expect("failed to setup lua");
-        rt.block_on(run_lua(lua, &file));
-        finished.send(()).ok();
-    })
-}
-
-async fn run_lua(lua: Lua, file: &Path) {
-    let chunk = lua.load(file);
-    let result = chunk.call_async(()).await
-        .map(|v: Value| v.as_i32().unwrap_or(0));
-    if let Err(e) = &result {
-        log::warn!("script `{}` exited with an error: {e}", file.display());
-    }
-    let exit_code = result.as_ref().ok().copied().unwrap_or(-1);
-    let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
-    app_data.sender.send(ProcessEvent::Exited(exit_code)).await.ok();
-}
-
-/// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
-/// functions, a Message class etc.
-fn setup_lua(lua_file: &Path, args: &[String], allow_os_libs: bool, app_data: LuaAppData) -> mlua::Result<Lua> {
-    let libs = StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::COROUTINE | StdLib::MATH | StdLib::PACKAGE;
-    let lua = if allow_os_libs {
-        unsafe {
-            Lua::unsafe_new_with(libs | StdLib::OS | StdLib::IO, LuaOptions::new())
-        }
-    } else { Lua::new_with(libs, LuaOptions::new())? };
-    if allow_os_libs {}
-    lua.set_app_data(app_data);
-    let args_table = lua.create_table()?;
-    for arg in args {
-        args_table.push(arg.as_str())?;
-    }
-    let mod_dsbox = lua.create_table()?;
-
-    mod_dsbox.set("args", args_table)?;
-    mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
-    mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
-    mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
-    mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
-    mod_dsbox.set("array", lua.create_function(lua_array)?)?;
-    mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
-    let message_class = lua.create_table()?;
-    message_class.set("new", lua.create_function(message_new)?)?;
-    message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
-    message_class.set("reply", lua.create_async_function(message_reply)?)?;
-    message_class.set("send", lua.create_async_function(message_send)?)?;
-    mod_dsbox.set("Message", message_class)?;
-
-    lua.globals().set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
-
-    // for some reason the borrow checker does not like having the local variables `package` and `preload`
-    // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
-    {
-        let package: Table = lua.globals().get("package")?;
-        let loaded: Table = package.get("loaded")?;
-        loaded.set("dsbox", mod_dsbox)?;
-
-        macro_rules! join_path {
-            ($($p:expr),*) => {{
-                let mut path = PathBuf::new();
-                $(path.push($p);)*
-                path
-            }};
-        }
-
-        // setup module search paths
-        let version: String = lua.globals().get("_VERSION")?;
-        let mut path: String = package.get("path")?;
-        let mut push_path = |next_path: PathBuf| {
-            path.push(';');
-            path.push_str(next_path.to_string_lossy().as_ref())
-        };
-
-        let source_path = lua_file.parent().unwrap();
-        // search for modules in the current scripts directory
-        // search for a file named `<modname>.lua`
-        push_path(join_path!(source_path, "?.lua"));
-        // or search for a folder named `<modname>` with a file called `init.lua`
-        push_path(join_path!(source_path, "?", "init.lua"));
-
-        // search for rocks installed in the current scripts directory, in a subfolder called `lua_modules`
-        // search in `lua_modules/share/lua/<lua version>/
-        let local_path = join_path!(source_path, "lua_modules", "share", "lua", &version[4..]);
-        // search there for a file named `<modname>.lua`
-        push_path(join_path!(&local_path, "?.lua"));
-        // or search there for a folder named `<modname>` with a file called `init.lua`
-        push_path(join_path!(&local_path, "?", "init.lua"));
-
-        // let home_path = join_path!("~")
-
-        package.set("path", path)?;
-    }
-
-    Ok(lua)
 }
 
 impl LuaAppData {
@@ -160,43 +205,11 @@ impl LuaAppData {
         Ok(app_data.send_event(ProcessEvent::Message(message)).await.is_ok())
     }
 
-    /// waits for a single message to be received by the core with an optional timeout given in seconds.
-    /// If no message is available after the timeout `nil` is returned.
-    /// If the receiver cannot receive any more messages, an error is returned
-    async fn lua_recv<'lua>(lua: &'lua Lua, params: (Option<f64>, MultiValue<'lua>)) -> mlua::Result<Option<Value<'lua>>> {
-        let (timeout, _rest) = params;
-        Self::lua_recv_helper(lua, timeout.map(Duration::from_secs_f64), true).await
-    }
-
-    /// returns an iterator that iterates over all received messages until there are no more
-    /// messages to be received (i.e. when the simulation shuts down)
-    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
-        lua.create_async_function(Self::lua_recv_for_iter)
-            .and_then(|f| f.into_lua(lua))
-    }
-
-    /// same as `lua_recv`, but returns nil even if the receiver is closed. This is useful for `recv_iter`
-    /// where a closed receiver should just stop the iteration
-    async fn lua_recv_for_iter(lua: &Lua, _: ()) -> mlua::Result<Option<Value>> {
-        Self::lua_recv_helper(lua, None, false).await
-    }
-
-    /// waits for a single message to be received by the core with an optional timeout given in seconds.
-    /// If no message is available after the timeout `nil` is returned.
-    /// If the receiver cannot receive any more messages and the `error` flag is true, an error is returned. Otherwise, `nil` is returned as well.
-    async fn lua_recv_helper(lua: &Lua, timeout: Option<Duration>, error: bool) -> mlua::Result<Option<Value>> {
+    /// waits for a single message to be received by the core
+    /// If no more messages are available `nil` is returned.
+    async fn lua_recv<'lua>(lua: &'lua Lua, _: ()) -> mlua::Result<Option<Value<'lua>>> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
-        let command = match app_data.recv_command(timeout).await {
-            Ok(command) => command,
-            Err(RecvError::Timeout) => return Ok(None),
-            Err(RecvError::Closed) => {
-                return if error {
-                    Err(mlua::Error::external("receiver closed"))
-                } else {
-                    Ok(None)
-                };
-            }
-        };
+        let Some(command) = app_data.recv_command().await else { return Ok(None); };
         match command {
             ProcessCommand::Deliver(message) => {
                 let value = lua.to_value(&message)?;
@@ -207,6 +220,12 @@ impl LuaAppData {
                 Ok(Some(value))
             }
         }
+    }
+
+    /// returns an iterator that iterates over all received messages until there are no more
+    /// messages to be received (i.e. when the simulation shuts down)
+    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
+        get_dsbox(lua, "recv")
     }
 
     async fn lua_print(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
@@ -224,17 +243,9 @@ impl LuaAppData {
         self.sender.send(event).await
     }
 
-    async fn recv_command(&self, timeout: Option<Duration>) -> Result<ProcessCommand, RecvError> {
+    async fn recv_command(&self) -> Option<ProcessCommand> {
         let mut receiver = self.receiver.lock().await;
-        if let Some(timeout) = timeout {
-            match tokio::time::timeout(timeout, receiver.recv()).await {
-                Ok(Some(cmd)) => Ok(cmd),
-                Ok(None) => Err(RecvError::Closed),
-                Err(_) => Err(RecvError::Timeout),
-            }
-        } else {
-            receiver.recv().await.ok_or(RecvError::Closed)
-        }
+        receiver.recv().await
     }
 }
 
