@@ -14,7 +14,7 @@ serde = "1"
 serde_json = "1"
 
 log = "0.4.21"
-simple_logger = "4.3.3"
+env_logger = "0.11.3"
 
 shlex = "1.3.0"
 
@@ -29,7 +29,7 @@ phf = { version = "0.11.2", default-features = false , optional = true}
 flate2 = { version = "1.0.28" , optional = true}
 mime_guess = { version = "2.0.4" , optional = true}
 
-mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize"], optional = true }
+mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize", "vendored"], optional = true }
 
 wasmtime = { version = "20", optional = true }
 wasmtime-wasi = { version = "20", optional = true }

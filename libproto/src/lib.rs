@@ -19,6 +19,7 @@ pub mod echo;
 pub mod system;
 #[cfg(feature = "middleware")]
 pub mod middleware;
+pub mod services;
 
 
 /// A single message that can be sent between the nodes

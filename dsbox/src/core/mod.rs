@@ -24,6 +24,7 @@ use tokio::time::{Duration, Instant};
 use libproto::{Message, Payload};
 use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
+use libproto::services::TimerExpired;
 use libproto::system::{BeginMonitor, MonitorEvent, MonitorEventKind, Setup, SetupOk};
 use node::Node;
 
@@ -34,6 +35,7 @@ use crate::core::monitor::MonitorSession;
 use crate::core::node::{MiddlewareId, NodeId};
 use crate::core::node_list::NodeList;
 use crate::core::remote_control::RemoteCommand;
+use crate::core::timer_manager::{Timer, TimerManager};
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::protocol::{Protocol, ProtocolSubscriber};
@@ -45,6 +47,7 @@ mod node;
 pub mod error;
 pub mod event;
 pub mod remote_control;
+mod timer_manager;
 
 /// The core of the simulation
 ///
@@ -70,6 +73,8 @@ pub struct Core {
     monitor_sessions: Vec<MonitorSession>,
     /// the [`Network`] contains all [`Message`]s that are sent, but not yet delivered
     network: Network,
+    /// a manager for outstanding timers
+    timer_manager: TimerManager,
     /// the next setup that will be run.
     /// when the client sends a setup message, some stuff has to be finished/cleaned up before
     /// the new setup can be initialized and the simulation restarted,
@@ -110,6 +115,7 @@ impl Core {
             protocol: Protocol::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
+            timer_manager: TimerManager::new(),
             next_setup: None,
         };
         assert_eq!(core.launch(Some(&args.test_command), true, CLIENT_NAME.to_string()).await?.id, NodeId(0), "expected client to have id 0");
@@ -166,14 +172,21 @@ impl Core {
         }
     }
 
-    async fn step(&mut self, dont_wait: bool) -> Result<(), CoreError> {
+    async fn step(&mut self, dont_block: bool) -> Result<(), CoreError> {
+        // TODO: if processes spam messages and never receive any, they can force the receiving
+        //       queues to fill up, which will waste a lot of RAM and possibly de-stabilize the system
+        //       possible solution: before picking up a message from a process, check if the other
+        //       ends' receiving queue has space for that message? (could probably lead to deadlocks in tricky situations)
+        //       other possible solution: regularly check receiving queues of all processes, and if they
+        //       reach a total threshold of buffered messages (say, 1,000,000) panic as a last resort?
+
         if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
             self.deliver(sent_timestamp, message).await?;
             if matches!(self.state, CoreState::Stepping) {
                 self.state = CoreState::Paused;
             }
         } else {
-            let timeout = async move { if dont_wait { tokio::time::sleep(Duration::from_millis(10)).await } };
+            let timeout = async move { if dont_block { tokio::time::sleep(Duration::from_millis(10)).await } };
             tokio::select! {
                 biased;
                 remote_command = self.remote_receiver.recv() => {
@@ -184,7 +197,10 @@ impl Core {
                         self.handle_process_event(Timestamp::now(), node_id, middleware_idx, event).await?;
                     }
                 }
-                _ = timeout, if dont_wait => {}
+                timer = self.timer_manager.wait_next() => {
+                    self.send_timer_expired(timer).await?;
+                }
+                _ = timeout, if dont_block => {}
             }
         }
         Ok(())
@@ -203,7 +219,7 @@ impl Core {
     async fn handle_process_event(&mut self, timestamp: Timestamp, node_id: NodeId, middleware_id: MiddlewareId, process_event: ProcessEvent) -> Result<bool, CoreError> {
         match process_event {
             ProcessEvent::Message(message) => {
-                self.dispatch(node_id, middleware_id, timestamp, message).await?;
+                self.dispatch(Some((node_id, middleware_id)), timestamp, message).await?;
                 Ok(false)
             }
             ProcessEvent::Log(log) => {
@@ -229,30 +245,34 @@ impl Core {
     }
 
     /// Dispatches a single [`Message`] into the network.
-    async fn dispatch(&mut self, source_id: NodeId, middleware_id: MiddlewareId, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
-        log::trace!("dispatching message from middleware {middleware_id}: {}", message.to_json());
+    async fn dispatch(&mut self, source: Option<(NodeId, MiddlewareId)>, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
+        log::trace!("dispatching message {}", message.to_json());
+
+        if let Some((source_id, _)) = source {
+            let source = &self.nodes[source_id];
+            if !self.nodes.is_alias_of(source, &message.src) {
+                return Err(CoreError::DispatchError {
+                    name: source.name.clone(),
+                    message,
+                    kind: DispatchErrorKind::SourceNameMismatch,
+                });
+            }
+        }
+        self.protocol.publish_event(Event::send_message(timestamp, message.clone())).await;
 
         if message.dst == CORE_NAME {
-            return self.handle_core_message(source_id, middleware_id, message).await;
+            return self.handle_core_message(source, message).await;
         }
 
-        let node = &self.nodes[source_id];
-        if !middleware_id.is_top() {
-            node.send_to_middleware(ProcessCommand::Deliver(Message::new("core", &node.name, None, Forward { message })), middleware_id.above());
-            return Ok(());
-        }
-
-        let source = &self.nodes[source_id];
-        if !self.nodes.is_alias_of(source, &message.src) {
-            return Err(CoreError::DispatchError {
-                name: source.name.clone(),
-                message,
-                kind: DispatchErrorKind::SourceNameMismatch,
-            });
+        if let Some((source_id, middleware_id)) = source {
+            let node = &self.nodes[source_id];
+            if !middleware_id.is_top() {
+                node.send_to_middleware(ProcessCommand::Deliver(Message::new("core", &node.name, None, Forward { message })), middleware_id.above());
+                return Ok(());
+            }
         }
 
         self.send_monitor_event(timestamp, &message, None).await;
-        self.protocol.publish_event(Event::send_message(timestamp, message.clone())).await;
         self.network.insert(timestamp, message);
         Ok(())
     }
@@ -281,6 +301,9 @@ impl Core {
         for session in &self.monitor_sessions {
             if session.matches(&message) {
                 let monitor_node = self.nodes.lookup(session.source()).unwrap();
+                // monitor events are not dispatched via the network. Instead, they are delivered directly
+                // to the target node. Among other reasons, this de-clutters the message log (monitor events
+                // should not be the target of any kind of debugging/visualization)
                 monitor_node
                     .send(ProcessCommand::Deliver(Message::new(CORE_NAME, session.source(), None, MonitorEvent {
                         kind: if in_reference_to.is_some() { MonitorEventKind::Delivered } else { MonitorEventKind::Sent },
@@ -293,27 +316,47 @@ impl Core {
         }
     }
 
+    async fn send_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
+        let reply = timer.message.reply(None, TimerExpired {});
+        self.dispatch(None, Timestamp::now(), reply).await
+    }
+
     /// handles a single core [`Message`] (i.e. [`Setup`] or [`BeginMonitor`]).
     /// Returns an error if the [`Message`] was not send from a client node, if the [`Message`]s type
     /// is not known, or if handling of the [`Message`] itself fails.
-    async fn handle_core_message(&mut self, source_id: NodeId, middleware_id: MiddlewareId, message: Message) -> Result<(), CoreError> {
-        if let Ok(next) = message.payload::<Next>() {
-            return self.forward_to_next(source_id, middleware_id, next.message);
+    async fn handle_core_message(&mut self, source: Option<(NodeId, MiddlewareId)>, message: Message) -> Result<(), CoreError> {
+        macro_rules! assert_is_client {
+            () => {
+                    if let Some((source_id, middleware_id)) = source {
+                        if !self.nodes[source_id].is_client {
+                        return Err(CoreError::IllegalCoreMessage {
+                            source: self.nodes[source_id].commandline(middleware_id),
+                            message,
+                        });
+                    }
+                }
+            }
         }
 
-        if !self.nodes[source_id].is_client {
-            return Err(CoreError::IllegalCoreMessage {
-                source: self.nodes[source_id].commandline(middleware_id),
-                message,
-            });
-        }
         match message.body.ty.as_str() {
+            Next::TYPE => {
+                return self.forward_to_next(source, message.payload::<Next>().unwrap().message);
+            }
+            libproto::services::Timer::TYPE => {
+                let timer = message.payload::<libproto::services::Timer>().unwrap();
+                if let Some((_, middleware_id)) = source {
+                    self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message, middleware_id);
+                }
+                Ok(())
+            }
             Setup::TYPE => {
+                assert_is_client!();
                 self.next_setup = Some(message.payload::<Setup>().unwrap());
                 self.begin_shutdown(1..)?;
                 Ok(())
             }
             BeginMonitor::TYPE => {
+                assert_is_client!();
                 let begin_monitor = message.payload::<BeginMonitor>().unwrap();
                 let session = match MonitorSession::new(message.src, &begin_monitor.src_match, &begin_monitor.dst_match) {
                     Ok(session) => session,
@@ -327,17 +370,22 @@ impl Core {
             }
             Forward::TYPE => {
                 // only the core can send messages of type "forward" to nodes, not the other way around
-                return Err(CoreError::IllegalCoreMessage {
+                let (source_id, middleware_id) = source.expect("core tried to send itself a `forward` message");
+                Err(CoreError::IllegalCoreMessage {
                     source: self.nodes[source_id].commandline(middleware_id),
                     message,
-                });
+                })
             }
-            ty => Err(CoreError::UnknownCoreMessage { source: self.nodes[source_id].commandline(middleware_id), ty: ty.to_owned() })
+            ty => {
+                let (source_id, middleware_id) = source.expect("the core tried to send itself an unknown core message");
+                Err(CoreError::UnknownCoreMessage { source: self.nodes[source_id].commandline(middleware_id), ty: ty.to_owned() })
+            }
         }
     }
 
     /// forward a message to the next process below in the middleware stack
-    fn forward_to_next(&mut self, source_id: NodeId, middleware_id: MiddlewareId, message: Message) -> Result<(), CoreError> {
+    fn forward_to_next(&mut self, source: Option<(NodeId, MiddlewareId)>, message: Message) -> Result<(), CoreError> {
+        let (source_id, middleware_id) = source.expect("tried to send `next` type message from core");
         let node = &self.nodes[source_id];
         if node.has_middleware(middleware_id.below()) {
             node.send_to_middleware(ProcessCommand::Deliver(message), middleware_id.below());
@@ -362,10 +410,10 @@ impl Core {
         self.monitor_sessions.clear();
 
 
-        let mut node_infox = Vec::with_capacity(setup.clients.len() + setup.servers.len());
+        let mut node_info = Vec::with_capacity(setup.clients.len() + setup.servers.len());
         for client_name in setup.clients {
             let node = self.nodes.push(self.nodes[0].alias(client_name));
-            node_infox.push(NodeInfo {
+            node_info.push(NodeInfo {
                 name: node.name.clone(),
                 commandline: node.commandline(MiddlewareId(0)),
                 id: node.id,
@@ -374,7 +422,7 @@ impl Core {
 
         for name in &setup.servers {
             let node = self.launch(None, false, name.clone()).await?;
-            node_infox.push(NodeInfo {
+            node_info.push(NodeInfo {
                 name: node.name.clone(),
                 commandline: node.commandline(MiddlewareId(0)),
                 id: node.id,
@@ -391,14 +439,14 @@ impl Core {
         }
 
         for name in &setup.servers {
-            self.nodes.lookup(name).unwrap().send(ProcessCommand::Deliver(Message::new(CORE_NAME, name, None, Init {
+            self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, name, None, Init {
                 name: name.clone(),
                 servers: setup.servers.clone(),
-            })));
+            })).await?;
         }
 
-        self.nodes[0].send(ProcessCommand::Deliver(Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})));
-        self.protocol.publish_event(Event::setup(Timestamp::now(), node_infox)).await;
+        self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})).await?;
+        self.protocol.publish_event(Event::setup(Timestamp::now(), node_info)).await;
         Ok(())
     }
 
