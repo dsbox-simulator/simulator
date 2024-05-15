@@ -10,6 +10,10 @@ export default class Event {
     timestamp!: Timestamp;
     @JsonProperty()
     data!: EventData;
+
+    toJson(): string {
+        return JSON.stringify(this);
+    }
 }
 
 @Serializable()
@@ -34,7 +38,7 @@ export class NodeInfo {
 export class SendMessage {
     @JsonProperty()
     type!: "send_message";
-    @JsonProperty()
+    @JsonProperty("msg")
     message!: Message;
 }
 

@@ -1,5 +1,6 @@
 import Event from "./Event"
 import {deserialize} from "ts-jackson";
+import { EventStore } from "./EventStore";
 
 export default class CoreSocket {
     socket: WebSocket
@@ -22,6 +23,7 @@ export default class CoreSocket {
 
     private onReceive(message: MessageEvent) {
         const event = deserialize(JSON.parse(message.data), Event);
+        EventStore.addEvent(event);
         this.onevent(event);
     }
 

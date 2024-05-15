@@ -1,0 +1,15 @@
+<table>
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Event</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr *ngFor="let event of events">
+            <td>{{ event.timestamp }}</td>
+            <td>{{ event.toJson() }}</td>
+        </tr>
+    </tbody>
+</table>
+<p>event-table works!</p>
