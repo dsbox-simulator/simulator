@@ -11,9 +11,10 @@ fn main() {
     let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("..").canonicalize().unwrap();
     let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
     let mut webapp_root = workspace_dir;
-    webapp_root.push("webapp");
-    webapp_root.push("target");
-    webapp_root.push(profile);
+    webapp_root.push("webapp-angular");
+    webapp_root.push("dist");
+    webapp_root.push("webapp-angular");
+    webapp_root.push("browser");
     if cfg!(feature = "embedded_webapp") {
         embed_files(webapp_root);
     } else {
