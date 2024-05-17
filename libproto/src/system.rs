@@ -51,3 +51,9 @@ pub enum MonitorEventKind {
     Sent,
     Delivered,
 }
+
+
+/// Sent from any node to the core in interactive mode to stop delivery of messages (to be resumed
+/// by the user in the webapp)
+#[derive(Payload, Serialize, Deserialize)]
+pub struct Break {}

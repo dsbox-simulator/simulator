@@ -25,7 +25,7 @@ use libproto::{Message, Payload};
 use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
 use libproto::services::TimerExpired;
-use libproto::system::{BeginMonitor, MonitorEvent, MonitorEventKind, Setup, SetupOk};
+use libproto::system::{BeginMonitor, Break, MonitorEvent, MonitorEventKind, Setup, SetupOk};
 use node::Node;
 
 use crate::cli::Args;
@@ -61,6 +61,8 @@ pub struct Core {
     launcher: Launcher,
     /// Command string from which server processes are launched.
     server_command: String,
+    /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
+    interactive: bool,
     /// The current execution state (i.e. running/stepping/paused...)
     state: CoreState,
     /// Receives [`RemoteCommand`]s for controlling this [`Core`]
@@ -109,6 +111,7 @@ impl Core {
             nodes: NodeList::new(),
             launcher: Launcher::new(args),
             server_command: args.server_command.clone(),
+            interactive: args.interactive,
             state: if args.interactive { CoreState::Paused } else { CoreState::Running },
             remote_sender,
             remote_receiver,
@@ -346,6 +349,12 @@ impl Core {
                 let timer = message.payload::<libproto::services::Timer>().unwrap();
                 if let Some((_, middleware_id)) = source {
                     self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message, middleware_id);
+                }
+                Ok(())
+            }
+            Break::TYPE => {
+                if self.interactive {
+                    self.state = CoreState::Paused;
                 }
                 Ok(())
             }
