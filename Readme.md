@@ -14,8 +14,9 @@ rustup target add wasm32-wasi
 After that the webapp can be compiled with
 
 ```shell
+npm install -g @angular/cli
 npm install
-npm run build
+ng build
 ```
 
 this will build and pack the webapp. Now to run `dsbox` and get a cli help message run:
