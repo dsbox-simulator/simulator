@@ -22,66 +22,84 @@ export class GraphComponent implements AfterViewInit {
 
     const networkNodes = GraphStore.networkNodes;
     const nodes = GraphStore.nodes;
+    const edges = GraphStore.edges;
 
+    const networkNodesElements = [
+      ...networkNodes.map((node) => ({ data: { id: node.id, type: 'anker'}, position: { x: 35, y: node.posY } } )),
+      ...networkNodes.map((node) => ({ data: { id: node.id + "d", type: 'anker'}, position: { x: node.length, y: node.posY }  })),
+      ...networkNodes.map((node) => ({ data: { id: node.id + "e", source: node.id, target: node.id + "d", type: 'anker' } })),
+    ];
+
+
+    const nodesElements = [
+      ...nodes.map((node) => ({ data: { id: node.id, type: 'node'}, position: { x: node.posX, y: node.posY } } )),
+    ];
+
+    const edgesElements = [
+        ...edges.map((edge) => ({ data: { id: edge.label, source: edge.source.id, target: edge.target.id } })),
+    ];
+
+
+
+    console.log("nodes: ", nodesElements);
+
+    console.log("edges: ", edgesElements);
 
     var cy = cytoscape({
 
-      container: document.getElementById('cy'), // container to render in
-      
-    elements: [
-      ...networkNodes.map((node) => ({ data: { id: node.id, type: 'anker', position: { x: 35, y: node.posY } } })),
-      ...networkNodes.map((node) => ({ data: { id: node.id + "d", type: 'anker', position: { x: 135, y: node.posY } } })),
-      ...networkNodes.map((node) => ({ data: { id: node.id + "e", source: node.id, target: node.id + "d", type: 'anker' } })),
-      
-    ],
-
-    style: [ // the stylesheet for the graph
-        {
-          selector: 'node',
-          style: {
-            'width': 7,
-            'height': 7,
-            'background-color': '#666',
-            'label': 'data(id)'
-          }
-        },
-        {
-          selector: 'node[type="anker"]', // Select nodes with type="square"
-          style: {            
-            'width': 0.5,
-            'height': 0.5,
-            'background-color': '#666',
-            'label': ''
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'line-color': '#ccc',
-            'target-arrow-color': '#ccc',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier'
-          }
-        },
-        {
-          selector: 'edge[type="anker"]',
-          style: {
-            'width': 2,
-            'line-color': '#000',
-            'target-arrow-color': '#ccc',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'haystack'
-          }
-        }
-      ],
+      container: document.getElementById('cy'), // container to render in  
     
-      layout: {
-        name: 'preset'
-      }
+
+      style: [ // the stylesheet for the graph
+          {
+            selector: 'node',
+            style: {
+              'width': 7,
+              'height': 7,
+              'background-color': '#666',
+              'label': 'data(id)'
+            }
+          },
+          {
+            selector: 'node[type="anker"]', // Select nodes with type="square"
+            style: {            
+              'width': 0.5,
+              'height': 0.5,
+              'background-color': '#666',
+              'label': ''
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#ccc',
+              'target-arrow-color': '#ccc',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier'
+            }
+          },
+          {
+            selector: 'edge[type="anker"]',
+            style: {
+              'width': 2,
+              'line-color': '#000',
+              'target-arrow-color': '#ccc',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'haystack'
+            }
+          }
+        ],
+      
+        layout: {
+          name: 'preset'
+        }
 
     });
 
+    cy.add(networkNodesElements);
+    cy.add(nodesElements);
+    cy.add(edgesElements);
   }
 
 

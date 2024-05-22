@@ -38,8 +38,8 @@ export class NodeInfo {
 export class SendMessage {
     @JsonProperty()
     type!: "send_message";
-    @JsonProperty("msg")
-    message!: Message;
+    @JsonProperty()
+    msg!: Message;
 }
 
 @Serializable()

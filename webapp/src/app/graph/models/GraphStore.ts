@@ -1,8 +1,8 @@
 import { Subject } from 'rxjs';
 import { GraphEdge } from './GraphEdge';
 import { GraphNode } from './GraphNode';
-import { NodeLaunched, SendMessage } from '../../models/Event';
-import Event from '../../models/Event';
+import { DeliverMessage, NodeLaunched, SendMessage, Setup } from '../../models/communication/Event';
+import Event from '../../models/communication/Event';
 import { NetworkNode } from './NetworkNode';
 import { EventStore } from '../../models/EventStore';
 
@@ -19,58 +19,43 @@ export class GraphStore {
   static graphSubject: Subject<string> = new Subject<string>();
 
 
-  static handleNewEvent(event: Event) {
+  static handleNewEvent(event: Event) {    
 
-    
-    const sendEvent = event.data as SendMessage;
+    this.edges = [];
+    this.nodes = [];
+    this.networkNodes = [];
 
-    console.log(sendEvent);
-    if (sendEvent && sendEvent.type === "send_message") {
-        console.log("SendMessage event received");
-        
-        var source = GraphStore.networkNodes.find(node => node.id === sendEvent.message.src);
-        var target = GraphStore.networkNodes.find(node => node.id === sendEvent.message.dest);
-        if(!source) {
-            const networkNode = new NetworkNode(sendEvent.message.src, sendEvent.message.src);
-            this.addNetworkNode(networkNode);
-            source = networkNode;
-        }
-        if(!target) {
-            const networkNode = new NetworkNode(sendEvent.message.dest, sendEvent.message.dest);
-            this.addNetworkNode(networkNode);
-            target = networkNode;
-        }
+    EventStore.nodeSetups.forEach(nodeSetup => {      
+      const networkNode = new NetworkNode(nodeSetup.id, nodeSetup.id);
+      console.log("addNetworkNode " + networkNode.id);
+      this.addNetworkNode(networkNode);
+    });
 
-        const srcNode = new GraphNode(event.timestamp.logical.toString() + "s","send", source);
-        const destNode = new GraphNode(event.timestamp.logical.toString() + "d","receive", target);
+    EventStore.messages.forEach(message => {
 
-        this.addNode(srcNode);
+      const source = GraphStore.networkNodes.find(node => node.id === message.source);
+      if(!source) {return;}
+      const srcNode = new GraphNode(message.send_logical_timestamp.toString(),message.send_logical_timestamp.toString(), source);
+      this.addNode(srcNode);
+
+      if(message.delivered){
+        const target = GraphStore.networkNodes.find(node => node.id === message.target);
+        if(!target) {return;}
+        const destNode = new GraphNode(message.deliver_logical_timestamp!.toString(),message.deliver_logical_timestamp!.toString(), target);
         this.addNode(destNode);
 
-        const edge = new GraphEdge(srcNode, destNode,event.toJson(), event.timestamp.logical);
+        const edge = new GraphEdge(srcNode, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!);
         GraphStore.edges.push(edge);
+      }
 
+    });
 
-        GraphStore.graphSubject.next("newEvent");
-        
-        return;
-    } 
-
-
-    const launchedEvent = event.data as NodeLaunched;
-    if (launchedEvent instanceof NodeLaunched) {
-        console.log("NodeLaunched event received");
-        // TODO why is ID not equal to src in sendMessage
-        //const node = new NetworkNode(launchedEvent.id.toString(), launchedEvent.commandline);
-        //GraphStore.networkNodes.push(node);
-        return;
-    }
-    
+    this.graphSubject.next("update");
     console.log("addevent" + event);
   }
 
   static addNetworkNode(node: NetworkNode) {
-    node.posY = GraphNode.length * 100;
+    node.posY = (GraphStore.networkNodes.length + 1) * 35;
     GraphStore.networkNodes.push(node);  
   }
 
@@ -79,6 +64,9 @@ export class GraphStore {
     if (networkNode) {
       const sameNetworkNodes = GraphStore.nodes.filter(n => n.networkNode === networkNode);
       node.posX = (sameNetworkNodes.length + 1) * 50;
+      if( node.posX > networkNode.length) {
+        networkNode.length = node.posX + 50;
+      }
     }
     GraphStore.nodes.push(node);
   }

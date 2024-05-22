@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import CoreSocket from '../models/CoreSocket';
+import CoreSocket from '../models/communication/CoreSocket';
 
 @Component({
   selector: 'app-debug-controls',

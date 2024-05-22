@@ -1,6 +1,6 @@
 import Event from "./Event"
 import {deserialize} from "ts-jackson";
-import { EventStore } from "./EventStore";
+import { EventStore } from "../EventStore";
 
 export default class CoreSocket {
     socket: WebSocket
