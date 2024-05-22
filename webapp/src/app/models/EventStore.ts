@@ -9,6 +9,9 @@ export class EventStore {
   static nodeSetups: DsNodeSetup[] = [];
 
   static eventsUpdated = new Subject<Event>();
+  static messagesUpdated = new Subject<DsMessage>();
+  static deliverdMessage = new Subject<DsMessage>();
+  static nodeSetupsUpdated = new Subject<DsNodeSetup>();
 
   static addEvent(event: Event) {
     EventStore.events.push(event);
@@ -24,14 +27,17 @@ export class EventStore {
     if (sendEvent && sendEvent.type === "send_message") {
         console.log("SendMessage event received");
         
-        this.messages.push(new DsMessage(event, event.timestamp.logical,
-        event.timestamp.logical, sendEvent.msg.src, sendEvent.msg.dest));
+        const message = new DsMessage(event, event.timestamp.logical,
+          event.timestamp.logical, sendEvent.msg.src, sendEvent.msg.dest);
+        this.messages.push(message);
+        EventStore.messagesUpdated.next(message);
     }
 
     const deliverEvent = event.data as DeliverMessage;
     if (deliverEvent && deliverEvent.type === "deliver_message") {
       const message = this.messages.find(message => message.send_logical_timestamp === deliverEvent.sent_timestamp);
-      message?.addDeliverMessage(event);
+      message!.addDeliverMessage(event);
+      EventStore.deliverdMessage.next(message!);
     }
 
 
@@ -40,7 +46,9 @@ export class EventStore {
         console.log("Setup event received");
 
         launchedEvent.nodes.forEach(node => {
-            this.nodeSetups.push(new DsNodeSetup(node.name, event));
+            const nodeSetup = new DsNodeSetup(node.name, event);
+            this.nodeSetups.push(nodeSetup);
+            EventStore.nodeSetupsUpdated.next(nodeSetup);
         });
 
         return;
