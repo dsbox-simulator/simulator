@@ -3,15 +3,19 @@
 image: "rust:latest"
 
 before_script:
+  # install musl so that we can build a statically linked libc (for greater portability)
   - apt-get update -yqq
   - apt-get install -yqq --no-install-recommends curl
   - apt-get install -yqq musl-dev musl-tools
-  # Install Node Version Manager (NVM) so we can change the node version 
+  # Install Node Version Manager (NVM)
   - curl -o- curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
   - ". ~/.nvm/nvm.sh"
   - nvm --version
   - nvm install v22.0.0
   - nvm use v22.0.0
+  # install angular cli for building the webapp
+  - npm install -g @angular/cli
+  # install the linux-musl target (see above)
   - rustup target add x86_64-unknown-linux-musl
 
 variables:

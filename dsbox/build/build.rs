@@ -9,7 +9,6 @@ mod files;
 
 fn main() {
     let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("..").canonicalize().unwrap();
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
     let mut webapp_root = workspace_dir;
     webapp_root.push("webapp");
     webapp_root.push("dist");
