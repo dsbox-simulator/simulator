@@ -8,7 +8,7 @@ import { EventTableComponent } from "./event-table/event-table.component";
     selector: 'app-root',
     standalone: true,
     templateUrl: './app.component.html',
-    styleUrl: './app.component.css',
+    styleUrl: './app.component.scss',
     imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent]
 })
 

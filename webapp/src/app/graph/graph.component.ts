@@ -7,7 +7,7 @@ import { GraphStore } from './models/GraphStore';
   standalone: true,
   imports: [],
   templateUrl: './graph.component.html',
-  styleUrl: './graph.component.css'
+  styleUrl: './graph.component.scss'
 })
 
 export class GraphComponent implements AfterViewInit {

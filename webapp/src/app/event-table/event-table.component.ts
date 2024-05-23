@@ -12,7 +12,7 @@ import Timestamp from '../models/communication/Timestamp';
     CommonModule
   ],
   templateUrl: './event-table.component.html',
-  styleUrls: ['./event-table.component.css']
+  styleUrls: ['./event-table.component.scss']
 })
 export class EventTableComponent implements OnInit, OnDestroy {
   public events: Event[] = [];
