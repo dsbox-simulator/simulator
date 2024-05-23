@@ -6,5 +6,8 @@
     "@types/cytoscape": "^3.21.1",
     "cytoscape": "^3.29.2",
     "ts-jackson": "^1.6.0"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.3"
   }
 }

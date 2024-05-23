@@ -13,6 +13,13 @@ import { EventTableComponent } from "./event-table/event-table.component";
 })
 
 export class AppComponent {
+
+setDarkMode() {
+  document.body.classList.add('dark-mode');
+}
+setLightMode() {
+  document.body.classList.remove('dark-mode');
+}
   title = 'my-app';
   buttonText: string = "Click me";
 

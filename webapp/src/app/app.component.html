@@ -1,9 +1,18 @@
-<h1>Das ist ein Test</h1>
-<button (click)="changeName()">{{buttonText}}</button>
+
+<header class="navbar navbar-expand-lg bd-navbar sticky-top">
+    <nav class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
+        <a class="navbar-brand">DsBox</a>
+        <app-debug-controls></app-debug-controls>
+        <div class="btn-group" role="group" aria-label="Color Mode">
+            <button type="button" class="btn btn-light" (click)="setLightMode()">Light Mode</button>
+            <button type="button" class="btn btn-dark" (click)="setDarkMode()">Dark Mode</button>
+        </div>
+    </nav>
+</header>
+
 
 <app-graph></app-graph>
 
-<app-debug-controls></app-debug-controls>
-
 <app-event-table></app-event-table>
+
 <router-outlet />
