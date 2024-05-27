@@ -54,4 +54,26 @@ export class EventStore {
         return;
     }
   }
+
+
+  static loadEvents(json : string) {
+    const events = JSON.parse(json) as Event[];
+    events.forEach(event => {
+      this.addEvent(event);
+    });
+  }
+  
+  static saveEvents() {
+
+    const json = JSON.stringify(this.events);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'data.json';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
 }

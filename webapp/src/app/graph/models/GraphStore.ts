@@ -7,11 +7,15 @@ import { NetworkNode } from './NetworkNode';
 import { EventStore } from '../../models/EventStore';
 import { DsNodeSetup } from '../../models/DsNodeSetup';
 import { DsMessage } from '../../models/DsMessage';
+import { Version } from '@angular/core';
 
 export class GraphStore {
     public static  edges: GraphEdge[] = [];
     public static nodes: GraphNode[] = [];
     public static networkNodes: NetworkNode[] = [];
+
+    private static readonly heightDiff = 70;
+    private static readonly widthDiff = 50;
 
   static graphSubject: Subject<string> = new Subject<string>();
 
@@ -36,8 +40,7 @@ export class GraphStore {
     this.addNode(destNode, srcNode!.posX);
 
     const edge = new GraphEdge(srcNode!, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!);
-    GraphStore.edges.push(edge);
-    this.graphSubject.next("update");
+    this.addEdge(edge);
   });
 
   static subscription4 = EventStore.messagesUpdated.subscribe((message: DsMessage) => {
@@ -50,8 +53,27 @@ export class GraphStore {
 
 
   static addNetworkNode(node: NetworkNode) {
-    node.posY = (GraphStore.networkNodes.length + 1) * 35;
+    node.posY = (GraphStore.networkNodes.length + 1) * this.heightDiff;
     GraphStore.networkNodes.push(node);  
+  }
+
+  static addEdge(edge: GraphEdge) {
+    if(edge.source.posX + 100 < edge.target.posX) {
+
+      const sameNetworkNodes = GraphStore.nodes.filter(n => n.networkNode === edge.source.networkNode 
+        && n.posX > edge.source.posX);
+      
+        var newPosX = edge.target.posX - 100;
+        var offsetX = newPosX - edge.source.posX;
+
+        sameNetworkNodes.forEach(node => {
+          node.posX += offsetX;
+        });
+
+        edge.source.posX = newPosX;
+    }
+    GraphStore.edges.push(edge);
+    this.graphSubject.next("update");
   }
 
   static addNode(node: GraphNode, posX: number = 0) {
@@ -59,14 +81,25 @@ export class GraphStore {
     if (networkNode) {
       const sameNetworkNodes = GraphStore.nodes.filter(n => n.networkNode === networkNode);
       const biggestPosX = Math.max(...sameNetworkNodes.map(node => node.posX));
-      node.posX = biggestPosX + 25;
+      node.posX = biggestPosX + this.widthDiff;
       if(node.posX < posX) {
-        node.posX = posX + 25;
+        node.posX = posX + this.widthDiff;
       }
       if( node.posX > networkNode.length) {
         networkNode.length = node.posX + 50;
       }
     }
     GraphStore.nodes.push(node);
+  }
+
+
+  static changeNetworkNodeOrder(oldIndex: number, newIndex: number) {
+    
+    GraphStore.networkNodes.forEach(node => {
+      node.posY = (GraphStore.networkNodes.indexOf(node) + 1) * this.heightDiff;
+      console.log("node: " + node.id + " posY: " + node.posY, node)
+    });
+
+    this.graphSubject.next("update");
   }
 }

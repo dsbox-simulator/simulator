@@ -5,7 +5,6 @@ export class GraphNode {
     label: string;
     networkNode: NetworkNode;
     posX: number;
-    posY: number;
   
     constructor(id: string, label: string, networkNode: NetworkNode) {
       this.id = id;
@@ -13,6 +12,9 @@ export class GraphNode {
       this.networkNode = networkNode;
 
       this.posX = 0;
-      this.posY = networkNode.posY;
+    }
+
+    public get posY(): number {
+      return this.networkNode.posY;
     }
 }

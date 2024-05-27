@@ -1,11 +1,4 @@
-/* Light mode styles */
-body {
-    background-color: white;
-    color: black;
-  }
-  
-  /* Dark mode styles */
-  body.dark-mode {
-    background-color: black;
-    color: white;
-  }
+
+@import 'themes/solar.scss';
+
+@import 'bootstrap/scss/bootstrap';

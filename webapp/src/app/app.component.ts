@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { GraphComponent } from "./graph/graph.component";
 import { DebugControlsComponent } from "./debug-controls/debug-controls.component";
 import { EventTableComponent } from "./event-table/event-table.component";
+import { EventStore } from './models/EventStore';
 
 @Component({
     selector: 'app-root',
@@ -13,6 +14,52 @@ import { EventTableComponent } from "./event-table/event-table.component";
 })
 
 export class AppComponent {
+openFile() {
+  document.querySelector('input')!.click()
+}
+
+onFileSelected($event: Event) {
+  const file: File = ($event.target as HTMLInputElement).files![0];
+  console.log("Selected file:", file);
+  if (file) {
+    this.readFile(file).then(contents => {
+      console.log("File contents:", contents);
+      EventStore.loadEvents(contents);
+      // Do whatever you want with the file contents here
+    }).catch(error => {
+      console.error("Error reading file:", error);
+    });
+  }
+  
+}
+
+readFile(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result as string);
+    };
+    reader.onerror = () => {
+      reject(reader.error);
+    };
+    reader.readAsText(file);
+  });
+}
+
+
+loadEvents() {  
+
+}
+
+saveEvents() {
+  EventStore.saveEvents();
+}
+
+  activeTab: string = 'home';
+
+  selectTab(tab: string) {
+    this.activeTab = tab;
+  }
 
 setDarkMode() {
   document.body.classList.add('dark-mode');
@@ -26,5 +73,28 @@ setLightMode() {
   changeName(){
     this.buttonText = "Button Clicked"
 
+  }
+
+  private darkThemeClass = 'dark-theme';
+  private lightThemeClass = 'light-theme';
+
+  constructor() { }
+
+  setLightTheme() {
+    document.body.classList.remove(this.darkThemeClass);
+    document.body.classList.add(this.lightThemeClass);
+  }
+
+  setDarkTheme() {
+    document.body.classList.remove(this.lightThemeClass);
+    document.body.classList.add(this.darkThemeClass);
+  }
+
+  toggleTheme(isDarkMode: boolean) {
+    if (isDarkMode) {
+      this.setDarkTheme();
+    } else {
+      this.setLightTheme();
+    }
   }
 }

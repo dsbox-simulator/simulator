@@ -1,24 +1,39 @@
 import { AfterViewInit, Component } from '@angular/core';
 import cytoscape from 'cytoscape';
 import { GraphStore } from './models/GraphStore';
+import { CommonModule } from '@angular/common';
+import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 
 @Component({
   selector: 'app-graph',
   standalone: true,
-  imports: [],
+  imports: [
+    CommonModule,    
+    DragDropModule
+  ],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss'
 })
 
 export class GraphComponent implements AfterViewInit {
 
+  networkNodes = GraphStore.networkNodes;
+
+  drop(event: CdkDragDrop<any[]>) {
+    moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
+    GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
+    
+  }
+
   subscription2 = GraphStore.graphSubject.subscribe((graph) => {
     this.updateGraph();
   });
-  
+
   updateGraph() {
 
   console.log("updateGraph");
+
 
     const networkNodes = GraphStore.networkNodes;
     const nodes = GraphStore.nodes;
@@ -57,7 +72,8 @@ export class GraphComponent implements AfterViewInit {
               'width': 7,
               'height': 7,
               'background-color': '#666',
-              'label': 'data(id)'
+              'label': 'data(id)',
+              'color': '#fff'
             }
           },
           {
@@ -83,7 +99,7 @@ export class GraphComponent implements AfterViewInit {
             selector: 'edge[type="anker"]',
             style: {
               'width': 2,
-              'line-color': '#000',
+              'line-color': '#fff',
               'target-arrow-color': '#ccc',
               'target-arrow-shape': 'triangle',
               'curve-style': 'haystack'
