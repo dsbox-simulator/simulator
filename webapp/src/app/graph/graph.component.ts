@@ -60,6 +60,10 @@ export class GraphComponent implements AfterViewInit {
 
     console.log("edges: ", edgesElements);
 
+    var maxLength = Math.max(...networkNodes.map(node => node.length));
+    maxLength += 100;
+    document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
+
     var cy = cytoscape({
 
       container: document.getElementById('cy'), // container to render in  
@@ -116,6 +120,7 @@ export class GraphComponent implements AfterViewInit {
     cy.add(networkNodesElements);
     cy.add(nodesElements);
     cy.add(edgesElements);
+    
   }
 
 

@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import CoreSocket from '../models/communication/CoreSocket';
+import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
 
 @Component({
   selector: 'app-debug-controls',
@@ -11,7 +12,7 @@ import CoreSocket from '../models/communication/CoreSocket';
 export class DebugControlsComponent {
   CoreSocket: CoreSocket;
   constructor() {
-    this.CoreSocket = new CoreSocket();
+    this.CoreSocket = CoreSocketFactory.create();
   }
 
   public send(data: string) {

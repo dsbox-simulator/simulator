@@ -1,12 +1,12 @@
 $height: 600px;
 
 #cy {
-    width: inherit;
-    min-width: 3000px;
-    height: $height;
-    display: block;
-    text-align: left;
-  }
+  width: auto;
+  min-width: 3000px;
+  height: $height;
+  display: block;
+  text-align: left;
+}
 
 .cytoscape-scroll-container {
   flex: 4;
@@ -19,6 +19,7 @@ $height: 600px;
   width: 100%;
   display: flex;
   align-items: stretch;
+  max-width: fit-content;
 }
 
 .left-element {

@@ -1,15 +1,26 @@
-<table>
+<table class="table table-hover">
     <thead>
         <tr>
-            <th>Timestamp</th>
-            <th>Event</th>
+            <th scope="col">Timestamp</th>
+            <th scope="col">DateTime</th>
+            <th scope="col">Type</th>
+            <th scope="col">Message</th>
+            <th scope="col">Source</th>
+            <th scope="col">Destination</th>
+            <th scope="col">Body</th>
         </tr>
     </thead>
     <tbody>
-        <tr *ngFor="let event of events">
-            <td>{{ event.timestamp }}</td>
-            <!--<td>{{ event.toJson() }}</td>-->
+        <tr class="table-active" *ngFor="let event of events">
+            <td>{{ event.timestamp.logical }}</td>
+            <td>{{ event.timestamp.physical }}</td>
+            <td>{{ event.data?.type }}</td>
+            <td>{{ event | json }}</td>
+
+            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.src}}</td>
+            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.dest}}</td>
+            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.body | json}}</td>
+            
         </tr>
     </tbody>
 </table>
-<p>event-table works!</p>

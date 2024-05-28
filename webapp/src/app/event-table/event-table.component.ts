@@ -15,16 +15,10 @@ import Timestamp from '../models/communication/Timestamp';
   styleUrls: ['./event-table.component.scss']
 })
 export class EventTableComponent implements OnInit, OnDestroy {
-  public events: Event[] = [];
+  public events: Event[] = EventStore.events;
   private eventsSub!: Subscription;
 
   ngOnInit() {
-    this.events = EventStore.events;
-    this.eventsSub = EventStore.eventsUpdated.subscribe((events: Event) => {
-      this.events = EventStore.events;
-    });  
-    this.events[0] = new Event();
-    this.events[0].timestamp = new Timestamp();  
   }
 
   ngOnDestroy() {

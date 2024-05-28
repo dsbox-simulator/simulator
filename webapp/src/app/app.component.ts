@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component,HostListener } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { GraphComponent } from "./graph/graph.component";
 import { DebugControlsComponent } from "./debug-controls/debug-controls.component";
 import { EventTableComponent } from "./event-table/event-table.component";
 import { EventStore } from './models/EventStore';
+import { CoreSocketFactory } from './models/communication/CoreSocketFactory';
 
 @Component({
     selector: 'app-root',
@@ -45,6 +46,26 @@ readFile(file: File): Promise<string> {
     reader.readAsText(file);
   });
 }
+
+@HostListener('document:keydown', ['$event'])
+  handleKeyboardEvent(event: KeyboardEvent) {
+    if (event.key === 'i') {
+      event.preventDefault();
+      // Handle F10 key press here
+      console.log('i key pressed');
+
+      const coreSocket = CoreSocketFactory.create();
+      coreSocket.send('step');
+    }
+    if (event.key === 'o') {
+      event.preventDefault();
+      // Handle F10 key press here
+      console.log('o key pressed');
+
+      const coreSocket = CoreSocketFactory.create();
+      coreSocket.send('resume');
+    }
+  }
 
 
 loadEvents() {  
