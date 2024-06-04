@@ -27,8 +27,10 @@ export class EventStore {
     if (sendEvent && sendEvent.type === "send_message") {
         console.log("SendMessage event received");
         
+        const body = JSON.stringify(sendEvent.msg.body);
+
         const message = new DsMessage(event, event.timestamp.logical,
-          event.timestamp.logical, sendEvent.msg.src, sendEvent.msg.dest);
+          event.timestamp.logical, sendEvent.msg.src, sendEvent.msg.dest, body);
         this.messages.push(message);
         EventStore.messagesUpdated.next(message);
     }

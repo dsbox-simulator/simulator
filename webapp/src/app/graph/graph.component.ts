@@ -51,7 +51,7 @@ export class GraphComponent implements AfterViewInit {
     ];
 
     const edgesElements = [
-        ...edges.map((edge) => ({ data: { id: edge.label, source: edge.source.id, target: edge.target.id } })),
+        ...edges.map((edge) => ({ data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label } })),
     ];
 
 
@@ -93,10 +93,12 @@ export class GraphComponent implements AfterViewInit {
             selector: 'edge',
             style: {
               'width': 2,
-              'line-color': '#ccc',
-              'target-arrow-color': '#ccc',
+              'line-color': '#b58900',
+              'target-arrow-color': '#b58900',
               'target-arrow-shape': 'triangle',
-              'curve-style': 'bezier'
+              'curve-style': 'bezier',
+              'color': '#b58900',
+              //label: 'data(label)'
             }
           },
           {
@@ -137,7 +139,7 @@ export class GraphComponent implements AfterViewInit {
         { data: { id: 'd', type: 'anker' }, position: {x: 130, y: 30 }},
         { data: { id: 'e', type: 'anker' }, position: {x: 30, y: 60 }},
         { data: { id: 'f', type: 'anker' }, position: {x: 130, y: 60 }},
-        { data: { id: 'ab', source: 'a', target: 'b' }},
+        { data: { id: 'ab', source: 'a', target: 'b', label: 'ab' }},
         { data: { id: 'cd', source: 'c', target: 'd', type: 'anker' }},
         { data: { id: 'ef', source: 'e', target: 'f', type: 'anker' }}
       ],
@@ -168,7 +170,8 @@ export class GraphComponent implements AfterViewInit {
             'line-color': '#ccc',
             'target-arrow-color': '#ccc',
             'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier'
+            'curve-style': 'bezier',
+            label: 'data(label)'
           }
         },
         {

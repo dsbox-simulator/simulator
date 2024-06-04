@@ -11,8 +11,9 @@ export class DsMessage {
     public target: string;
     public delivered: boolean;
     public update: boolean;
+    public body: string;
 
-    public constructor(sendMessage: Event, id: number, send_logical_timestamp: number, source: string, target: string) {
+    public constructor(sendMessage: Event, id: number, send_logical_timestamp: number, source: string, target: string, body: string) {
         this.sendMessage = sendMessage;
         this.deliverMessage = null;
         this.id = id;
@@ -22,6 +23,7 @@ export class DsMessage {
         this.target = target;
         this.delivered = false;
         this.update = true;
+        this.body = body;
     }
 
     public addDeliverMessage(deliverMessage: Event) {
