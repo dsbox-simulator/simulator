@@ -39,7 +39,7 @@ export class GraphStore {
     const destNode = new GraphNode(message.deliver_logical_timestamp!.toString(),message.deliver_logical_timestamp!.toString(), target);
     this.addNode(destNode, srcNode!.posX);
 
-    const edge = new GraphEdge(srcNode!, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!);
+    const edge = new GraphEdge(srcNode!, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!, message.body);
     this.addEdge(edge);
   });
 
