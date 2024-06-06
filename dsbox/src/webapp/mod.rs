@@ -26,10 +26,12 @@ use tower_http::trace::TraceLayer;
 use crate::cli::Args;
 use crate::core::remote_control::RemoteCommand;
 use crate::protocol::ProtocolSubscriber;
+use crate::webapp::app::App;
 
 mod files;
 #[allow(unused)]
 mod json_rpc;
+mod app;
 
 /// A handle to the running webapp, mainly used to shut it down before exiting the program
 pub struct Webapp {
@@ -40,7 +42,7 @@ pub struct Webapp {
 /// State that is passed to each request handler.
 /// Contains the [`Sender`] and [`ProtocolSubscriber`] for [`Event]`s and [`RemoteCommand`]s.
 struct WebappState {
-    remote_control: Sender<RemoteCommand>,
+    app: App,
     event_subscriber: ProtocolSubscriber,
 }
 
@@ -53,7 +55,7 @@ impl Webapp {
             handle: tokio::spawn(async move {
                 // build our application with a route
                 let router = Self::build_router()
-                    .with_state(WebappState { remote_control, event_subscriber });
+                    .with_state(WebappState { app: App::new(remote_control), event_subscriber });
 
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
@@ -139,14 +141,17 @@ async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSoc
     loop {
         tokio::select! {
             event = state.event_subscriber.recv() => {
-                if let Err(e) = socket.send(Message::Text(serde_json::to_string(&event).unwrap())).await {
+                if let Err(e) = state.app.handle_event(event, &mut socket).await {
                     log::warn!("websocket error when sending event message: {e}");
                     break;
                 }
             }
             command = socket.recv() => {
                 match command {
-                    Some(Ok(ws_msg)) => if !handle_msg(ws_msg, &mut state.remote_control).await { break; }
+                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Text(message))) => if !state.app.handle_msg(message, &mut socket).await
+                        .expect("failed to handle message") { break; },
+                    Some(Ok(_)) => panic!("unknown message type"),
                     Some(Err(e)) => {
                         log::warn!("websocket error: {e}");
                         break;
@@ -158,31 +163,10 @@ async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSoc
     }
 }
 
-/// Helper function to handle a single incoming [`WebSocket`][ws] message. Attempts to send the corresponding
-/// [`RemoteCommand`] to the [`Core`](crate::core::Core).
-///
-/// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
-async fn handle_msg(msg: Message, remote_control: &mut Sender<RemoteCommand>) -> bool {
-    if matches!(msg, Message::Close(_)) { return false; }
-    if let Message::Text(txt) = msg {
-        match txt.as_str() {
-            "pause" => remote_control.send(RemoteCommand::Pause).await.is_ok(),
-            "resume" => remote_control.send(RemoteCommand::Resume).await.is_ok(),
-            "step" => remote_control.send(RemoteCommand::Step).await.is_ok(),
-            cmd => {
-                log::warn!("unknown core command: `{cmd}`");
-                true
-            }
-        }
-    } else {
-        true
-    }
-}
-
 impl Clone for WebappState {
     fn clone(&self) -> Self {
         Self {
-            remote_control: self.remote_control.clone(),
+            app: self.app.clone(),
             event_subscriber: self.event_subscriber.resubscribe(),
         }
     }

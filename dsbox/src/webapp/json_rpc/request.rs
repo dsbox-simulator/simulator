@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Number, Value};
 use serde::de::{Error, Unexpected};
+use serde_json::{Number, Value};
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Id {
     String(String),
@@ -10,7 +10,7 @@ pub enum Id {
     Null,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Request {
     #[serde(deserialize_with = "deserialize_jsonrpc_version")]
     #[allow(unused)]
@@ -19,6 +19,26 @@ pub struct Request {
     pub params: Value,
     #[serde(default, deserialize_with = "deserialize_request_id")]
     pub id: Option<Id>,
+}
+
+impl Request {
+    pub fn new(method: String, params: impl Serialize, id: Id) -> Result<Request, serde_json::Error> {
+        Ok(Self {
+            jsonrpc: "2.0".to_string(),
+            method,
+            params: serde_json::to_value(params)?,
+            id: Some(id),
+        })
+    }
+
+    pub fn notification(method: String, params: impl Serialize) -> Result<Request, serde_json::Error> {
+        Ok(Self {
+            jsonrpc: "2.0".to_string(),
+            method,
+            params: serde_json::to_value(params)?,
+            id: None,
+        })
+    }
 }
 
 // Any value that is present is considered Some value, including null.

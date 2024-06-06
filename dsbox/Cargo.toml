@@ -9,6 +9,7 @@ build = "build/build.rs"
 clap = { version = "4.5.4", features = ["derive"] }
 
 libproto = { path = "../libproto", features = ["system_messages"] }
+json_rpc_fn = { path = "../json_rpc_fn" }
 
 serde = "1"
 serde_json = "1"
@@ -23,11 +24,11 @@ tokio = { version = "1.37.0", features = ["full"] }
 regex = "1.10.4"
 chrono = { version = "0.4", features = ["serde"] }
 
-axum = { version = "0.7.5", features = ["ws"], optional = true}
-tower-http = { version = "0.5.2", features = ["trace"], optional = true}
-phf = { version = "0.11.2", default-features = false , optional = true}
-flate2 = { version = "1.0.28" , optional = true}
-mime_guess = { version = "2.0.4" , optional = true}
+axum = { version = "0.7.5", features = ["ws"], optional = true }
+tower-http = { version = "0.5.2", features = ["trace"], optional = true }
+phf = { version = "0.11.2", default-features = false, optional = true }
+flate2 = { version = "1.0.28", optional = true }
+mime_guess = { version = "2.0.4", optional = true }
 
 mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize", "vendored"], optional = true }
 
@@ -37,9 +38,9 @@ wasi-common = { version = "20", features = ["tokio"], optional = true }
 wiggle = { version = "20", optional = true }
 
 [build-dependencies]
-phf_codegen = { version = "0.11.2" , optional = true}
-flate2 = { version = "1.0.28" , optional = true}
-mime_guess = { version = "2.0.4" , optional = true}
+phf_codegen = { version = "0.11.2", optional = true }
+flate2 = { version = "1.0.28", optional = true }
+mime_guess = { version = "2.0.4", optional = true }
 
 [features]
 lua = ["dep:mlua"]
