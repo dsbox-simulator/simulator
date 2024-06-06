@@ -8,6 +8,8 @@
             <th scope="col">Source</th>
             <th scope="col">Destination</th>
             <th scope="col">Body</th>
+            <th *ngIf="delivered"> Deliver Message </th>
+            <th *ngIf="delivered"> Drop Message </th>
         </tr>
     </thead>
     <tbody>
@@ -20,7 +22,8 @@
             <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.src}}</td>
             <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.dest}}</td>
             <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.body | json}}</td>
-            
+            <td *ngIf="delivered" > <button class="btn btn-primary"> Deliver </button></td>
+            <td *ngIf="delivered" > <button class="btn btn-primary"> Drop </button></td>
         </tr>
     </tbody>
 </table>

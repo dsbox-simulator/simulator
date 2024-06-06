@@ -57,6 +57,11 @@ export class EventStore {
     }
   }
 
+  static getNonDeliveredMessages() {
+    return this.messages.filter(message => !message.delivered && message.target != "core").map(message => message.sendMessage);
+  }
+
+
 
   static loadEvents(json : string) {
     const events = JSON.parse(json) as Event[];

@@ -82,6 +82,7 @@
         >
 
             <app-graph></app-graph>
+            <app-event-table [delivered]="true"></app-event-table>
         </div>
         <div
           class="tab-pane fade"
@@ -90,7 +91,7 @@
           id="Logs"
           role="tabpanel"
         >        
-            <app-event-table></app-event-table> 
+            <app-event-table [delivered]="false"></app-event-table> 
         </div>        
       </div>
     </div>

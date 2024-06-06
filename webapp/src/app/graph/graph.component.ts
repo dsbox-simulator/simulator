@@ -47,7 +47,7 @@ export class GraphComponent implements AfterViewInit {
 
 
     const nodesElements = [
-      ...nodes.map((node) => ({ data: { id: node.id, type: 'node'}, position: { x: node.posX, y: node.posY } } )),
+      ...nodes.map((node) => ({ data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY}, position: { x: node.posX, y: node.posY } } )),
     ];
 
     const edgesElements = [
@@ -97,8 +97,13 @@ export class GraphComponent implements AfterViewInit {
               'target-arrow-color': '#b58900',
               'target-arrow-shape': 'triangle',
               'curve-style': 'bezier',
-              'color': '#b58900',
-              //label: 'data(label)'
+              'color': '#FFF',
+              'text-opacity': 0,
+              'text-background-color': '#333',
+              'text-background-opacity': 1,
+              'text-background-shape': 'roundrectangle',
+              'text-background-padding': '3px',
+              label: 'data(label)'
             }
           },
           {
@@ -118,12 +123,75 @@ export class GraphComponent implements AfterViewInit {
         }
 
     });
+    
+    function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
+      var data = node.data();
+
+      var minX = data.minX;
+      var maxX = data.maxX;
+      var minY = data.minY;
+      var maxY = data.maxY;
+
+      if(!minX)
+        minX = 0;
+      if(!maxX)
+        maxX = Number.MAX_SAFE_INTEGER;
+      if(!minY)
+        minY = 0;
+      if(!maxY)
+        maxY = Number.MAX_SAFE_INTEGER;
+
+      console.log("minX: ", minX);
+      console.log("maxX: ", maxX);
+      console.log("minY: ", minY);
+      console.log("maxY: ", maxY);
+
+      return {
+        x: Math.max(minX, Math.min(pos.x, maxX)),
+        y: Math.max(minY, Math.min(pos.y, maxY))
+      };
+    }
+
 
     cy.add(networkNodesElements);
     cy.add(nodesElements);
     cy.add(edgesElements);
+    cy.edges().filter(edge => edge.data('type') !== 'anker').forEach(edge => {
+      edge.on('mouseover', function(event) {
+        var edge = event.target;        
+        edge.style('text-opacity', 1);
+        edge.style('z-compound-depth', 'top');
+      });
+      
+      edge.on('mouseout', function(event) {
+        var edge = event.target;
+        edge.style('text-opacity', 0);
+        edge.style('z-compound-depth', 'bottom');
+      });
+    });
     
+    cy.maxZoom(2);
+    cy.minZoom(0.5);
+    cy.userZoomingEnabled(false);
+    cy.userPanningEnabled(false);
+
+    cy.nodes().on('dragfree', function(event) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      node.position(constrainedPos);
+    });
+
+    cy.nodes().on('position', function(event) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
+        node.position(constrainedPos);
+      }
+    });
   }
+
 
 
   ngAfterViewInit() {
@@ -133,7 +201,7 @@ export class GraphComponent implements AfterViewInit {
       container: document.getElementById('cy'), // container to render in
     
       elements: [ // list of graph elements to start with
-        { data: { id: 'a' }, position: {x: 35, y: 30}},
+        { data: { id: 'a', minX: 35, maxX: 50, minY:30, maxY:30 }, position: {x: 35, y: 30}},
         { data: { id: 'b' }, position: {x: 100, y: 60}},
         { data: { id: 'c', type: 'anker' }, position: {x: 30, y: 30 }},
         { data: { id: 'd', type: 'anker' }, position: {x: 130, y: 30 }},
@@ -190,6 +258,44 @@ export class GraphComponent implements AfterViewInit {
         name: 'preset'
       }
     
+    });
+    
+    function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
+      var data = node.data();
+
+      var minX = data.minX;
+      var maxX = data.maxX;
+      var minY = data.minY;
+      var maxY = data.maxY;
+      if(!minX)
+        minX = 0;
+      if(!maxX)
+        maxX = Number.MAX_SAFE_INTEGER;
+      if(!minY)
+        minY = 0;
+      if(!maxY)
+        maxY = Number.MAX_SAFE_INTEGER;
+
+      return {
+        x: Math.max(minX, Math.min(pos.x, maxX)),
+        y: Math.max(minY, Math.min(pos.y, maxY))
+      };
+    }
+
+    cy.nodes().on('dragfree', function(event) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      node.position(constrainedPos);
+    });
+
+    cy.nodes().on('position', function(event) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
+        node.position(constrainedPos);
+      }
     });
   }
 }

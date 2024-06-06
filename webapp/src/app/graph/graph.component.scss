@@ -1,4 +1,4 @@
-$height: 400px;
+$height: 500px;
 
 #cy {
   width: auto;
@@ -23,7 +23,7 @@ $height: 400px;
 }
 
 .left-element {
-  height: §height; /* Match the height of the #cy div */
+  height: $height; /* Match the height of the #cy div */
   width: auto; /* Adjust the width as needed */
 }
 
@@ -49,5 +49,5 @@ $height: 400px;
 }
 
 .node-start{
-  margin-top: 20px;
+  margin-top: 50px;
 }
