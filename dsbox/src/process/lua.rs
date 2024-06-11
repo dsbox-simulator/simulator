@@ -11,6 +11,10 @@ use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinHandle;
 
+use libproto::Message;
+use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
+
+use crate::core::CORE_NAME;
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
 
@@ -49,11 +53,12 @@ impl LuaLauncher {
     }
 
     /// launches a new lua script. the lua script has access to the passed arguments via a global `args` table.
-    pub fn launch(&self, file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    pub fn launch(&self, file: &Path, args: Vec<String>, allow_os_libs: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>, name: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         log::trace!("launching lua node `{}`, args: {args:?}", file.display());
         let app_data = LuaAppData {
             sender: event_sender,
             receiver: Mutex::new(command_receiver),
+            name,
         };
 
         let (finished_tx, finished_rx) = oneshot::channel();
@@ -111,6 +116,7 @@ impl LuaLauncher {
         mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
         mod_dsbox.set("array", lua.create_function(lua_array)?)?;
         mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
+        mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
         let message_class = lua.create_table()?;
         message_class.set("new", lua.create_function(message_new)?)?;
         message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
@@ -186,6 +192,8 @@ struct LuaAppData {
     sender: Sender<ProcessEvent>,
     /// a receiver to receive commands (currently only messages) from the core
     receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
+    /// the name of this node (useful for automatically sending log messages with extended information to the core)
+    name: String,
 }
 
 impl LuaAppData {
@@ -239,6 +247,20 @@ impl LuaAppData {
         Ok(app_data.send_event(ProcessEvent::Log(message)).await.is_ok())
     }
 
+    async fn lua_log(lua: &Lua, (message, label, color, _rest): (String, Option<String>, Option<String>, MultiValue<'_>)) -> mlua::Result<bool> {
+        let app_data = lua.app_data_ref::<Self>().unwrap();
+        let marker = if let Some(label) = label {
+            let color = if let Some(color) = color {
+                log_marker_color_from_str(&color)
+            } else { None };
+            Some(LogMarker { label, color })
+        } else { None };
+        Ok(app_data.send_event(ProcessEvent::Message(Message::new(&app_data.name, CORE_NAME, None, LogMessage {
+            text: message,
+            marker,
+        }))).await.is_ok())
+    }
+
     async fn send_event(&self, event: ProcessEvent) -> Result<(), SendError<ProcessEvent>> {
         self.sender.send(event).await
     }
@@ -249,8 +271,7 @@ impl LuaAppData {
     }
 }
 
-fn message_new<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, Value<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
-    let (message_class, src, dst, r#type, rest) = params;
+fn message_new<'lua>(lua: &'lua Lua, (message_class, src, dst, r#type, rest): (Table<'lua>, Value<'lua>, Value<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
     let new_message = lua.create_table()?;
     new_message.set("src", src)?;
     new_message.set("dest", dst)?;
@@ -271,8 +292,7 @@ fn message_set_metatable(lua: &Lua, message: &Table, message_class: &Table) -> m
     Ok(())
 }
 
-fn message_create_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
-    let (message, r#type, rest) = params;
+fn message_create_reply<'lua>(lua: &'lua Lua, (message, r#type, rest): (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<Table<'lua>> {
     let message_class = if let Some(metatable) = message.get_metatable() {
         metatable.get("__index")?
     } else { lua.create_table()? };
@@ -284,13 +304,12 @@ fn message_create_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>,
     Ok(new_message)
 }
 
-async fn message_reply<'lua>(lua: &'lua Lua, params: (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
-    let message = message_create_reply(lua, params)?;
+async fn message_reply<'lua>(lua: &'lua Lua, (message, r#type, rest): (Table<'lua>, Value<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
+    let message = message_create_reply(lua, (message, r#type, rest))?;
     message_send(lua, (message, MultiValue::new())).await
 }
 
-async fn message_send<'lua>(lua: &'lua Lua, params: (Table<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
-    let (mut message, mut rest) = params;
+async fn message_send<'lua>(lua: &'lua Lua, (mut message, mut rest): (Table<'lua>, MultiValue<'lua>)) -> mlua::Result<bool> {
     let message_class: Table = get_dsbox(lua, "Message")?;
     if message == message_class {
         rest.push_front(message_class.into_lua(lua)?);
@@ -314,8 +333,7 @@ fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {
     Ok(())
 }
 
-async fn sleep<'lua>(_: &'lua Lua, params: (f64, MultiValue<'lua>)) -> mlua::Result<()> {
-    let (secs, _rest) = params;
+async fn sleep<'lua>(_: &'lua Lua, (secs, _rest): (f64, MultiValue<'lua>)) -> mlua::Result<()> {
     tokio::time::sleep(Duration::from_secs_f64(secs)).await;
     Ok(())
 }
@@ -330,4 +348,26 @@ fn get_dsbox<'lua, K: IntoLua<'lua>, V: FromLua<'lua>>(lua: &'lua Lua, key: K) -
         .get::<&str, Table>("loaded")?
         .get::<&str, Table>("dsbox")?
         .get(key)
+}
+
+pub fn log_marker_color_from_str(color: &str) -> Option<LogMarkerColor> {
+    match color {
+        "black" => Some(LogMarkerColor::Black),
+        "red" => Some(LogMarkerColor::Red),
+        "green" => Some(LogMarkerColor::Green),
+        "yellow" => Some(LogMarkerColor::Yellow),
+        "blue" => Some(LogMarkerColor::Blue),
+        "magenta" => Some(LogMarkerColor::Magenta),
+        "cyan" => Some(LogMarkerColor::Cyan),
+        "white" => Some(LogMarkerColor::White),
+        "bright_black" => Some(LogMarkerColor::BrightBlack),
+        "bright_red" => Some(LogMarkerColor::BrightRed),
+        "bright_green" => Some(LogMarkerColor::BrightGreen),
+        "bright_yellow" => Some(LogMarkerColor::BrightYellow),
+        "bright_blue" => Some(LogMarkerColor::BrightBlue),
+        "bright_magenta" => Some(LogMarkerColor::BrightMagenta),
+        "bright_cyan" => Some(LogMarkerColor::BrightCyan),
+        "bright_white" => Some(LogMarkerColor::BrightWhite),
+        _ => None
+    }
 }

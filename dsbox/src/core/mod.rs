@@ -24,7 +24,7 @@ use tokio::time::{Duration, Instant};
 use libproto::{Message, Payload};
 use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
-use libproto::services::TimerExpired;
+use libproto::services::{LogMessage, TimerExpired};
 use libproto::system::{BeginMonitor, Break, MonitorEvent, MonitorEventKind, Setup, SetupOk};
 use node::Node;
 
@@ -36,6 +36,8 @@ use crate::core::node::{MiddlewareId, NodeId};
 use crate::core::node_list::NodeList;
 use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerManager};
+use crate::log_color;
+use crate::log_color::log_marker_ansi_color;
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::protocol::{Protocol, ProtocolSubscriber};
@@ -96,7 +98,7 @@ enum CoreState {
 }
 
 /// The "node name" of the [`Core`]. It is used by clients to send core messages (i.e. [`Setup`])
-const CORE_NAME: &'static str = "core";
+pub const CORE_NAME: &'static str = "core";
 
 /// The "node name" of the client process. It is used by the [`Core`] to send messages to the client process that are not specific to a client node (i.e. [`SetupOk`])
 const CLIENT_NAME: &'static str = "client";
@@ -226,7 +228,11 @@ impl Core {
                 Ok(false)
             }
             ProcessEvent::Log(log) => {
-                self.log(timestamp, node_id, middleware_id, log).await?;
+                let log_message = LogMessage {
+                    text: log,
+                    marker: None,
+                };
+                self.log(timestamp, node_id, middleware_id, log_message).await?;
                 Ok(true)
             }
             ProcessEvent::Exited(exit_code) => {
@@ -264,7 +270,7 @@ impl Core {
         self.protocol.publish_event(Event::send_message(timestamp, message.clone())).await;
 
         if message.dst == CORE_NAME {
-            return self.handle_core_message(source, message).await;
+            return self.handle_core_message(source, timestamp, message).await;
         }
 
         if let Some((source_id, middleware_id)) = source {
@@ -320,14 +326,14 @@ impl Core {
     }
 
     async fn send_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
-        let reply = timer.message.reply(None, TimerExpired {});
+        let reply = Message::new(CORE_NAME, &timer.source, None, TimerExpired { name: timer.name });
         self.dispatch(None, Timestamp::now(), reply).await
     }
 
     /// handles a single core [`Message`] (i.e. [`Setup`] or [`BeginMonitor`]).
     /// Returns an error if the [`Message`] was not send from a client node, if the [`Message`]s type
     /// is not known, or if handling of the [`Message`] itself fails.
-    async fn handle_core_message(&mut self, source: Option<(NodeId, MiddlewareId)>, message: Message) -> Result<(), CoreError> {
+    async fn handle_core_message(&mut self, source: Option<(NodeId, MiddlewareId)>, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
         macro_rules! assert_is_client {
             () => {
                     if let Some((source_id, middleware_id)) = source {
@@ -348,9 +354,16 @@ impl Core {
             libproto::services::Timer::TYPE => {
                 let timer = message.payload::<libproto::services::Timer>().unwrap();
                 if let Some((_, middleware_id)) = source {
-                    self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message, middleware_id);
+                    self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message.src, timer.name, middleware_id);
                 }
                 Ok(())
+            }
+            LogMessage::TYPE => {
+                let message = message.payload::<LogMessage>().unwrap();
+                let Some((source_id, middleware_id)) = source else {
+                    panic!("tried to send log message without a source (i.e. the core sent it to the core?)");
+                };
+                self.log(timestamp, source_id, middleware_id, message).await
             }
             Break::TYPE => {
                 if self.interactive {
@@ -438,11 +451,11 @@ impl Core {
             });
             let node_id = node.id;
             for middleware in setup.middleware_before.iter().rev() {
-                let middleware = self.launch_proc(Some(middleware), false).await?;
+                let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
                 self.nodes[node_id].push_middleware_before(middleware)
             }
             for middleware in &setup.middleware_after {
-                let middleware = self.launch_proc(Some(middleware), false).await?;
+                let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
                 self.nodes[node_id].push_middleware_after(middleware)
             }
         }
@@ -461,7 +474,7 @@ impl Core {
 
     /// launches a new process and creates the corresponding node
     async fn launch(&mut self, command: Option<&str>, is_client: bool, name: String) -> Result<&mut Node, CoreError> {
-        let proc = self.launch_proc(command, is_client).await?;
+        let proc = self.launch_proc(command, is_client, name.clone()).await?;
         let node = self.nodes.push(Node::new(name, is_client, proc));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
@@ -469,9 +482,9 @@ impl Core {
         Ok(node)
     }
 
-    async fn launch_proc(&mut self, command: Option<&str>, is_client: bool) -> Result<Process, CoreError> {
+    async fn launch_proc(&mut self, command: Option<&str>, is_client: bool, name: String) -> Result<Process, CoreError> {
         let command = command.unwrap_or(&self.server_command);
-        self.launcher.launch(command, is_client).await
+        self.launcher.launch(command, is_client, name).await
             .map_err(|e| CoreError::LaunchFailed {
                 command: command.to_string(),
                 error: e,
@@ -479,10 +492,19 @@ impl Core {
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
-    async fn log(&mut self, timestamp: Timestamp, source_id: NodeId, middleware_id: MiddlewareId, line: String) -> Result<(), CoreError> {
+    async fn log(&mut self, timestamp: Timestamp, source_id: NodeId, middleware_id: MiddlewareId, message: LogMessage) -> Result<(), CoreError> {
         let node = &self.nodes[source_id];
-        log::info!("[{}][{}]: {line}", node.commandline(middleware_id), node.name);
-        self.protocol.publish_event(Event::log(timestamp, source_id, line)).await;
+        if let Some(marker) = &message.marker {
+            let (color, reset) = if let Some(color) = marker.color {
+                (log_marker_ansi_color(color), log_color::RESET)
+            } else {
+                ("", "")
+            };
+            log::info!("[{}][{}]: {color}[{}] {}{reset}", node.commandline(middleware_id), node.name, marker.label, message.text);
+        } else {
+            log::info!("[{}][{}]: {}", node.commandline(middleware_id), node.name, message.text);
+        }
+        self.protocol.publish_event(Event::log(timestamp, source_id, message)).await;
         Ok(())
     }
 

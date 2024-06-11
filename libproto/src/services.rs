@@ -14,4 +14,42 @@ pub struct Timer {
 
 /// sent from the core to a node, when one of its set timers expires
 #[derive(Payload, Serialize, Deserialize)]
-pub struct TimerExpired {}
+pub struct TimerExpired {
+    pub name: String,
+}
+
+/// can be sent from a node to the core as an alternative means (alternative to stderr) to send log
+/// messages. This way, additional information can be attached to a log message (e.g. if the message
+/// should have a marker attached on the timeline).
+/// Multiline log messages are also possible this way.
+#[derive(Payload, Serialize, Deserialize, Clone)]
+pub struct LogMessage {
+    pub text: String,
+    pub marker: Option<LogMarker>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LogMarker {
+    pub label: String,
+    pub color: Option<LogMarkerColor>,
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone)]
+pub enum LogMarkerColor {
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    BrightBlack,
+    BrightRed,
+    BrightGreen,
+    BrightYellow,
+    BrightBlue,
+    BrightMagenta,
+    BrightCyan,
+    BrightWhite,
+}

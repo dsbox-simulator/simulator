@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 
 use tokio::time::Instant;
 
-use libproto::Message;
 use crate::core::node::MiddlewareId;
 
 pub struct TimerManager {
@@ -11,7 +10,8 @@ pub struct TimerManager {
 
 pub struct Timer {
     pub deadline: Instant,
-    pub message: Message,
+    pub source: String,
+    pub name: String,
     pub middleware_id: MiddlewareId,
 }
 
@@ -22,10 +22,10 @@ impl TimerManager {
         }
     }
 
-    pub fn add(&mut self, deadline: Instant, message: Message, middleware_id: MiddlewareId) {
+    pub fn add(&mut self, deadline: Instant, source: String, name: String, middleware_id: MiddlewareId) {
         let insert_idx = self.timers.binary_search_by_key(&deadline, |t| t.deadline)
             .unwrap_or_else(|idx| idx);
-        self.timers.insert(insert_idx, Timer { deadline, message, middleware_id })
+        self.timers.insert(insert_idx, Timer { deadline, source, name, middleware_id })
     }
 
     pub async fn wait_next(&mut self) -> Timer {

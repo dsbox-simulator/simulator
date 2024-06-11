@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use libproto::Message;
+use libproto::services::LogMessage;
 use crate::core::node::NodeId;
 
 use crate::timestamp::Timestamp;
@@ -68,8 +69,8 @@ pub enum EventData {
     Log {
         /// the id of the process that logged a line. See [`crate::core::ProcessManager`]
         id: NodeId,
-        /// the logged line
-        line: String,
+        /// the log message and possible marker
+        message: LogMessage,
     },
 }
 
@@ -118,7 +119,7 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
-    pub fn log(timestamp: Timestamp, id: NodeId, line: String) -> Self {
-        Self::new(timestamp, EventData::Log { id, line })
+    pub fn log(timestamp: Timestamp, id: NodeId, message: LogMessage) -> Self {
+        Self::new(timestamp, EventData::Log { id, message })
     }
 }

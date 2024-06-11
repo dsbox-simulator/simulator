@@ -19,6 +19,7 @@ mod process;
 mod core;
 mod network;
 mod protocol;
+mod log_color;
 
 /// Main entry point for the application. Configures logging and runs the program.
 #[tokio::main(flavor = "current_thread")]
