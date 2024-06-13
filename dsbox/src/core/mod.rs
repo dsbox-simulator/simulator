@@ -16,6 +16,7 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
+use std::collections::VecDeque;
 use std::slice::SliceIndex;
 
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -25,12 +26,12 @@ use libproto::{Message, Payload};
 use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
 use libproto::services::{LogMessage, TimerExpired};
-use libproto::system::{BeginMonitor, Break, MonitorEvent, MonitorEventKind, Setup, SetupOk};
+use libproto::system::{BeginMonitor, Break, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Reset, ResetFinished};
 use node::Node;
 
 use crate::cli::Args;
 use crate::core::error::{CoreError, DispatchErrorKind};
-use crate::core::event::{Event, NodeInfo};
+use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
 use crate::core::node::{MiddlewareId, NodeId};
 use crate::core::node_list::NodeList;
@@ -79,11 +80,14 @@ pub struct Core {
     network: Network,
     /// a manager for outstanding timers
     timer_manager: TimerManager,
-    /// the next setup that will be run.
-    /// when the client sends a setup message, some stuff has to be finished/cleaned up before
-    /// the new setup can be initialized and the simulation restarted,
-    /// so we save the next setup here while we wait for everything to become ready
-    next_setup: Option<Setup>,
+    /// queue of [`Launch`] messages to be launched at some later point
+    /// (used to prevent recursion in the async [`dispatch`] fn because launching a node
+    /// requires dispatching an init message to that node)
+    launch_queue: VecDeque<Launch>,
+    /// when the client sends a reset message, some stuff has to be finished/cleaned up before
+    /// the new nodes may be launched,
+    /// so we set this flag while we wait for everything to become ready
+    reset: bool,
 }
 
 /// The execution state for a [`Core`]
@@ -121,7 +125,8 @@ impl Core {
             monitor_sessions: Vec::new(),
             network: Network::new(),
             timer_manager: TimerManager::new(),
-            next_setup: None,
+            launch_queue: VecDeque::new(),
+            reset: false,
         };
         assert_eq!(core.launch(Some(&args.test_command), true, CLIENT_NAME.to_string()).await?.id, NodeId(0), "expected client to have id 0");
         Ok(core)
@@ -151,14 +156,18 @@ impl Core {
             }
             if num_running == 0 { break; }
 
-            self.step(deadline.is_some()).await?;
-            if self.next_setup.is_some() && self.network.is_empty() {
+            let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
+
+            self.step(dont_block).await?;
+            if let Some(launch) = self.launch_queue.pop_front() {
+                self.launch_single(launch).await?;
+            } else if self.reset && self.network.is_empty() {
                 if deadline.is_none() {
                     deadline = Some(Instant::now() + Duration::from_secs(1));
                 } else if num_servers == 0 || Instant::now() > deadline.unwrap() {
                     deadline = None;
-                    let setup = self.next_setup.take().unwrap();
-                    self.setup(setup).await?
+                    self.reset = false;
+                    self.reset().await?
                 }
             }
         }
@@ -326,7 +335,8 @@ impl Core {
     }
 
     async fn send_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
-        let reply = Message::new(CORE_NAME, &timer.source, None, TimerExpired { name: timer.name });
+        let mut reply = Message::new(CORE_NAME, &timer.source, None, TimerExpired { name: timer.name });
+        reply.body.in_reply_to = timer.msg_id;
         self.dispatch(None, Timestamp::now(), reply).await
     }
 
@@ -354,7 +364,7 @@ impl Core {
             libproto::services::Timer::TYPE => {
                 let timer = message.payload::<libproto::services::Timer>().unwrap();
                 if let Some((_, middleware_id)) = source {
-                    self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message.src, timer.name, middleware_id);
+                    self.timer_manager.add(Instant::now() + Duration::from_secs_f64(timer.seconds), message.body.msg_id, message.src, timer.name, middleware_id);
                 }
                 Ok(())
             }
@@ -371,10 +381,15 @@ impl Core {
                 }
                 Ok(())
             }
-            Setup::TYPE => {
+            Reset::TYPE => {
                 assert_is_client!();
-                self.next_setup = Some(message.payload::<Setup>().unwrap());
+                self.reset = true;
                 self.begin_shutdown(1..)?;
+                Ok(())
+            }
+            Launch::TYPE => {
+                assert_is_client!();
+                self.launch_queue.push_back(message.payload::<Launch>().unwrap());
                 Ok(())
             }
             BeginMonitor::TYPE => {
@@ -426,50 +441,58 @@ impl Core {
         Ok(())
     }
 
-    /// Resets the [`Core`] and sets up a new test run with the given nodes in the [`Setup`][`Message`].
-    async fn setup(&mut self, setup: Setup) -> Result<(), CoreError> {
+    /// launches a single new server
+    async fn launch_single(&mut self, launch: Launch) -> Result<(), CoreError> {
+        let error = if launch.as_client {
+            if !launch.middleware_before.is_empty() || !launch.middleware_after.is_empty() {
+                Some("cannot specify middleware when launching a client".to_string())
+            } else {
+                let node = self.nodes.push(self.nodes[0].alias(launch.name));
+                self.protocol.publish_event(Event::node_launched(Timestamp::now(), node.id, node.name.clone(), node.commandline(MiddlewareId(0)))).await;
+                None
+            }
+        } else {
+            let node = self.launch_node_with_middleware(launch.name, &launch.middleware_before, &launch.middleware_after).await?;
+            let id = node.id;
+            let name = node.name.clone();
+            let commandline = node.commandline(MiddlewareId(launch.middleware_before.len()));
+            self.protocol.publish_event(Event::node_launched(Timestamp::now(), id, name, commandline)).await;
+            None
+        };
+        self.dispatch(None, Timestamp::now(), Message::new(
+            CORE_NAME,
+            CLIENT_NAME,
+            None,
+            LaunchFinished { error },
+        )).await?;
+        Ok(())
+    }
+
+    /// Resets the [`Core`] and sets up a new test run
+    async fn reset(&mut self) -> Result<(), CoreError> {
         self.nodes.drain(1..);
         self.monitor_sessions.clear();
-
-
-        let mut node_info = Vec::with_capacity(setup.clients.len() + setup.servers.len());
-        for client_name in setup.clients {
-            let node = self.nodes.push(self.nodes[0].alias(client_name));
-            node_info.push(NodeInfo {
-                name: node.name.clone(),
-                commandline: node.commandline(MiddlewareId(0)),
-                id: node.id,
-            })
-        };
-
-        for name in &setup.servers {
-            let node = self.launch(None, false, name.clone()).await?;
-            node_info.push(NodeInfo {
-                name: node.name.clone(),
-                commandline: node.commandline(MiddlewareId(0)),
-                id: node.id,
-            });
-            let node_id = node.id;
-            for middleware in setup.middleware_before.iter().rev() {
-                let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
-                self.nodes[node_id].push_middleware_before(middleware)
-            }
-            for middleware in &setup.middleware_after {
-                let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
-                self.nodes[node_id].push_middleware_after(middleware)
-            }
-        }
-
-        for name in &setup.servers {
-            self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, name, None, Init {
-                name: name.clone(),
-                servers: setup.servers.clone(),
-            })).await?;
-        }
-
-        self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, CLIENT_NAME, None, SetupOk {})).await?;
-        self.protocol.publish_event(Event::setup(Timestamp::now(), node_info)).await;
+        self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, CLIENT_NAME, None, ResetFinished {})).await?;
+        self.protocol.publish_event(Event::reset(Timestamp::now())).await;
         Ok(())
+    }
+
+    /// launches a new node with its corresponding process and middleware processes
+    async fn launch_node_with_middleware(&mut self, name: String, middleware_before: &[String], middleware_after: &[String]) -> Result<&mut Node, CoreError> {
+        let node = self.launch(None, false, name.clone()).await?;
+        let node_id = node.id;
+        for middleware in middleware_before.iter().rev() {
+            let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
+            self.nodes[node_id].push_middleware_before(middleware)
+        }
+        for middleware in middleware_after {
+            let middleware = self.launch_proc(Some(middleware), false, name.clone()).await?;
+            self.nodes[node_id].push_middleware_after(middleware)
+        }
+        self.dispatch(None, Timestamp::now(), Message::new(CORE_NAME, &name, None, Init {
+            name: name.clone(),
+        })).await?;
+        Ok(&mut self.nodes[node_id])
     }
 
     /// launches a new process and creates the corresponding node
@@ -478,7 +501,6 @@ impl Core {
         let node = self.nodes.push(Node::new(name, is_client, proc));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
-        self.protocol.publish_event(Event::node_launched(Timestamp::now(), node.id, commandline)).await;
         Ok(node)
     }
 

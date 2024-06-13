@@ -5,24 +5,36 @@ use serde::{Deserialize, Serialize};
 use crate::Message;
 use crate::Payload;
 
-/// Sent from the client process to the core when it wants to initialize a specific network
-/// of multiple client- and server nodes. The `proxy` field is a command (possibly including arguments)
-/// to be launched as a "proxy" for each server process. Every message from and to that server
-/// will first be delivered to the "proxy", which can then decide what to do with it, and weather
-/// or not it wants to forward the message or consume it.
+/// Sent from the client process to the core when it wants to reset the simulation
+/// all nodes will be shut down and then a [`ResetFinished`] message will be sent to the client
 #[derive(Default, Payload, Serialize, Deserialize)]
-pub struct Setup {
-    pub clients: Vec<String>,
-    pub servers: Vec<String>,
+pub struct Reset {}
+
+/// Reply to a [`Reset`] message from the core, after initialization completes successfully.
+#[derive(Payload, Serialize, Deserialize)]
+pub struct ResetFinished {}
+
+/// Sent from the client process to the core when it wants to launch a new server.
+/// The `middleware_before` and `middleware_after` fields
+/// are commands to be launched as the "middleware-stack" for the server
+#[derive(Payload, Serialize, Deserialize)]
+pub struct Launch {
+    pub name: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub as_client: bool,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub middleware_before: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub middleware_after: Vec<String>,
 }
 
-/// Reply to a [`Setup`] message from the core, after initialization completes successfully.
+
+/// Reply to a [`Launch`] message from the core, after the server successfully launched.
 #[derive(Payload, Serialize, Deserialize)]
-pub struct SetupOk {}
+pub struct LaunchFinished {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error: Option<String>,
+}
 
 /// Sent from a client node to the core to start a monitoring session. This can be used by client
 /// nodes to monitor message exchange between nodes whose names match the given regexes.

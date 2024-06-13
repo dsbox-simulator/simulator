@@ -9,6 +9,7 @@ pub struct TimerManager {
 }
 
 pub struct Timer {
+    pub msg_id: Option<usize>,
     pub deadline: Instant,
     pub source: String,
     pub name: String,
@@ -22,10 +23,10 @@ impl TimerManager {
         }
     }
 
-    pub fn add(&mut self, deadline: Instant, source: String, name: String, middleware_id: MiddlewareId) {
+    pub fn add(&mut self, deadline: Instant, msg_id: Option<usize>, source: String, name: String, middleware_id: MiddlewareId) {
         let insert_idx = self.timers.binary_search_by_key(&deadline, |t| t.deadline)
             .unwrap_or_else(|idx| idx);
-        self.timers.insert(insert_idx, Timer { deadline, source, name, middleware_id })
+        self.timers.insert(insert_idx, Timer { deadline, msg_id, source, name, middleware_id })
     }
 
     pub async fn wait_next(&mut self) -> Timer {

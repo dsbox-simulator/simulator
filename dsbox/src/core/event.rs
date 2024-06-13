@@ -33,13 +33,8 @@ pub struct Event {
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum EventData {
-    /// Emitted when a new test run is started with the given nodes.
-    Setup {
-        /// a list of all nodes, with their corresponding ids. The ids uniquely identify
-        /// a running process (all client nodes run on the same process, whereas each server node runs on a different process)
-        /// See [`crate::core::ProcessManager`]
-        nodes: Vec<NodeInfo>
-    },
+    /// Emitted when a new test run is started.
+    Reset,
 
     /// Emitted when a [`Message`] is sent
     SendMessage {
@@ -60,10 +55,12 @@ pub enum EventData {
     },
     /// Emitted after a process is started
     NodeLaunched {
-        /// the commandline (executable + arguments) that was used to launch the process
-        commandline: String,
         /// the id of the process that started. See [`crate::core::ProcessManager`]
         id: NodeId,
+        /// the name of the node
+        name: String,
+        /// the commandline (executable + arguments) that was used to launch the process
+        commandline: String,
     },
     /// Emitted when a node logs a line
     Log {
@@ -73,15 +70,6 @@ pub enum EventData {
         message: LogMessage,
     },
 }
-
-/// information about a node
-#[derive(Clone, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub name: String,
-    pub commandline: String,
-    pub id: NodeId,
-}
-
 
 impl Event {
     /// creates a new [`Event`] with the given timestamp and data
@@ -93,8 +81,8 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Setup`]
-    pub fn setup(timestamp: Timestamp, nodes: Vec<NodeInfo>) -> Self {
-        Self::new(timestamp, EventData::Setup { nodes })
+    pub fn reset(timestamp: Timestamp) -> Self {
+        Self::new(timestamp, EventData::Reset)
     }
 
 
@@ -109,8 +97,8 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_launched(timestamp: Timestamp, id: NodeId, commandline: String) -> Self {
-        Self::new(timestamp, EventData::NodeLaunched { id, commandline })
+    pub fn node_launched(timestamp: Timestamp, id: NodeId, name: String, commandline: String) -> Self {
+        Self::new(timestamp, EventData::NodeLaunched { id, name, commandline })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]

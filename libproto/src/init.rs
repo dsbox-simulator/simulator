@@ -8,7 +8,4 @@ use crate::Payload;
 pub struct Init {
     /// the name of the server itself
     pub name: String,
-    /// the names of all running servers (including itself)
-    /// TODO: is the order of this list somewhat deterministic?
-    pub servers: Vec<String>,
 }
