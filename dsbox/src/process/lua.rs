@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
 
 use mlua::{FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib, Table, Value};
 use tokio::sync::{Mutex, oneshot};
@@ -113,7 +112,6 @@ impl LuaLauncher {
         mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
         mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
         mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
-        mod_dsbox.set("sleep", lua.create_async_function(sleep)?)?;
         mod_dsbox.set("array", lua.create_function(lua_array)?)?;
         mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
         mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
@@ -330,11 +328,6 @@ fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {
             table.set(k, v)
         })?;
     }
-    Ok(())
-}
-
-async fn sleep<'lua>(_: &'lua Lua, (secs, _rest): (f64, MultiValue<'lua>)) -> mlua::Result<()> {
-    tokio::time::sleep(Duration::from_secs_f64(secs)).await;
     Ok(())
 }
 
