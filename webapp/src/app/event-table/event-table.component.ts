@@ -4,6 +4,7 @@ import Event from '../models/communication/Event';
 import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import Timestamp from '../models/communication/Timestamp';
+import { JsonRpcEvent } from '../models/communication/RpcEvent';
 
 @Component({
   selector: 'app-event-table',
@@ -16,8 +17,15 @@ import Timestamp from '../models/communication/Timestamp';
 })
 export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
   @Input() delivered: boolean = false;
-  public events: Event[] = EventStore.events;
+  public events: JsonRpcEvent[] = EventStore.events;
   private eventsSub!: Subscription;
+
+  public searchText = '';
+  public sortKey = '';
+
+  sort(key: string) {
+    this.sortKey = key;
+  }
 
   constructor() { }
 
@@ -28,7 +36,7 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   ngOnInit() {
-    this.eventsSub = EventStore.eventsUpdated.subscribe((event: Event) => {
+    this.eventsSub = EventStore.eventsUpdated.subscribe((event: JsonRpcEvent) => {
       this.updateEvents();
     });
   }

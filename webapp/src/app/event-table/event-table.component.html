@@ -14,14 +14,14 @@
     </thead>
     <tbody>
         <tr class="table-active" *ngFor="let event of events">
-            <td>{{ event.timestamp.logical }}</td>
-            <td>{{ event.timestamp.physical }}</td>
-            <td>{{ event.data?.type }}</td>
+            <td>{{ event.params.timestamp.logical }}</td>
+            <td>{{ event.params.timestamp.physical }}</td>
+            <td>{{ event.params.data?.type }}</td>
             <td>{{ event | json }}</td>
 
-            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.src}}</td>
-            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.dest}}</td>
-            <td *ngIf="event.data && event.data.type === 'send_message'">{{event.data.msg.body | json}}</td>
+            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
+            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
+            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>
             <td *ngIf="delivered" > <button class="btn btn-primary"> Deliver </button></td>
             <td *ngIf="delivered" > <button class="btn btn-primary"> Drop </button></td>
         </tr>

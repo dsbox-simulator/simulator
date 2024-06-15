@@ -55,7 +55,7 @@ readFile(file: File): Promise<string> {
       console.log('i key pressed');
 
       const coreSocket = CoreSocketFactory.create();
-      coreSocket.send('step');
+      coreSocket.call('step');
     }
     if (event.key === 'o') {
       event.preventDefault();
@@ -63,7 +63,7 @@ readFile(file: File): Promise<string> {
       console.log('o key pressed');
 
       const coreSocket = CoreSocketFactory.create();
-      coreSocket.send('resume');
+      coreSocket.call('resume');
     }
   }
 

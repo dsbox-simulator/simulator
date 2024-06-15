@@ -2,57 +2,53 @@ import { Subject } from 'rxjs';
 import Event, { DeliverMessage, SendMessage, Setup } from './communication/Event';
 import { DsMessage } from './DsMessage';
 import { DsNodeSetup } from './DsNodeSetup';
+import { JsonRpcEvent } from './communication/RpcEvent';
 
 export class EventStore {
-  static events: Event[] = [];
+  static events: JsonRpcEvent[] = [];
   static messages: DsMessage[] = [];
   static nodeSetups: DsNodeSetup[] = [];
 
-  static eventsUpdated = new Subject<Event>();
+  static eventsUpdated = new Subject<JsonRpcEvent>();
   static messagesUpdated = new Subject<DsMessage>();
-  static deliverdMessage = new Subject<DsMessage>();
+  static deliveredMessage = new Subject<DsMessage>();
   static nodeSetupsUpdated = new Subject<DsNodeSetup>();
 
-  static addEvent(event: Event) {
+  static addEvent(event: JsonRpcEvent) {
     EventStore.events.push(event);
     this.handleEvent(event);
     EventStore.eventsUpdated.next(event);
   }
 
-  static handleEvent(event: Event) {
-
-    const sendEvent = event.data as SendMessage;
+  static handleEvent(event: JsonRpcEvent) {
+    const  data  = event.params.data;
     
-    console.log(sendEvent);
-    if (sendEvent && sendEvent.type === "send_message") {
+    if (data && data.type === "send_message") {
         console.log("SendMessage event received");
         
-        const body = JSON.stringify(sendEvent.msg.body);
+        const body = JSON.stringify(data.msg?.body);
 
-        const message = new DsMessage(event, event.timestamp.logical,
-          event.timestamp.logical, sendEvent.msg.src, sendEvent.msg.dest, body);
+        const message = new DsMessage(event, event.params.timestamp.logical,
+          event.params.timestamp.logical, data.msg!.src, data.msg!.dest, body);
         this.messages.push(message);
         EventStore.messagesUpdated.next(message);
     }
 
-    const deliverEvent = event.data as DeliverMessage;
-    if (deliverEvent && deliverEvent.type === "deliver_message") {
-      const message = this.messages.find(message => message.send_logical_timestamp === deliverEvent.sent_timestamp);
-      message!.addDeliverMessage(event);
-      EventStore.deliverdMessage.next(message!);
+    if (data && data.type === "deliver_message") {
+      const message = this.messages.find(message => message.send_logical_timestamp === data.sent_timestamp);
+      if (message) {
+        message.addDeliverMessage(event);
+        EventStore.deliveredMessage.next(message);
+      }
     }
 
-
-    const launchedEvent = event.data as Setup;
-    if (launchedEvent && launchedEvent.type === "setup") {
+    if (data && data.type === "node_launched") {
         console.log("Setup event received");
 
-        launchedEvent.nodes.forEach(node => {
-            const nodeSetup = new DsNodeSetup(node.name, event);
-            this.nodeSetups.push(nodeSetup);
-            EventStore.nodeSetupsUpdated.next(nodeSetup);
-        });
-
+        const nodeSetup = new DsNodeSetup(data.name!, event);
+        this.nodeSetups.push(nodeSetup);
+        EventStore.nodeSetupsUpdated.next(nodeSetup);
+        
         return;
     }
   }
@@ -61,17 +57,14 @@ export class EventStore {
     return this.messages.filter(message => !message.delivered && message.target != "core").map(message => message.sendMessage);
   }
 
-
-
-  static loadEvents(json : string) {
-    const events = JSON.parse(json) as Event[];
+  static loadEvents(json: string) {
+    const events = JSON.parse(json) as JsonRpcEvent[];
     events.forEach(event => {
       this.addEvent(event);
     });
   }
   
   static saveEvents() {
-
     const json = JSON.stringify(this.events);
     const blob = new Blob([json], { type: 'application/json' });
     const url = window.URL.createObjectURL(blob);

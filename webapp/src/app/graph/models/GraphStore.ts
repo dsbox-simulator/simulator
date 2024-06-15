@@ -8,6 +8,7 @@ import { EventStore } from '../../models/EventStore';
 import { DsNodeSetup } from '../../models/DsNodeSetup';
 import { DsMessage } from '../../models/DsMessage';
 import { Version } from '@angular/core';
+import { JsonRpcEvent } from '../../models/communication/RpcEvent';
 
 export class GraphStore {
     public static  edges: GraphEdge[] = [];
@@ -20,7 +21,7 @@ export class GraphStore {
   static graphSubject: Subject<string> = new Subject<string>();
 
 
-  static subscription = EventStore.eventsUpdated.subscribe((event: Event) => {
+  static subscription = EventStore.eventsUpdated.subscribe((event: JsonRpcEvent) => {
         //GraphStore.handleNewEvent(event);
   });
 
@@ -31,7 +32,7 @@ export class GraphStore {
       this.graphSubject.next("update");
   });
 
-  static subscription3 = EventStore.deliverdMessage.subscribe((message: DsMessage) => {
+  static subscription3 = EventStore.deliveredMessage.subscribe((message: DsMessage) => {
 
     var srcNode = GraphStore.nodes.find(node => node.id === message.send_logical_timestamp.toString())
     const target = GraphStore.networkNodes.find(node => node.id === message.target);

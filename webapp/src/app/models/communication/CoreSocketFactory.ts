@@ -1,14 +1,18 @@
-import CoreSocket from "./CoreSocket";
+import { JsonRpcWebSocketClient } from './RpcSocket';
 
 export class CoreSocketFactory {
 
-    static instance: CoreSocket;
-
-    public static create(): CoreSocket {
-        if(this.instance === null) {
-            this.instance =  new CoreSocket();
+    static rpcInstance: JsonRpcWebSocketClient;
+    public static create(): JsonRpcWebSocketClient {
+        
+        // Usage example:
+        if(this.rpcInstance !== undefined) {
+            return this.rpcInstance;
         }
 
-        return this.instance;
+        const client = new JsonRpcWebSocketClient('ws://127.0.0.1:8080/socket');        
+        this.rpcInstance = client;
+        return this.rpcInstance;
     }
+
 }

@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
-import CoreSocket from '../models/communication/CoreSocket';
 import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
+import { JsonRpcWebSocketClient } from '../models/communication/RpcSocket';
 
 @Component({
   selector: 'app-debug-controls',
@@ -10,12 +10,12 @@ import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
   styleUrl: './debug-controls.component.css'
 })
 export class DebugControlsComponent {
-  CoreSocket: CoreSocket;
+  CoreSocket: JsonRpcWebSocketClient;
   constructor() {
     this.CoreSocket = CoreSocketFactory.create();
   }
 
   public send(data: string) {
-    this.CoreSocket.send(data);
+    this.CoreSocket.call(data);
   }
 }

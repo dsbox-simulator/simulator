@@ -1,9 +1,10 @@
 import Event from "./communication/Event";
+import { JsonRpcEvent } from "./communication/RpcEvent";
 
 export class DsMessage {
     
-    public sendMessage: Event;
-    public deliverMessage: Event | null;
+    public sendMessage: JsonRpcEvent;
+    public deliverMessage: JsonRpcEvent | null;
     public id: number;
     public send_logical_timestamp: number;
     public deliver_logical_timestamp: number | null;
@@ -13,7 +14,7 @@ export class DsMessage {
     public update: boolean;
     public body: string;
 
-    public constructor(sendMessage: Event, id: number, send_logical_timestamp: number, source: string, target: string, body: string) {
+    public constructor(sendMessage: JsonRpcEvent, id: number, send_logical_timestamp: number, source: string, target: string, body: string) {
         this.sendMessage = sendMessage;
         this.deliverMessage = null;
         this.id = id;
@@ -26,9 +27,9 @@ export class DsMessage {
         this.body = body;
     }
 
-    public addDeliverMessage(deliverMessage: Event) {
+    public addDeliverMessage(deliverMessage: JsonRpcEvent) {
         this.deliverMessage = deliverMessage;
-        this.deliver_logical_timestamp = deliverMessage.timestamp.logical;
+        this.deliver_logical_timestamp = deliverMessage.params.timestamp.logical;
         this.delivered = true;
         this.update = true;
     }
