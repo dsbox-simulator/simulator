@@ -5,12 +5,13 @@ import { CommonModule } from '@angular/common';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 
+
 @Component({
   selector: 'app-graph',
   standalone: true,
   imports: [
     CommonModule,    
-    DragDropModule
+    DragDropModule,
   ],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss'

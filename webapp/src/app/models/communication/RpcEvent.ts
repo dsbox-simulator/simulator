@@ -11,7 +11,7 @@ interface MessageBody {
 }
 
 interface Message {
-    body: MessageBody;
+    body: string;
     dest: string;
     src: string;
 }

@@ -49,18 +49,14 @@ readFile(file: File): Promise<string> {
 
 @HostListener('document:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent) {
-    if (event.key === 'i') {
+    if (event.key === 'F1') {
       event.preventDefault();
-      // Handle F10 key press here
-      console.log('i key pressed');
 
       const coreSocket = CoreSocketFactory.create();
       coreSocket.call('step');
     }
-    if (event.key === 'o') {
+    if (event.key === 'F2') {
       event.preventDefault();
-      // Handle F10 key press here
-      console.log('o key pressed');
 
       const coreSocket = CoreSocketFactory.create();
       coreSocket.call('resume');

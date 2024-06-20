@@ -1,29 +1,35 @@
-<table class="table table-hover">
-    <thead>
+<div>
+    <div class="form-group">
+      <input type="search" class="form-control" [(ngModel)]="filter" placeholder="Filter Messages">
+    </div>
+  
+    <table class="table table-hover">
+      <thead>
         <tr>
-            <th scope="col">Timestamp</th>
-            <th scope="col">DateTime</th>
-            <th scope="col">Type</th>
-            <th scope="col">Message</th>
-            <th scope="col">Source</th>
-            <th scope="col">Destination</th>
-            <th scope="col">Body</th>
-            <th *ngIf="delivered"> Deliver Message </th>
-            <th *ngIf="delivered"> Drop Message </th>
+          <th scope="col">Timestamp</th>
+          <th scope="col">DateTime</th>
+          <th scope="col">Type</th>
+          <th scope="col">Message</th>
+          <th scope="col">Source</th>
+          <th scope="col">Destination</th>
+          <th scope="col">Body</th>
+          <th *ngIf="delivered">Deliver Message</th>
+          <th *ngIf="delivered">Drop Message</th>
         </tr>
-    </thead>
-    <tbody>
-        <tr class="table-active" *ngFor="let event of events">
-            <td>{{ event.params.timestamp.logical }}</td>
-            <td>{{ event.params.timestamp.physical }}</td>
-            <td>{{ event.params.data?.type }}</td>
-            <td>{{ event | json }}</td>
-
-            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
-            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
-            <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>
-            <td *ngIf="delivered" > <button class="btn btn-primary"> Deliver </button></td>
-            <td *ngIf="delivered" > <button class="btn btn-primary"> Drop </button></td>
+      </thead>
+      <tbody>
+        <tr class="table-active" *ngFor="let event of events | event:filter">
+          <td>{{ event.params.timestamp.logical }}</td>
+          <td>{{ event.params.timestamp.physical }}</td>
+          <td>{{ event.params.data?.type }}</td>
+          <td>{{ event | json }}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>
+          <td *ngIf="delivered"><button class="btn btn-primary">Deliver</button></td>
+          <td *ngIf="delivered"><button class="btn btn-primary">Drop</button></td>
         </tr>
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
+  
