@@ -13,6 +13,7 @@ pub struct Timer {
     pub deadline: Instant,
     pub source: String,
     pub name: String,
+    #[allow(unused)]
     pub middleware_id: MiddlewareId,
 }
 

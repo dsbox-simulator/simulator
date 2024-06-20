@@ -18,9 +18,11 @@ pub struct App {
 impl App {
     pub fn new(remote_control: Sender<RemoteCommand>) -> Self {
         let mut dispatcher = JsonRpcDispatcher::new();
-        pause::register(&mut dispatcher);
+        break_::register(&mut dispatcher);
         step::register(&mut dispatcher);
         resume::register(&mut dispatcher);
+        deliver::register(&mut dispatcher);
+        drop::register(&mut dispatcher);
         Self {
             remote_control,
             dispatcher,
@@ -50,9 +52,9 @@ impl App {
     }
 }
 
-#[json_rpc(1)]
-async fn pause(remote_control: &mut Sender<RemoteCommand>) {
-    remote_control.send(RemoteCommand::Pause).await.ok();
+#[json_rpc(1, "break")]
+async fn break_(remote_control: &mut Sender<RemoteCommand>) {
+    remote_control.send(RemoteCommand::Break).await.ok();
 }
 
 #[json_rpc(1)]
@@ -64,3 +66,14 @@ async fn resume(remote_control: &mut Sender<RemoteCommand>) {
 async fn step(remote_control: &mut Sender<RemoteCommand>) {
     remote_control.send(RemoteCommand::Step).await.ok();
 }
+
+#[json_rpc(1)]
+async fn deliver(remote_control: &mut Sender<RemoteCommand>, sent_timestamp: usize) {
+    remote_control.send(RemoteCommand::Deliver(sent_timestamp)).await.ok();
+}
+
+#[json_rpc(1)]
+async fn drop(remote_control: &mut Sender<RemoteCommand>, sent_timestamp: usize) {
+    remote_control.send(RemoteCommand::Drop(sent_timestamp)).await.ok();
+}
+

@@ -51,9 +51,7 @@ impl WasmLauncher {
 
     /// Launches a new Webassembly process from the given `path`. The Webassembly module gets passed
     /// three [`DuplexStream`]s to be used for its `stdin`, `stdout` and `stderr`.
-    /// The other ends of the streams are then used to create a [`Handle`].
     /// This function is only a helper to convert any [`wasmtime::Error`] into a [`std::io::Error`] if necessary before returning.
-    /// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
     pub(super) async fn launch(&mut self, path: &Path, args: &[String], command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         let (stdin, wasi_stdin) = tokio::io::duplex(1024);
         let (wasi_stdout, stdout) = tokio::io::duplex(1024);
