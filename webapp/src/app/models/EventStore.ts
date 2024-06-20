@@ -1,5 +1,4 @@
 import { Subject } from 'rxjs';
-import Event, { DeliverMessage, SendMessage, Setup } from './communication/Event';
 import { DsMessage } from './DsMessage';
 import { DsNodeSetup } from './DsNodeSetup';
 import { JsonRpcEvent } from './communication/RpcEvent';

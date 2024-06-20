@@ -1,4 +1,3 @@
-import Event from "./communication/Event";
 import { JsonRpcEvent } from "./communication/RpcEvent";
 
 export class DsNodeSetup{

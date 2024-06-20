@@ -1,8 +1,6 @@
 import { Subject } from 'rxjs';
 import { GraphEdge } from './GraphEdge';
 import { GraphNode } from './GraphNode';
-import { DeliverMessage, NodeLaunched, SendMessage, Setup } from '../../models/communication/Event';
-import Event from '../../models/communication/Event';
 import { NetworkNode } from './NetworkNode';
 import { EventStore } from '../../models/EventStore';
 import { DsNodeSetup } from '../../models/DsNodeSetup';

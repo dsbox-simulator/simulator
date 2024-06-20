@@ -5,8 +5,7 @@
     "@angular/router": "^17.3.9",
     "@types/cytoscape": "^3.21.1",
     "cytoscape": "^3.29.2",
-    "sass": "^1.77.2",
-    "ts-jackson": "^1.6.0"
+    "sass": "^1.77.2"
   },
   "dependencies": {
     "@angular/animations": "^17.3.9",
