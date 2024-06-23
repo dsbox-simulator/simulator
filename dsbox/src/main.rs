@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 #![doc = include_str!("../../Readme.md")]
 
 use clap::Parser;
@@ -47,7 +48,7 @@ async fn main() {
 }
 
 /// Starts a new [`Core`], initialized with the given [`Args`].
-/// If necessary, also starts the [`Webapp`].
+/// If necessary, also starts the [`Webapp`](webapp::Webapp).
 /// TODO: configure capturing and writing of a protocol to a file via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
     let core = Core::new(&args).await?;

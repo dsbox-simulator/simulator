@@ -50,12 +50,12 @@ pub enum EventData {
     },
     /// Emitted after a process exited
     NodeDisconnected {
-        /// the id of the process that exited. See [`crate::core::ProcessManager`]
+        /// the id of the process that exited. See [`NodeId`]
         id: NodeId
     },
     /// Emitted after a process is started
     NodeLaunched {
-        /// the id of the process that started. See [`crate::core::ProcessManager`]
+        /// the id of the process that started. See [`NodeId`]
         id: NodeId,
         /// the name of the node
         name: String,
@@ -64,7 +64,7 @@ pub enum EventData {
     },
     /// Emitted when a node logs a line
     Log {
-        /// the id of the process that logged a line. See [`crate::core::ProcessManager`]
+        /// the id of the process that logged a line. See [`NodeId`]
         id: NodeId,
         /// the log message and possible marker
         message: LogMessage,
@@ -80,7 +80,7 @@ impl Event {
         }
     }
 
-    /// creates a new [`Event`] with the given timestamp and [`EventData::Setup`]
+    /// creates a new [`Event`] with the given timestamp and [`EventData::Reset`]
     pub fn reset(timestamp: Timestamp) -> Self {
         Self::new(timestamp, EventData::Reset)
     }

@@ -9,9 +9,7 @@ use tokio::task::JoinHandle;
 use crate::process::{ProcessCommand, ProcessEvent};
 use crate::process::io_helper::process_io_helper;
 
-/// launches a new native process with the given `path` to an executable and creates a new [`Handle`]
-/// from the childs `stdin`, `stdout` and `stderr`.
-/// Returns the [`Handle`] and a [`Sender`] that can be used to send [`ProcessCommand`]s to the process.
+/// launches a new native process with the given `path` to an executable and the sender and receiver for commands/events
 pub(super) fn launch(path: &Path, args: &[String], command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
     log::trace!("launching process `{}`, args: {args:?}", path.display());
     let mut child = Command::new(path)

@@ -19,7 +19,7 @@ pub enum CoreError {
         /// the specific error that prevented dispatching.
         kind: DispatchErrorKind,
     },
-    /// A core [`Message`] (i.e. a [`Setup`](libproto::system::Setup) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-client node.
+    /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-client node.
     IllegalCoreMessage { source: String, message: Message },
     /// A core [`Message`] could not be handled, because it's type is unknown.
     UnknownCoreMessage { source: String, ty: String },

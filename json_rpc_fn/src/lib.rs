@@ -1,9 +1,31 @@
 use quote::quote;
-use syn::{FnArg, ItemFn, parse, ReturnType};
+use syn::{FnArg, ItemFn, LitInt, LitStr, parse, ReturnType, Token};
+use syn::parse::{Parse, ParseStream};
+
+struct JsonRpcArgs {
+    num_context_args: usize,
+    method_name: Option<String>,
+}
+
+impl Parse for JsonRpcArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut args = JsonRpcArgs {
+            num_context_args: 0,
+            method_name: None,
+        };
+        args.num_context_args = input.parse::<LitInt>()?.base10_parse()?;
+        if !input.is_empty() {
+            input.parse::<Token![,]>()?;
+            args.method_name = Some(input.parse::<LitStr>()?.value())
+        }
+        Ok(args)
+    }
+}
 
 #[proc_macro_attribute]
-pub fn json_rpc(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn json_rpc(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = parse::<ItemFn>(item).unwrap();
+    let args = parse::<JsonRpcArgs>(attr).unwrap();
 
     let name = &item.sig.ident;
 
@@ -21,7 +43,7 @@ pub fn json_rpc(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -
     let mut context_ty = quote! {()};
     for (idx, arg) in item.sig.inputs.iter().enumerate() {
         let FnArg::Typed(arg) = arg else { unimplemented!(); };
-        if idx == 0 {
+        if idx < args.num_context_args {
             context_args.push(arg);
             context_params.push(&arg.pat);
             let syn::Type::Reference(ty) = &*arg.ty else { unimplemented!(); };
@@ -33,6 +55,7 @@ pub fn json_rpc(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -
         }
     }
 
+    let method_name = args.method_name.unwrap_or_else(|| name.to_string());
 
     let token_stream = quote! {
         #item
@@ -76,7 +99,7 @@ pub fn json_rpc(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -
             }
 
             pub fn register(dispatcher: &mut crate::webapp::json_rpc::JsonRpcDispatcher<#context_ty>) {
-                dispatcher.register(stringify!(#name).to_string(), |#(#context_args),*,args: serde_json::Value| Box::pin(rpc_call(#(#context_params),*, args)));
+                dispatcher.register(#method_name.to_string(), |#(#context_args),*,args: serde_json::Value| Box::pin(rpc_call(#(#context_params),*, args)));
             }
         }
     };

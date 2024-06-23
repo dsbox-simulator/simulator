@@ -7,12 +7,12 @@
 //! This order is itself non-deterministic and can change across multiple executions.
 //!
 //! When a [`Core`] is created, a single client process is launched. During execution the client process
-//! can then send a [`Setup`] message to the core, to give itself one or more (client-) node names, and launch
-//! a number of server nodes, with given names. Each server node is then sent an [`Init`] message with
-//! its own name and a list of the other server names (which includes itself).
-//! After successfully launching and initializing all server nodes, the client process is sent a [`SetupOk`] message.
+//! can then send a number of [`Launch`] messages to the core, to give itself one or more (client-) node names, or launch
+//! a number of server nodes, with given names. Each server node is then sent an [`Init`] message with its own name.
 //!
-//! When the client process sends a new [`Setup`] message, the core closes all communications with
+//! After launching and initializing a node, the client process is sent a [`LaunchFinished`] message.
+//!
+//! When the client process sends a [`Reset`] message, the core closes all communications with
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and client names, as well as all running [`MonitorSession`]s.
 
@@ -81,7 +81,7 @@ pub struct Core {
     /// a manager for outstanding timers
     timer_manager: TimerManager,
     /// queue of [`Launch`] messages to be launched at some later point
-    /// (used to prevent recursion in the async [`dispatch`] fn because launching a node
+    /// (used to prevent recursion in the async [`dispatch`](Core::dispatch) fn because launching a node
     /// requires dispatching an init message to that node)
     launch_queue: VecDeque<Launch>,
     /// when the client sends a reset message, some stuff has to be finished/cleaned up before
@@ -101,10 +101,10 @@ enum CoreState {
     Stepping,
 }
 
-/// The "node name" of the [`Core`]. It is used by clients to send core messages (i.e. [`Setup`])
+/// The "node name" of the [`Core`]. It is used by clients to send core messages (i.e. [`Launch`])
 pub const CORE_NAME: &'static str = "core";
 
-/// The "node name" of the client process. It is used by the [`Core`] to send messages to the client process that are not specific to a client node (i.e. [`SetupOk`])
+/// The "node name" of the client process. It is used by the [`Core`] to send messages to the client process that are not specific to a client node (i.e. [`LaunchFinished`])
 const CLIENT_NAME: &'static str = "client";
 
 impl Core {
@@ -204,7 +204,7 @@ impl Core {
             tokio::select! {
                 biased;
                 remote_command = self.remote_receiver.recv() => {
-                    self.handle_command(remote_command.unwrap()).await;
+                    self.handle_command(remote_command.unwrap()).await?;
                 }
                 process_event = self.nodes.recv_any() => {
                     if let Some((event, node_id, middleware_idx)) = process_event {
@@ -218,15 +218,6 @@ impl Core {
             }
         }
         Ok(())
-    }
-
-    /// handles a single [`RemoteCommand`]
-    async fn handle_command(&mut self, command: RemoteCommand) {
-        match command {
-            RemoteCommand::Pause => self.state = CoreState::Paused,
-            RemoteCommand::Step => self.state = CoreState::Stepping,
-            RemoteCommand::Resume => self.state = CoreState::Running,
-        }
     }
 
     /// Handles a single [`ProcessEvent`].
@@ -340,7 +331,7 @@ impl Core {
         self.dispatch(None, Timestamp::now(), reply).await
     }
 
-    /// handles a single core [`Message`] (i.e. [`Setup`] or [`BeginMonitor`]).
+    /// handles a single core [`Message`] (i.e. [`Launch`] or [`BeginMonitor`]).
     /// Returns an error if the [`Message`] was not send from a client node, if the [`Message`]s type
     /// is not known, or if handling of the [`Message`] itself fails.
     async fn handle_core_message(&mut self, source: Option<(NodeId, MiddlewareId)>, timestamp: Timestamp, message: Message) -> Result<(), CoreError> {
@@ -434,7 +425,9 @@ impl Core {
 
     /// signals al nodes to begin shutting down (e.g. close stdin handles etc.)
     fn begin_shutdown<R>(&mut self, range: R) -> Result<(), CoreError>
-        where R: SliceIndex<[Node], Output=[Node]> {
+    where
+        R: SliceIndex<[Node], Output=[Node]>,
+    {
         for proc in &mut self.nodes[range] {
             proc.begin_shutdown();
         }
