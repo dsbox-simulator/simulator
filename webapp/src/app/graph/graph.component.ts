@@ -4,6 +4,9 @@ import { GraphStore } from './models/GraphStore';
 import { CommonModule } from '@angular/common';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
+import { NetworkNode } from './models/NetworkNode';
+import { GraphNode } from './models/GraphNode';
+import { GraphEdge } from './models/GraphEdge';
 
 
 @Component({
@@ -20,6 +23,7 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 export class GraphComponent implements AfterViewInit {
 
   networkNodes = GraphStore.networkNodes;
+  cy: cytoscape.Core | undefined;
 
   drop(event: CdkDragDrop<any[]>) {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
@@ -27,11 +31,116 @@ export class GraphComponent implements AfterViewInit {
     
   }
 
-  subscription2 = GraphStore.graphSubject.subscribe((graph) => {
-    this.updateGraph();
+  updateNodePositions(width: number | undefined) {
+
+    if (this.cy === undefined) {     
+      return;
+    }
+    var containerWidth = width;
+    if(containerWidth === undefined) {
+       containerWidth = this.cy.extent().x2;
+    }
+  
+    this.cy.nodes().forEach(node => {
+      const data = node.data();
+      if (data.type === 'anker' && data.id.endsWith('d')) {
+        node.position('x', containerWidth! - 35);
+      }
+    });
+  }
+  
+  addNetworkNodeToGraph(networkNode: NetworkNode) {
+    const newNodeElement = {
+      data: { id: networkNode.id, type: 'anker' },
+      position: { x: 35, y: networkNode.posY }
+    };
+  
+    if (this.cy === undefined) {     
+      return;
+    }
+
+    const containerWidth = this.cy.extent().x2;
+  
+    const newNodeEndElement = {
+      data: { id: networkNode.id + 'd', type: 'anker' },
+      position: { x: containerWidth - 35, y: networkNode.posY }
+    };
+  
+    const newEdgeElement = {
+      data: { id: networkNode.id + 'e', source: networkNode.id, target: networkNode.id + 'd', type: 'anker' }
+    };
+  
+    this.cy.add([newNodeElement, newNodeEndElement, newEdgeElement]);
+  
+    // Call updateNodePositions to ensure all nodes are correctly positioned
+    this.updateNodePositions(undefined);
+  }
+
+  addNodeToGraph(node: GraphNode) {
+    const newNodeElement = {
+      data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY },
+      position: { x: node.posX, y: node.posY }
+    };
+
+    if (this.cy === undefined) {
+      return;
+    }
+    this.cy.add(newNodeElement);
+  
+    var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
+    maxLength += 100;
+    this.cy.extent().x2 = maxLength;
+    console.log("maxLength: ", maxLength);
+    document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
+    this.updateNodePositions(maxLength);
+  }
+
+  addEdgeToGraph(edge: GraphEdge) {
+    const newEdgeElement = {
+      data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label }
+    };
+
+    if (this.cy === undefined) {
+      return;
+    }
+    const newEdge = this.cy.add(newEdgeElement);
+    this.bindEdgeEvents(newEdge);
+  }
+
+
+  bindEdgeEvents(edge: any) {
+    edge.on('mouseover', (event: { target: any; }) => {
+      var edge = event.target;
+      edge.style('text-opacity', 1);
+      edge.style('z-compound-depth', 'top');
+    });
+  
+    edge.on('mouseout', (event: { target: any; }) => {
+      var edge = event.target;
+      edge.style('text-opacity', 0);
+      edge.style('z-compound-depth', 'bottom');
+    });
+  }
+
+  
+
+  subscription1 = GraphStore.graphNode.subscribe((node) => {
+    this.addNodeToGraph(node);
   });
 
-  updateGraph() {
+  subscription2 = GraphStore.graphEdge.subscribe((edge) => {
+    this.addEdgeToGraph(edge);
+  });
+
+  subscription3 = GraphStore.graphNetWorkNode.subscribe((networkNode) => {
+    this.addNetworkNodeToGraph(networkNode);
+  });
+
+  subscription4 = GraphStore.graphSubject.subscribe((graph) => {
+    
+  });
+
+  initGraph() {
 
   console.log("updateGraph");
 
@@ -65,7 +174,7 @@ export class GraphComponent implements AfterViewInit {
     maxLength += 100;
     document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
 
-    var cy = cytoscape({
+    this.cy = cytoscape({
 
       container: document.getElementById('cy'), // container to render in  
     
@@ -154,10 +263,10 @@ export class GraphComponent implements AfterViewInit {
     }
 
 
-    cy.add(networkNodesElements);
-    cy.add(nodesElements);
-    cy.add(edgesElements);
-    cy.edges().filter(edge => edge.data('type') !== 'anker').forEach(edge => {
+    this.cy.add(networkNodesElements);
+    this.cy.add(nodesElements);
+    this.cy.add(edgesElements);
+    this.cy.edges().filter(edge => edge.data('type') !== 'anker').forEach(edge => {
       edge.on('mouseover', function(event) {
         var edge = event.target;        
         edge.style('text-opacity', 1);
@@ -171,19 +280,19 @@ export class GraphComponent implements AfterViewInit {
       });
     });
     
-    cy.maxZoom(2);
-    cy.minZoom(0.5);
-    cy.userZoomingEnabled(false);
-    cy.userPanningEnabled(false);
+    this.cy.maxZoom(2);
+    this.cy.minZoom(0.5);
+    this.cy.userZoomingEnabled(false);
+    this.cy.userPanningEnabled(false);
 
-    cy.nodes().on('dragfree', function(event) {
+    this.cy.nodes().on('dragfree', function(event) {
       var node = event.target;
       var pos = node.position();
       var constrainedPos = constrainPosition(node, pos);
       node.position(constrainedPos);
     });
 
-    cy.nodes().on('position', function(event) {
+    this.cy.nodes().on('position', function(event) {
       var node = event.target;
       var pos = node.position();
       var constrainedPos = constrainPosition(node, pos);
@@ -196,7 +305,12 @@ export class GraphComponent implements AfterViewInit {
 
 
   ngAfterViewInit() {
-    
+    this.initGraph();
+  }
+}
+
+/*
+
     var cy = cytoscape({
 
       container: document.getElementById('cy'), // container to render in
@@ -297,6 +411,4 @@ export class GraphComponent implements AfterViewInit {
       if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
         node.position(constrainedPos);
       }
-    });
-  }
-}
+    });*/

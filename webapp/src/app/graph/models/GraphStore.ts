@@ -16,7 +16,13 @@ export class GraphStore {
     private static readonly heightDiff = 70;
     private static readonly widthDiff = 50;
 
+
+
   static graphSubject: Subject<string> = new Subject<string>();
+
+  static graphNetWorkNode: Subject<NetworkNode> = new Subject<NetworkNode>();
+  static graphNode: Subject<GraphNode> = new Subject<GraphNode>();
+  static graphEdge: Subject<GraphEdge> = new Subject<GraphEdge>();
 
 
   static subscription = EventStore.eventsUpdated.subscribe((event: JsonRpcEvent) => {
@@ -54,6 +60,7 @@ export class GraphStore {
   static addNetworkNode(node: NetworkNode) {
     node.posY = (GraphStore.networkNodes.length + 1) * this.heightDiff;
     GraphStore.networkNodes.push(node);  
+    this.graphNetWorkNode.next(node);
   }
 
   static addEdge(edge: GraphEdge) {
@@ -73,6 +80,7 @@ export class GraphStore {
     }
     GraphStore.edges.push(edge);
     this.graphSubject.next("update");
+    this.graphEdge.next(edge);
   }
 
   static addNode(node: GraphNode, posX: number = 0) {
@@ -89,6 +97,7 @@ export class GraphStore {
       }
     }
     GraphStore.nodes.push(node);
+    this.graphNode.next(node);
   }
 
 

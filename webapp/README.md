@@ -30,6 +30,7 @@ To get more help on the Angular CLI use `ng help` or go check out the [Angular C
 
 cargo run --release -- "nodes/lua/chandy-lamport/client.lua" --servers "nodes/lua/chandy-lamport/server.lua"
 cargo run -- "nodes/lua/chandy-lamport/client.lua" --servers "nodes/lua/chandy-lamport/server.lua" -i
+cargo run -- "nodes/lua/ricart-agrawala/client.lua" --servers "nodes/lua/ricart-agrawala/server.lua" -i
 cargo run -- "nodes/lua/echo/client.lua" --servers "nodes/lua/echo/server.lua" -i
 
 
