@@ -7,9 +7,7 @@
       <thead>
         <tr>
           <th scope="col">Timestamp</th>
-          <th scope="col">DateTime</th>
           <th scope="col">Type</th>
-          <th scope="col">Message</th>
           <th scope="col">Source</th>
           <th scope="col">Destination</th>
           <th scope="col">Body</th>
@@ -20,9 +18,7 @@
       <tbody>
         <tr class="table-active" *ngFor="let event of events | event:filter">
           <td>{{ event.params.timestamp.logical }}</td>
-          <td>{{ event.params.timestamp.physical }}</td>
           <td>{{ event.params.data?.type }}</td>
-          <td>{{ event | json }}</td>
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>

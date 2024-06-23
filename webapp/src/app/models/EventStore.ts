@@ -56,6 +56,10 @@ export class EventStore {
     return this.messages.filter(message => !message.delivered && message.target != "core").map(message => message.sendMessage);
   }
 
+  static getNonDeliveredDsMessages() {
+    return this.messages.filter(message => !message.delivered && message.target != "core");
+  }
+
   static loadEvents(json: string) {
     const events = JSON.parse(json) as JsonRpcEvent[];
     events.forEach(event => {

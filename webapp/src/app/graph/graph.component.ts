@@ -47,6 +47,9 @@ export class GraphComponent implements AfterViewInit {
         node.position('x', containerWidth! - 35);
       }
     });
+
+    const scrollContainer = document.querySelector('.cytoscape-scroll-container');
+    scrollContainer!.scrollLeft = containerWidth! - 35;
   }
   
   addNetworkNodeToGraph(networkNode: NetworkNode) {
@@ -85,7 +88,7 @@ export class GraphComponent implements AfterViewInit {
     if (this.cy === undefined) {
       return;
     }
-    this.cy.add(newNodeElement);
+    const nodeCreated = this.cy.add(newNodeElement);
   
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     maxLength += 100;
@@ -93,6 +96,7 @@ export class GraphComponent implements AfterViewInit {
     console.log("maxLength: ", maxLength);
     document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
     this.updateNodePositions(maxLength);
+    this.bindNodeDragRestriction(nodeCreated);
   }
 
   addEdgeToGraph(edge: GraphEdge) {
@@ -119,6 +123,53 @@ export class GraphComponent implements AfterViewInit {
       var edge = event.target;
       edge.style('text-opacity', 0);
       edge.style('z-compound-depth', 'bottom');
+    });
+  }
+
+  bindNodeDragRestriction(node: any){
+
+    function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
+      var data = node.data();
+
+      var minX = data.minX;
+      var maxX = data.maxX;
+      var minY = data.minY;
+      var maxY = data.maxY;
+
+      if(!minX)
+        minX = 0;
+      if(!maxX)
+        maxX = Number.MAX_SAFE_INTEGER;
+      if(!minY)
+        minY = 0;
+      if(!maxY)
+        maxY = Number.MAX_SAFE_INTEGER;
+
+      console.log("minX: ", minX);
+      console.log("maxX: ", maxX);
+      console.log("minY: ", minY);
+      console.log("maxY: ", maxY);
+
+      return {
+        x: Math.max(minX, Math.min(pos.x, maxX)),
+        y: Math.max(minY, Math.min(pos.y, maxY))
+      };
+    }
+
+    node.on('dragfree', function(event: { target: any; }) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      node.position(constrainedPos);
+    });
+
+    node.on('position', function(event: { target: any; }) {
+      var node = event.target;
+      var pos = node.position();
+      var constrainedPos = constrainPosition(node, pos);
+      if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
+        node.position(constrainedPos);
+      }
     });
   }
 

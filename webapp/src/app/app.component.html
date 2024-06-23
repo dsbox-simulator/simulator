@@ -92,8 +92,21 @@
           role="tabpanel"
         >
 
-            <app-graph></app-graph>
-            <app-event-table [delivered]="true"></app-event-table>
+          <div class="container-fluid">
+            <div class="row">
+              <div class="col-12">
+                <app-graph></app-graph>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-8">
+                <app-event-table [delivered]="true"></app-event-table>
+              </div>
+              <div class="col-4">
+                <app-graph-in-transit></app-graph-in-transit>
+              </div>
+            </div>
+          </div>
         </div>
         <div
           class="tab-pane fade"

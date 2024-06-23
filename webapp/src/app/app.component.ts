@@ -5,13 +5,14 @@ import { DebugControlsComponent } from "./debug-controls/debug-controls.componen
 import { EventTableComponent } from "./event-table/event-table.component";
 import { EventStore } from './models/EventStore';
 import { CoreSocketFactory } from './models/communication/CoreSocketFactory';
+import { GraphInTransitComponent } from "./graph-in-transit/graph-in-transit.component";
 
 @Component({
     selector: 'app-root',
     standalone: true,
     templateUrl: './app.component.html',
     styleUrl: './app.component.scss',
-    imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent]
+    imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent, GraphInTransitComponent]
 })
 
 export class AppComponent {
