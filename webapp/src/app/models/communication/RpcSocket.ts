@@ -1,7 +1,8 @@
 import { EventStore } from "../EventStore";
 import { JsonRpcEvent } from "../communication/RpcEvent";
+import { IRpcSocket } from "./IRpcSocket";
 
-export class JsonRpcWebSocketClient {
+export class JsonRpcWebSocketClient implements IRpcSocket{
     private socket: WebSocket;
     private id: number;
     private pendingRequests: Map<number, (result: any) => void>;
@@ -28,6 +29,7 @@ export class JsonRpcWebSocketClient {
       }
       else
         {
+          console.log("Received message: ", event.data);
             const rpcEvent = this.handleIncomingMessage(event.data);
             EventStore.addEvent(rpcEvent);
         }
@@ -51,8 +53,10 @@ export class JsonRpcWebSocketClient {
         this.pendingRequests.set(id, (result: any) => {
           resolve(result);
         });
-  
-        this.socket.send(JSON.stringify(payload));
+
+        const payloadString = JSON.stringify(payload);
+        console.log("Sending payload: ", payloadString);
+        this.socket.send(payloadString);
       });
     }
   }

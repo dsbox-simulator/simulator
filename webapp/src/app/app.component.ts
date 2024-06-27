@@ -6,6 +6,7 @@ import { EventTableComponent } from "./event-table/event-table.component";
 import { EventStore } from './models/EventStore';
 import { CoreSocketFactory } from './models/communication/CoreSocketFactory';
 import { GraphInTransitComponent } from "./graph-in-transit/graph-in-transit.component";
+import { JsonRpcEvent } from './models/communication/RpcEvent';
 
 @Component({
     selector: 'app-root',
@@ -29,8 +30,10 @@ onFileSelected($event: Event) {
   if (file) {
     this.readFile(file).then(contents => {
       console.log("File contents:", contents);
-      EventStore.loadEvents(contents);
-      // Do whatever you want with the file contents here
+      //EventStore.loadEvents(contents);
+
+      const events = JSON.parse(contents) as JsonRpcEvent[];
+      CoreSocketFactory.load(events);
     }).catch(error => {
       console.error("Error reading file:", error);
     });
@@ -53,17 +56,17 @@ readFile(file: File): Promise<string> {
 
 @HostListener('document:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent) {
-    if (event.key === 'F1') {
+    if (event.key === 'F1', []) {
       event.preventDefault();
 
       const coreSocket = CoreSocketFactory.create();
-      coreSocket.call('step');
+      coreSocket.call('step', []);
     }
     if (event.key === 'F2') {
       event.preventDefault();
 
       const coreSocket = CoreSocketFactory.create();
-      coreSocket.call('resume');
+      coreSocket.call('resume', []);
     }
   }
 

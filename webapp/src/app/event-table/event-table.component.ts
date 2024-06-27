@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { JsonRpcEvent } from '../models/communication/RpcEvent';
 import { FormsModule } from '@angular/forms'; // Import FormsModule here
 import { EventPipe } from './event.pipe';
+import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
 
 
 
@@ -20,6 +21,8 @@ import { EventPipe } from './event.pipe';
   styleUrls: ['./event-table.component.scss']
 })
 export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
+
+
   @Input() delivered: boolean = false;
   public events: JsonRpcEvent[] = EventStore.events;
   private eventsSub!: Subscription;
@@ -57,4 +60,14 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
       this.events = EventStore.events;
     }
   }
+
+  deliverEvent(event: JsonRpcEvent) {
+    CoreSocketFactory.create().call('deliver', [event.params.timestamp.logical]);
+  }
+
+  dropEvent(event: JsonRpcEvent) {
+    CoreSocketFactory.create().call('drop', [event.params.timestamp.logical]);
+    EventStore.dropEvent(event);
+    }
+    
 }

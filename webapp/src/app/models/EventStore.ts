@@ -79,6 +79,11 @@ export class EventStore {
     
   }
 
+
+  static dropEvent(event: JsonRpcEvent) {
+    
+  }
+
   static getNonDeliveredMessages() {
     return this.messages.filter(message => !message.delivered && message.target != "core").map(message => message.sendMessage);
   }

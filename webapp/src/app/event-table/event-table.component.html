@@ -22,8 +22,8 @@
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
           <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>
-          <td *ngIf="delivered"><button class="btn btn-primary">Deliver</button></td>
-          <td *ngIf="delivered"><button class="btn btn-primary">Drop</button></td>
+          <td *ngIf="delivered"><button (click)="deliverEvent(event)" class="btn btn-primary">Deliver</button></td>
+          <td *ngIf="delivered"><button (click)="dropEvent(event)" class="btn btn-primary">Drop</button></td>
         </tr>
       </tbody>
     </table>

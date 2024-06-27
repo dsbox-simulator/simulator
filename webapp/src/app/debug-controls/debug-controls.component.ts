@@ -11,22 +11,20 @@ import { FormsModule } from '@angular/forms';
   styleUrl: './debug-controls.component.css'
 })
 export class DebugControlsComponent {
-  CoreSocket: JsonRpcWebSocketClient;
   Break: boolean = false;
   StepTime: number = 1000;
   constructor() {
-    this.CoreSocket = CoreSocketFactory.create();
   }
 
   public send(data: string) {
     this.Break = true;
-    this.CoreSocket.call(data);
+    CoreSocketFactory.create().call(data, []);
   }
 
   public async resume() {
     this.Break = false;
     while (!this.Break) {
-      this.CoreSocket.call('step');
+      CoreSocketFactory.create().call('step', []);
       await new Promise(resolve => setTimeout(resolve, this.StepTime));
     }
   }
