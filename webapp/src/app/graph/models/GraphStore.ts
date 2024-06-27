@@ -14,6 +14,8 @@ export class GraphStore {
     public static nodes: GraphNode[] = [];
     public static networkNodes: NetworkNode[] = [];
 
+    public static nodeCount: number = 1;
+
     private static readonly heightDiff = 70;
     private static readonly widthDiff = 50;
 
@@ -99,12 +101,14 @@ export class GraphStore {
     if (networkNode) {
       const sameNetworkNodes = GraphStore.nodes.filter(n => n.networkNode === networkNode);
       const biggestPosX = Math.max(...sameNetworkNodes.map(node => node.posX));
-      node.posX = biggestPosX + this.widthDiff;
+      /*node.posX = biggestPosX + this.widthDiff;
       if(node.posX < posX) {
         node.posX = posX + this.widthDiff;
-      }
+      }*/
+      node.posX = this.nodeCount * this.widthDiff;
+      this.nodeCount++;
       if( node.posX > networkNode.length) {
-        networkNode.length = node.posX + 50;
+        networkNode.length = node.posX + this.widthDiff;
       }
     }
     GraphStore.nodes.push(node);
