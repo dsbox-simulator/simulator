@@ -12,6 +12,7 @@ export class DsMessage {
     public delivered: boolean;
     public update: boolean;
     public body: string;
+    public color: string | undefined;
 
     public constructor(sendMessage: JsonRpcEvent, id: number, send_logical_timestamp: number, source: string, target: string, body: string) {
         this.sendMessage = sendMessage;
@@ -32,4 +33,11 @@ export class DsMessage {
         this.delivered = true;
         this.update = true;
     }
+
+    public addLogMessage(color: string) {
+        this.delivered = true;
+        this.update = true;
+        this.color = color;
+    }
+
 }

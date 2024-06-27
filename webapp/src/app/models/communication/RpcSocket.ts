@@ -28,7 +28,6 @@ export class JsonRpcWebSocketClient {
       }
       else
         {
-            console.log("Received message: ", response);
             const rpcEvent = this.handleIncomingMessage(event.data);
             EventStore.addEvent(rpcEvent);
         }

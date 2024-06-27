@@ -2,16 +2,20 @@ import { Subject } from 'rxjs';
 import { DsMessage } from './DsMessage';
 import { DsNodeSetup } from './DsNodeSetup';
 import { JsonRpcEvent } from './communication/RpcEvent';
+import { DsLogMessage } from './DsLogMessage';
+import { LogMessage } from './communication/LogMessage';
 
 export class EventStore {
   static events: JsonRpcEvent[] = [];
   static messages: DsMessage[] = [];
   static nodeSetups: DsNodeSetup[] = [];
+  static logMessages: DsLogMessage[] = [];
 
   static eventsUpdated = new Subject<JsonRpcEvent>();
   static messagesUpdated = new Subject<DsMessage>();
   static deliveredMessage = new Subject<DsMessage>();
   static nodeSetupsUpdated = new Subject<DsNodeSetup>();
+  static logMessagesUpdated = new Subject<DsLogMessage>();
 
   static addEvent(event: JsonRpcEvent) {
     EventStore.events.push(event);
@@ -22,15 +26,35 @@ export class EventStore {
   static handleEvent(event: JsonRpcEvent) {
     const  data  = event.params.data;
     
+   
     if (data && data.type === "send_message") {
+
         console.log("SendMessage event received");
         
         const body = JSON.stringify(data.msg?.body);
+        let logmessage: LogMessage | null = null;
+
+        try {
+          logmessage = JSON.parse(body ?? "") as LogMessage;
+        } catch (e) {
+          console.log("Failed to parse JSON");
+        }
+        
+        if(logmessage && logmessage.marker != undefined) {
+            
+            const logMessage = new DsLogMessage(event,event.params.timestamp.logical,event.params.timestamp.logical,event.params.data.msg!.src, event.params.data.msg!.body, logmessage);
+            this.logMessages.push(logMessage);
+            this.logMessagesUpdated.next(logMessage);
+    
+            console.log("Log event received");
+            return;
+        }
 
         const message = new DsMessage(event, event.params.timestamp.logical,
           event.params.timestamp.logical, data.msg!.src, data.msg!.dest, body);
         this.messages.push(message);
         EventStore.messagesUpdated.next(message);
+        return;
     }
 
     if (data && data.type === "deliver_message") {
@@ -39,6 +63,7 @@ export class EventStore {
         message.addDeliverMessage(event);
         EventStore.deliveredMessage.next(message);
       }
+      return;
     }
 
     if (data && data.type === "node_launched") {
@@ -50,6 +75,8 @@ export class EventStore {
         
         return;
     }
+
+    
   }
 
   static getNonDeliveredMessages() {

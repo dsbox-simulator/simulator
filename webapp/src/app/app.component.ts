@@ -17,7 +17,10 @@ import { GraphInTransitComponent } from "./graph-in-transit/graph-in-transit.com
 
 export class AppComponent {
 openFile() {
-  document.querySelector('input')!.click()
+  const inputElement = document.getElementById('loadFile');
+  if (inputElement) {
+    inputElement.click();
+  }
 }
 
 onFileSelected($event: Event) {

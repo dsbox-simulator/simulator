@@ -5,6 +5,7 @@ export class GraphNode {
     label: string;
     networkNode: NetworkNode;
     posX: number;
+    color: string | undefined;
   
     constructor(id: string, label: string, networkNode: NetworkNode) {
       this.id = id;

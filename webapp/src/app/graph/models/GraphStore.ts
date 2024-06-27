@@ -7,6 +7,7 @@ import { DsNodeSetup } from '../../models/DsNodeSetup';
 import { DsMessage } from '../../models/DsMessage';
 import { Version } from '@angular/core';
 import { JsonRpcEvent } from '../../models/communication/RpcEvent';
+import { DsLogMessage } from '../../models/DsLogMessage';
 
 export class GraphStore {
     public static  edges: GraphEdge[] = [];
@@ -52,6 +53,16 @@ export class GraphStore {
     const source = GraphStore.networkNodes.find(node => node.id === message.source);
     if(!source) {return;}
     const srcNode = new GraphNode(message.send_logical_timestamp.toString(),message.send_logical_timestamp.toString(), source);
+    
+    this.addNode(srcNode);
+    this.graphSubject.next("update");
+  });
+
+  static subscription5 = EventStore.logMessagesUpdated.subscribe((logMessage: DsLogMessage) => {
+    const source = GraphStore.networkNodes.find(node => node.id === logMessage.source);
+    if(!source) {return;}
+    const srcNode = new GraphNode(logMessage.send_logical_timestamp.toString(),logMessage.logmessage.marker.label, source);
+    srcNode.color = logMessage.logmessage.marker.color;
     this.addNode(srcNode);
     this.graphSubject.next("update");
   });

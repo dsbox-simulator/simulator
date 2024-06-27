@@ -80,20 +80,34 @@ export class GraphComponent implements AfterViewInit {
   }
 
   addNodeToGraph(node: GraphNode) {
-    const newNodeElement = {
-      data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY },
-      position: { x: node.posX, y: node.posY }
-    };
 
     if (this.cy === undefined) {
       return;
     }
-    const nodeCreated = this.cy.add(newNodeElement);
+
+    var nodeCreated;
+    if(node.color === undefined) {
+      const newNodeElement = {
+        data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY },
+        position: { x: node.posX, y: node.posY }
+      };
+
+      nodeCreated = this.cy.add(newNodeElement);
+    } else {
+      
+      const newNodeElement = {
+        data: { id: node.id, type: 'marker',label: node.label, minY: node.posY, maxY: node.posY },
+        position: { x: node.posX, y: node.posY },
+        style: { 'background-color': node.color }
+      };
+
+      nodeCreated = this.cy.add(newNodeElement);
+    }
+
   
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     maxLength += 100;
     this.cy.extent().x2 = maxLength;
-    console.log("maxLength: ", maxLength);
     document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
     this.updateNodePositions(maxLength);
     this.bindNodeDragRestriction(nodeCreated);
@@ -242,12 +256,20 @@ export class GraphComponent implements AfterViewInit {
             }
           },
           {
-            selector: 'node[type="anker"]', // Select nodes with type="square"
+            selector: 'node[type="anker"]', 
             style: {            
               'width': 0.5,
               'height': 0.5,
               'background-color': '#666',
               'label': ''
+            }
+          },
+          {
+            selector: 'node[type="marker"]',
+            style: {            
+              'width': 10,
+              'height': 10,
+              'label': 'data(label)'
             }
           },
           {
