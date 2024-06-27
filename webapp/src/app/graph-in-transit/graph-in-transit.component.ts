@@ -42,13 +42,13 @@ export class GraphInTransitComponent implements AfterViewInit {
     const angleStep = (2 * Math.PI) / totalNodes;
 
     const nodesElements = Array.from(uniqueNodes).map((nodeId, index) => {
-      const angle = index * angleStep;
+      const angle = (index * angleStep) + (Math.PI); // Add Math.PI / 2 to start from the left side
       const x = centerX + radius * Math.cos(angle);
       const y = centerY + radius * Math.sin(angle);
 
       return {
-        data: { id: nodeId, type: 'node', minY: y, maxY: y },
-        position: { x, y }
+      data: { id: nodeId, type: 'node', minY: y, maxY: y },
+      position: { x, y }
       };
     });
 
