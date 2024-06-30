@@ -19,7 +19,6 @@ export class GraphLegendComponent implements OnInit {
   private subscription: Subscription = new Subscription();
 
   ngOnInit(): void {
-    // Subscribe to the addedNewColor observable
     this.subscription = TypeColorStore.addedNewColor.subscribe(() => {
       this.colorMap = { ...TypeColorStore.colorMap };
       console.log('Updated ColorMap:', this.colorMap);
@@ -27,7 +26,6 @@ export class GraphLegendComponent implements OnInit {
   }
 
   ngOnDestroy(): void {
-    // Unsubscribe to avoid memory leaks
     this.subscription.unsubscribe();
   }
 

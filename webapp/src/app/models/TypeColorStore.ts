@@ -11,6 +11,8 @@ export class TypeColorStore {
         if (!TypeColorStore.colorMap.hasOwnProperty(key)) {
             TypeColorStore.colorMap[key] = TypeColorStore.generateNewColor();
         }
+
+        this.addedNewColor.next("");
         return TypeColorStore.colorMap[key];
     }
 
@@ -20,7 +22,6 @@ export class TypeColorStore {
         newColor = this.selectColor(Object.keys(this.colorMap).length)
 
         TypeColorStore.usedColors.add(newColor);
-        this.addedNewColor.next(newColor);
         return newColor;
     }
 

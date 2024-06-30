@@ -324,8 +324,7 @@ export class GraphComponent implements AfterViewInit {
       
         layout: {
           name: 'preset'
-        }
-
+        },        
     });
     
     function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
@@ -355,7 +354,6 @@ export class GraphComponent implements AfterViewInit {
         y: Math.max(minY, Math.min(pos.y, maxY))
       };
     }
-
 
     this.cy.add(networkNodesElements);
     this.cy.add(nodesElements);
