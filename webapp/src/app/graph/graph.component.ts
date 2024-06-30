@@ -108,7 +108,16 @@ export class GraphComponent implements AfterViewInit {
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     maxLength += 100;
     this.cy.extent().x2 = maxLength;
-    document.getElementById('cy')!.style.minWidth = `${maxLength}px`;
+    const graphHeaderElement = document.getElementById('graph-header')!;
+    const height = graphHeaderElement.offsetHeight; 
+    const cyelement = document.getElementById('cy')!;
+    cyelement.style.minWidth = `${maxLength}px`;
+    cyelement.style.minHeight = `${height}px`; 
+
+    //this.cy.resize();
+    //this.cy.fit();
+    console.log("maxLength: ", maxLength);
+
     this.updateNodePositions(maxLength);
     this.bindNodeDragRestriction(nodeCreated);
   }

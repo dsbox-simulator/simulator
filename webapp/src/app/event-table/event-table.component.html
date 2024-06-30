@@ -19,9 +19,20 @@
         <tr class="table-active" *ngFor="let event of events | event:filter">
           <td>{{ event.params.timestamp.logical }}</td>
           <td>{{ event.params.data?.type }}</td>
-          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.src}}</td>
-          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.dest}}</td>
-          <td *ngIf="event.params.data && event.params.data.type === 'send_message'">{{event.params.data.msg!.body | json}}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'; else elseSrc">{{event.params.data.msg!.src}}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'; else elseDest">{{event.params.data.msg!.dest}}</td>
+          <td *ngIf="event.params.data && event.params.data.type === 'send_message'; else elseBody">
+            {{ event.params.data.msg!.body | json }}
+          </td>
+          <ng-template #elseSrc>
+            <td>-</td>
+          </ng-template>
+          <ng-template #elseDest>
+            <td>-</td>
+          </ng-template>
+          <ng-template #elseBody>
+            <td>{{ event.params.data | json }}</td>
+          </ng-template>
           <td *ngIf="delivered"><button (click)="deliverEvent(event)" class="btn btn-primary">Deliver</button></td>
           <td *ngIf="delivered"><button (click)="dropEvent(event)" class="btn btn-primary">Drop</button></td>
         </tr>

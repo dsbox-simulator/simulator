@@ -56,7 +56,7 @@ readFile(file: File): Promise<string> {
 
 @HostListener('document:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent) {
-    if (event.key === 'F1', []) {
+    if (event.key === 'F1') {
       event.preventDefault();
 
       const coreSocket = CoreSocketFactory.create();

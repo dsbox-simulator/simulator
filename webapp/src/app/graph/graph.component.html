@@ -1,5 +1,5 @@
 <div class="container">
-    <div class="left-element">
+    <div id="graph-header" class="left-element">
         <div class="node-start"></div>
         <div cdkDropList (cdkDropListDropped)="drop($event)">
             <div *ngFor="let node of networkNodes" cdkDrag>
