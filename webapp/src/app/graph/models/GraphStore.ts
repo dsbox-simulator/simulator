@@ -48,6 +48,8 @@ export class GraphStore {
     this.addNode(destNode, srcNode!.posX);
 
     const edge = new GraphEdge(srcNode!, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!, message.body);
+    edge.color = message.typeColor;
+    
     this.addEdge(edge);
   });
 

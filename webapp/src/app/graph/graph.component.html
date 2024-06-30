@@ -1,16 +1,19 @@
 <div class="container">
-    <div id="graph-header" class="left-element">
-        <div class="node-start"></div>
-        <div cdkDropList (cdkDropListDropped)="drop($event)">
-            <div *ngFor="let node of networkNodes" cdkDrag>
+  <div id="graph-header" class="left-element">
+      <div class="node-start"></div>
+      <div cdkDropList (cdkDropListDropped)="drop($event)">
+          <div *ngFor="let node of networkNodes" cdkDrag>
               <div class="node-div">{{ node.id }}</div>
-            </div>
           </div>
-          
-    </div>
+      </div>
+  </div>
 
-    <div class="cytoscape-scroll-container">
-        <div id="cy"></div>
-    </div>
+  <div class="cytoscape-scroll-container">
+      <div id="cy"></div>
+  </div>
 </div>
-  
+
+<div class="legend-container">
+  <div style="width: 0px;"></div>
+  <app-graph-legend class="app-legend"></app-graph-legend>
+</div>

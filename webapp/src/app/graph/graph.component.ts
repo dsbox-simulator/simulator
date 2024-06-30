@@ -7,17 +7,19 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { NetworkNode } from './models/NetworkNode';
 import { GraphNode } from './models/GraphNode';
 import { GraphEdge } from './models/GraphEdge';
+import { GraphLegendComponent } from "../graph-legend/graph-legend.component";
 
 
 @Component({
-  selector: 'app-graph',
-  standalone: true,
-  imports: [
-    CommonModule,    
-    DragDropModule,
-  ],
-  templateUrl: './graph.component.html',
-  styleUrl: './graph.component.scss'
+    selector: 'app-graph',
+    standalone: true,
+    templateUrl: './graph.component.html',
+    styleUrl: './graph.component.scss',
+    imports: [
+        CommonModule,
+        DragDropModule,
+        GraphLegendComponent
+    ]
 })
 
 export class GraphComponent implements AfterViewInit {
@@ -123,9 +125,19 @@ export class GraphComponent implements AfterViewInit {
   }
 
   addEdgeToGraph(edge: GraphEdge) {
-    const newEdgeElement = {
-      data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label }
-    };
+
+    var newEdgeElement;
+    if(edge.color === undefined) {
+      newEdgeElement = {
+        data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label }
+      };
+    }else{
+      newEdgeElement = {
+        data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label },
+        style: { 'line-color': edge.color }
+      };
+    }
+    
 
     if (this.cy === undefined) {
       return;

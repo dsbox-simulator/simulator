@@ -1,0 +1,25 @@
+.legend {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap; /* Optional: to wrap items if they exceed the container width */
+  }
+  
+  .legend-item {
+    display: flex;
+    align-items: center;
+    margin-right: 10px;
+  }
+  
+  .legend-color {
+    width: 20px;
+    height: 20px;
+    display: inline-block;
+    margin-right: 5px;
+    border-radius: 50%;
+  }
+  
+  .legend-label {
+    font-size: 14px;
+  }
+  

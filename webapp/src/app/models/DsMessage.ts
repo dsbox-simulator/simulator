@@ -1,4 +1,5 @@
-import { JsonRpcEvent } from "./communication/RpcEvent";
+import { TypeColorStore } from "./TypeColorStore";
+import { JsonRpcEvent, MessageBody } from "./communication/RpcEvent";
 
 export class DsMessage {
     
@@ -13,6 +14,10 @@ export class DsMessage {
     public update: boolean;
     public body: string;
     public color: string | undefined;
+    public type: string | undefined;
+    public typeColor: string | undefined;
+
+    private static readonly IgnoreTypes = ["launch", "launch_finished", "init", "all_servers"];
 
     public constructor(sendMessage: JsonRpcEvent, id: number, send_logical_timestamp: number, source: string, target: string, body: string) {
         this.sendMessage = sendMessage;
@@ -25,6 +30,7 @@ export class DsMessage {
         this.delivered = false;
         this.update = true;
         this.body = body;
+        this.determineType();
     }
 
     public addDeliverMessage(deliverMessage: JsonRpcEvent) {
@@ -38,6 +44,31 @@ export class DsMessage {
         this.delivered = true;
         this.update = true;
         this.color = color;
+    }
+
+    public determineType(){
+
+        try {
+            console.log("Body: " + this.sendMessage.params.data.msg?.body); 
+            const body = this.sendMessage.params.data.msg?.body ?? "";
+              
+            const bodytype  = body as unknown as MessageBody;
+          
+            if(bodytype == null) {
+            return;
+            }
+
+            if(DsMessage.IgnoreTypes.includes(bodytype.type)) {
+            return;
+            }
+
+            this.type = bodytype.type;
+            this.typeColor = TypeColorStore.getColor(this.type);
+            console.log("Type: " + this.type + " Color: " + this.typeColor);
+        } catch (e) {
+            //ignore
+            console.log("Failed to parse JSON body: " + e);
+          }
     }
 
 }

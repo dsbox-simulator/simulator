@@ -3,10 +3,7 @@ interface Timestamp {
     physical: string;
 }
 
-interface MessageBody {
-    as_client?: boolean;
-    lamport?: number;
-    name?: string;
+export interface MessageBody {
     type: string;
 }
 

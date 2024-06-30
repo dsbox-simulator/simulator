@@ -1,0 +1,7 @@
+<div class="legend">
+    <div *ngFor="let key of getKeys(colorMap)" class="legend-item">
+      <span class="legend-color" [style.background]="colorMap[key]"></span>
+      <span class="legend-label">{{ key }}</span>
+    </div>
+  </div>
+  

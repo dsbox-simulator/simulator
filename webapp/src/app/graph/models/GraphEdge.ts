@@ -6,6 +6,7 @@ export class GraphEdge {
     id: string;
     logicalTimestamp: number;
     label: string;
+    color: string | undefined;
 
     constructor(source: GraphNode, target: GraphNode, id: string, logicalTimestamp: number, label: string) {
         this.source = source;
