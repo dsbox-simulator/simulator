@@ -36,9 +36,9 @@ export class GraphInTransitComponent implements AfterViewInit {
 
    // Convert the unique nodes to node elements positioned in a circle
     const totalNodes = uniqueNodes.size;
-    const radius = 100; 
-    const centerX = 150; 
-    const centerY = 150; 
+    const radius = 80; 
+    const centerX = 130; 
+    const centerY = 130; 
     const angleStep = (2 * Math.PI) / totalNodes;
 
     const nodesElements = Array.from(uniqueNodes).map((nodeId, index) => {

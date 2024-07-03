@@ -49,6 +49,7 @@ export class GraphStore {
 
     const edge = new GraphEdge(srcNode!, destNode,message.send_logical_timestamp.toString() + "edge", message.send_logical_timestamp!, message.body);
     edge.color = message.typeColor;
+    edge.type = message.type;
     
     this.addEdge(edge);
   });

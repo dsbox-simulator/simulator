@@ -8,6 +8,7 @@ import { NetworkNode } from './models/NetworkNode';
 import { GraphNode } from './models/GraphNode';
 import { GraphEdge } from './models/GraphEdge';
 import { GraphLegendComponent } from "../graph-legend/graph-legend.component";
+import { TypeColorStore } from '../models/TypeColorStore';
 
 
 @Component({
@@ -133,8 +134,7 @@ export class GraphComponent implements AfterViewInit {
       };
     }else{
       newEdgeElement = {
-        data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label },
-        style: { 'line-color': edge.color }
+        data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label, type : edge.type }
       };
     }
     
@@ -208,6 +208,19 @@ export class GraphComponent implements AfterViewInit {
     });
   }
 
+  appendStyle(type: string, color: string){
+
+    if(this.cy === undefined) {
+      return;
+    }
+
+    this.cy.style().selector('edge[type="'+ type +'"]')
+         .style({
+            'line-color': color,
+            'target-arrow-color': color,
+         }).update();
+  }
+
   
 
   subscription1 = GraphStore.graphNode.subscribe((node) => {
@@ -224,6 +237,10 @@ export class GraphComponent implements AfterViewInit {
 
   subscription4 = GraphStore.graphSubject.subscribe((graph) => {
     
+  });
+
+  subscription5 = TypeColorStore.addedNewColor.subscribe((map) => {
+    this.appendStyle(map.key, map.color);
   });
 
   initGraph() {
