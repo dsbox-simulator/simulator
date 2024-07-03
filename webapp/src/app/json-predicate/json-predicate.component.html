@@ -1,0 +1,13 @@
+<div>
+    <h2>JSON Predicate Checker</h2>
+    <textarea [(ngModel)]="jsonInput" rows="10" cols="50" placeholder='Enter JSON here'></textarea><br>
+    
+    <div *ngFor="let predicateObj of predicates; let i = index">
+      <textarea [(ngModel)]="predicateObj.value" [attr.key]="predicateObj.id" rows="2" cols="50" placeholder='Enter predicate function here'></textarea><br>
+    </div>
+    
+    <button (click)="addPredicate()">Add Predicate</button><br>
+    <button (click)="checkPredicates()">Check Predicates</button>
+    
+    <p *ngFor="let result of results; let i = index">Predicate {{i + 1}} result: {{result}}</p>
+  </div>

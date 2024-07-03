@@ -27,8 +27,8 @@
                 tabindex="-1">Messages</a>
             </li>
             <li class="nav-item" role="presentation">
-              <a class="nav-link" [class.active]="activeTab === 'Logs'" (click)="selectTab('Logs')" data-bs-toggle="tab"
-                href="#Messages" [attr.aria-selected]="activeTab === 'Logs'" role="tab" tabindex="-1">Logs</a>
+              <a class="nav-link" [class.active]="activeTab === 'Breakpoint'" (click)="selectTab('Breakpoint')" data-bs-toggle="tab"
+                href="#Messages" [attr.aria-selected]="activeTab === 'Breakpoint'" role="tab" tabindex="-1">Breakpoint</a>
             </li>
           </ul>
 
@@ -92,9 +92,9 @@
             </div>
           </div>
             
-          <div class="tab-pane fade" [class.active]="activeTab === 'Logs'" [class.show]="activeTab === 'Logs'"
-              id="Logs" role="tabpanel">
-
+          <div class="tab-pane fade" [class.active]="activeTab === 'Breakpoint'" [class.show]="activeTab === 'Breakpoint'"
+              id="Breakpoint" role="tabpanel">
+            <app-json-predicate></app-json-predicate>
           </div>
           
 
