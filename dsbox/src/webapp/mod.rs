@@ -8,16 +8,19 @@
 //!
 //! [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 
-use std::io::Read;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, ErrorKind, Read};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
-
+use std::sync::{Arc, RwLock};
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::extract::ws::{Message, WebSocket};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum::routing::get;
+use serde_json::Value;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -53,9 +56,14 @@ impl Webapp {
         let listen_address = SocketAddr::new(IpAddr::from_str(&args.listen_address).unwrap(), args.port);
         Self {
             handle: tokio::spawn(async move {
+                let storage = Self::load_storage().unwrap_or_else(|e| {
+                    log::warn!("failed to load webapp storage: {e}");
+                    HashMap::new()
+                });
+                let storage = Arc::new(RwLock::new(storage));
                 // build our application with a route
                 let router = Self::build_router()
-                    .with_state(WebappState { app: App::new(remote_control), event_subscriber });
+                    .with_state(WebappState { app: App::new(remote_control, storage.clone()), event_subscriber });
 
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
@@ -63,10 +71,16 @@ impl Webapp {
                 let listener = tokio::net::TcpListener::bind(listen_address).await
                     .expect("failed to bind tcp listener");
                 let server = axum::serve(listener, router);
-                let server = server.with_graceful_shutdown(async move { rx.await.ok(); });
+                let server = server.with_graceful_shutdown(async move {
+                    rx.await.ok();
+                });
                 match server.await {
                     Ok(()) => log::info!("web sever shutdown successful"),
                     Err(e) => log::warn!("web server shutdown error: {e}"),
+                }
+                let storage = storage.read().unwrap();
+                if let Err(e) = Self::save_storage(&*storage) {
+                    log::warn!("failed to save webapp storage: {e}");
                 }
             }),
             shutdown: tx,
@@ -88,6 +102,27 @@ impl Webapp {
             .layer(TraceLayer::new_for_http()
                 .on_request(())
                 .on_response(()))
+    }
+
+    const STORAGE_FILE: &'static str = ".dsbox_storage.json";
+    fn load_storage() -> std::io::Result<HashMap<String, Value>> {
+        let file = match File::options()
+            .read(true).open(Self::STORAGE_FILE) {
+            Ok(file) => file,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(HashMap::new()),
+            Err(e) => return Err(e),
+        };
+        serde_json::from_reader(&mut BufReader::new(file))
+            .map_err(Into::into)
+    }
+
+    fn save_storage(storage: &HashMap<String, Value>) -> std::io::Result<()> {
+        let file = File::options()
+            .write(true)
+            .create(true)
+            .open(Self::STORAGE_FILE)?;
+        serde_json::to_writer(&mut BufWriter::new(file), storage)
+            .map_err(Into::into)
     }
 }
 
