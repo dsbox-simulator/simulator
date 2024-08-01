@@ -51,8 +51,8 @@ export class GraphComponent implements AfterViewInit {
       }
     });
 
-    const scrollContainer = document.querySelector('.cytoscape-scroll-container');
-    scrollContainer!.scrollLeft = containerWidth! - 35;
+    //const scrollContainer = document.querySelector('.cytoscape-scroll-container');
+    //scrollContainer!.scrollLeft = containerWidth! - 35;
   }
   
   addNetworkNodeToGraph(networkNode: NetworkNode) {
@@ -114,12 +114,15 @@ export class GraphComponent implements AfterViewInit {
     const graphHeaderElement = document.getElementById('graph-header')!;
     const height = graphHeaderElement.offsetHeight; 
     const cyelement = document.getElementById('cy')!;
-    cyelement.style.minWidth = `${maxLength}px`;
+    //cyelement.style.minWidth = `${maxLength}px`;
     cyelement.style.minHeight = `${height}px`; 
 
-    //this.cy.resize();
-    //this.cy.fit();
-    console.log("maxLength: ", maxLength);
+    const scrollbar = document.getElementById('cy-scrollbar');
+
+    if(scrollbar !== null){
+      const inputScrollbar = scrollbar as HTMLInputElement;
+      inputScrollbar.max = String(maxLength);
+    }
 
     this.updateNodePositions(maxLength);
     this.bindNodeDragRestriction(nodeCreated);
@@ -242,6 +245,37 @@ export class GraphComponent implements AfterViewInit {
   subscription5 = TypeColorStore.addedNewColor.subscribe((map) => {
     this.appendStyle(map.key, map.color);
   });
+
+  zoomWidth(factor: number) {
+    if (this.cy === undefined) {
+        return;
+    }
+
+    // Get the current extent and center
+    const extent = this.cy.extent();
+    const centerX = (extent.x1 + extent.x2) / 2;
+
+    // Calculate the new width and adjust node positions
+    this.cy.nodes().forEach(node => {
+        const pos = node.position();
+        const offsetX = pos.x - centerX;
+        const newPosX = centerX + offsetX * factor;
+
+        node.position({
+            x: newPosX,
+            y: pos.y  // Keep y position unchanged
+        });
+    });
+
+    // Adjust pan to simulate zoom
+    const pan = this.cy.pan();
+    this.cy.pan({ x: pan.x * factor, y: pan.y });
+
+    // Update the viewport to reflect changes
+    this.cy.fit(this.cy.elements(), 50); // Optional padding
+}
+
+
 
   initGraph() {
 
@@ -389,10 +423,39 @@ export class GraphComponent implements AfterViewInit {
       });
     });
     
-    this.cy.maxZoom(2);
-    this.cy.minZoom(0.5);
+    //this.cy.maxZoom(2);
+    //this.cy.minZoom(0.5);
     this.cy.userZoomingEnabled(false);
-    this.cy.userPanningEnabled(false);
+    this.cy.userPanningEnabled(true);
+    
+    //doesnt work
+    /*this.cy.container()!.addEventListener('wheel', (event) => {
+      event.preventDefault();
+
+      let factor = event.deltaY < 0 ? 1.1 : 0.9;
+
+      this.zoomWidth(factor);
+    });*/
+
+    const scrollbar = document.getElementById('cy-scrollbar');
+
+    // Initialize scrollbar based on current pan position
+    const pan = this.cy.pan();
+    if(scrollbar !== null){
+
+      const inputScrollbar = scrollbar as HTMLInputElement;
+      inputScrollbar.min = "0";  // Set appropriate min value
+      inputScrollbar.max = "1000";   // Set appropriate max value
+      inputScrollbar.value = String(pan.x);
+
+      // Update Cytoscape pan when the scrollbar is moved
+      scrollbar.addEventListener('input', (event) => {
+
+        const target = event.target as HTMLInputElement;
+        console.log("scrollbar value: ", target.value);
+        this.cy!.pan({ x: target.valueAsNumber * -1, y: 0 });
+      });
+    }
 
     this.cy.nodes().on('dragfree', function(event) {
       var node = event.target;
@@ -409,6 +472,7 @@ export class GraphComponent implements AfterViewInit {
         node.position(constrainedPos);
       }
     });
+
   }
 
 
@@ -417,107 +481,3 @@ export class GraphComponent implements AfterViewInit {
     this.initGraph();
   }
 }
-
-/*
-
-    var cy = cytoscape({
-
-      container: document.getElementById('cy'), // container to render in
-    
-      elements: [ // list of graph elements to start with
-        { data: { id: 'a', minX: 35, maxX: 50, minY:30, maxY:30 }, position: {x: 35, y: 30}},
-        { data: { id: 'b' }, position: {x: 100, y: 60}},
-        { data: { id: 'c', type: 'anker' }, position: {x: 30, y: 30 }},
-        { data: { id: 'd', type: 'anker' }, position: {x: 130, y: 30 }},
-        { data: { id: 'e', type: 'anker' }, position: {x: 30, y: 60 }},
-        { data: { id: 'f', type: 'anker' }, position: {x: 130, y: 60 }},
-        { data: { id: 'ab', source: 'a', target: 'b', label: 'ab' }},
-        { data: { id: 'cd', source: 'c', target: 'd', type: 'anker' }},
-        { data: { id: 'ef', source: 'e', target: 'f', type: 'anker' }}
-      ],
-    
-      style: [ // the stylesheet for the graph
-        {
-          selector: 'node',
-          style: {
-            'width': 7,
-            'height': 7,
-            'background-color': '#666',
-            'label': 'data(id)'
-          }
-        },
-        {
-          selector: 'node[type="anker"]', // Select nodes with type="square"
-          style: {            
-            'width': 0.5,
-            'height': 0.5,
-            'background-color': '#666',
-            'label': ''
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'line-color': '#ccc',
-            'target-arrow-color': '#ccc',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            label: 'data(label)'
-          }
-        },
-        {
-          selector: 'edge[type="anker"]',
-          style: {
-            'width': 2,
-            'line-color': '#000',
-            'target-arrow-color': '#ccc',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'haystack'
-          }
-        }
-      ],
-    
-      layout: {
-        name: 'preset'
-      }
-    
-    });
-    
-    function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
-      var data = node.data();
-
-      var minX = data.minX;
-      var maxX = data.maxX;
-      var minY = data.minY;
-      var maxY = data.maxY;
-      if(!minX)
-        minX = 0;
-      if(!maxX)
-        maxX = Number.MAX_SAFE_INTEGER;
-      if(!minY)
-        minY = 0;
-      if(!maxY)
-        maxY = Number.MAX_SAFE_INTEGER;
-
-      return {
-        x: Math.max(minX, Math.min(pos.x, maxX)),
-        y: Math.max(minY, Math.min(pos.y, maxY))
-      };
-    }
-
-    cy.nodes().on('dragfree', function(event) {
-      var node = event.target;
-      var pos = node.position();
-      var constrainedPos = constrainPosition(node, pos);
-      node.position(constrainedPos);
-    });
-
-    cy.nodes().on('position', function(event) {
-      var node = event.target;
-      var pos = node.position();
-      var constrainedPos = constrainPosition(node, pos);
-      if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
-        node.position(constrainedPos);
-      }
-    });*/
