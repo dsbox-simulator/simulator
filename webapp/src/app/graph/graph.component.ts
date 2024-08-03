@@ -339,9 +339,10 @@ export class GraphComponent implements AfterViewInit {
           {
             selector: 'node[type="marker"]',
             style: {            
-              'width': 10,
-              'height': 10,
-              'label': 'data(label)'
+              'width': 20,
+              'height': 30,
+              'label': 'data(label)',
+              'shape': 'vee',
             }
           },
           {
