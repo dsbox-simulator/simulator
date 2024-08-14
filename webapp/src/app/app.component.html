@@ -57,13 +57,13 @@
 </div>
 
 <div style="margin-top: 25px;">
-
-  <div class="container-fluid">
-    <div class="row">
-      <div class="col-12">
-        <app-graph></app-graph>
+  <div class="container-fluid" style="padding: 0;"> <!-- Remove padding from container-fluid -->
+    <div class="row" style="margin: 0;"> <!-- Remove margin from row -->
+      <div class="col-12" style="padding: 0;"> <!-- Remove padding from col-12 -->
+        <app-graph></app-graph> <!-- This should now occupy full width -->
       </div>
     </div>
+  
 
     <div class="text-center">
       <div id="myTabContent" class="tab-content">

@@ -67,11 +67,11 @@ export class GraphInTransitComponent implements AfterViewInit {
       } else {
 
         // Calculate the position of the node in the circle
-        var calcIndex = index;
-        if(index % 2 == 0){
-          // Even index has to be calulated -1 otherwise it would take the spot of another node
-          calcIndex = index - 1;
-        }
+        // Problem: index 1 for totalNodes 2 is the same as index 2 for totalNodes 4 (position in the circle)
+        // Solution: Only use the odd indexes because they are the "new" one added to the circle
+        // index - (totalNodes - index -1) will give the correct index for the new nodes
+        var calcIndex = index - (totalNodes - index -1);
+        
         const angle = calcIndex * angleStep;
         const x = centerX + radius * Math.cos(angle);
         const y = centerY + radius * Math.sin(angle);

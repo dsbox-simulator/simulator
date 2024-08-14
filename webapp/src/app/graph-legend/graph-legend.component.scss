@@ -31,14 +31,30 @@
     color: darkred;
   }
   
-  .predicates {
-    margin-top: 20px;
-  } 
-  
   .predicate-active, .predicate-inactive {
     display: block;
     margin-bottom: 10px;
     padding: 10px;
     border-radius: 5px;
   }
+
+  /* graph-legend.component.scss */
+
+.predicates {
+  display: flex;
+  flex-direction: column; /* Stacks predicates vertically */
+  gap: 10px; /* Adds space between predicates */
+}
+
+.predicate {
+  display: flex;
+  flex-direction: row; /* Stacks nodes horizontally */
+  gap: 5px; /* Adds space between nodes */
+}
+
+.predicate-node {
+  display: flex;
+  align-items: center; /* Centers content vertically */
+}
+
   

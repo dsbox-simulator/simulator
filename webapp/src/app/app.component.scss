@@ -18,3 +18,31 @@
 .messages{
     margin-top: 75px;
 }
+
+.container-fluid {
+    width: 100%;
+    padding: 0;
+  }
+  
+  .row {
+    width: 100%;
+    margin: 0;
+  }
+  
+  .col-12 {
+    padding: 0;
+    width: 100%;
+  }
+  
+  #cy {
+    width: 100%; /* Ensure full width within cy-container */
+  }
+  
+  .cy-container {
+    width: 100%;
+  }
+  
+  .container {
+    width: 100%;
+  }
+  

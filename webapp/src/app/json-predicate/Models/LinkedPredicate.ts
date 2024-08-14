@@ -6,7 +6,7 @@ export class LinkedPredicate {
     public predicateNode: Node[] = [];
     public currentState: number = 0; // Index of the current predicate group
     private states: number[] = []; // List of states indicating transitions
-    private endState: boolean = false;
+    public endState: boolean = false;
      
   
     constructor(expression: string){      

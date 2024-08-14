@@ -6,10 +6,13 @@
 </div>
 
 <div class="predicates">
-  <div *ngFor="let predicate of predicates">
-    <div *ngFor="let node of predicate.predicateNode; let i = index"
-         [ngStyle]="getPredicateStyle(predicate, i)">
-      <span>{{ getPredicateExpression(predicate, i) }}</span>
+  <div *ngFor="let item of predicates; trackBy: trackByPredicate" class="predicate">
+    <div *ngFor="let expression of item.expressions; let i = index; trackBy: trackByIndex"
+         [ngStyle]="getPredicateStyle(item.predicate, i)"
+         class="predicate-node">
+      <span>{{ expression }}</span>
     </div>
   </div>
 </div>
+
+

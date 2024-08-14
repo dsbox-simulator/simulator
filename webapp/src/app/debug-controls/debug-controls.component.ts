@@ -22,23 +22,39 @@ export class DebugControlsComponent {
   public send(data: string) {
     this.Break = true;
     CoreSocketFactory.create().call(data, []);
+    this.checkPredicates();
   }
 
   public async resume() {
     this.Break = false;
     while (!this.Break) {
       CoreSocketFactory.create().call('step', []);
-      const jsonInTransit = EventStore.getNonDeliveredDsMessages().map((message) => {
-         //JSON.stringify(message.sendMessage.params);
-         return JSON.parse(JSON.stringify(message.sendMessage.params));
-      });
-      console.log('Json in transit:', jsonInTransit);
-      PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
-        const result = predicate.evaluate(jsonInTransit);
-        console.log('Predicate:', predicate, 'Result:', result);
-      });
+      this.checkPredicates();
+     
       await new Promise(resolve => setTimeout(resolve, this.StepTime));
     }
+  }
+
+  private checkPredicates() {
+     //Check Break condition
+     const jsonInTransit = EventStore.getNonDeliveredDsMessages().map((message) => {
+      //JSON.stringify(message.sendMessage.params);
+      return JSON.parse(JSON.stringify(message.sendMessage.params));
+   });
+   console.log('Json in transit:', jsonInTransit);
+   PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
+    if (predicate.endState === true) {
+        // Skip this predicate if endState is true
+        return;
+    }
+    const result = predicate.evaluate(jsonInTransit);
+    if (result === true) {
+        this.Break = true;
+
+        alert('Break condition was met.');
+    }
+  });
+
   }
 
   public break() {
