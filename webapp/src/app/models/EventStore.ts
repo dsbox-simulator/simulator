@@ -29,7 +29,6 @@ export class EventStore {
    
     if (data && data.type === "send_message") {
 
-        console.log("SendMessage event received");
         
         const body = JSON.stringify(data.msg?.body);
         let logmessage: LogMessage | null = null;
@@ -46,7 +45,6 @@ export class EventStore {
             this.logMessages.push(logMessage);
             this.logMessagesUpdated.next(logMessage);
     
-            console.log("Log event received");
             return;
         }
 
@@ -67,7 +65,6 @@ export class EventStore {
     }
 
     if (data && data.type === "node_launched") {
-        console.log("Setup event received");
 
         const nodeSetup = new DsNodeSetup(data.name!, event);
         this.nodeSetups.push(nodeSetup);

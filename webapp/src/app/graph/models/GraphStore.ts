@@ -34,7 +34,6 @@ export class GraphStore {
 
   static subscription2 = EventStore.nodeSetupsUpdated.subscribe((nodeSetup: DsNodeSetup) => {    
       const networkNode = new NetworkNode(nodeSetup.id, nodeSetup.id);
-      console.log("addNetworkNode " + networkNode.id);
       this.addNetworkNode(networkNode);
       this.graphSubject.next("update");
   });

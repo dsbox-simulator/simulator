@@ -49,7 +49,6 @@ export class DsMessage {
     public determineType(){
 
         try {
-            console.log("Body: " + this.sendMessage.params.data.msg?.body); 
             const body = this.sendMessage.params.data.msg?.body ?? "";
               
             const bodytype  = body as unknown as MessageBody;
@@ -64,7 +63,6 @@ export class DsMessage {
 
             this.type = bodytype.type;
             this.typeColor = TypeColorStore.getColor(this.type);
-            console.log("Type: " + this.type + " Color: " + this.typeColor);
         } catch (e) {
             //ignore
             console.log("Failed to parse JSON body: " + e);

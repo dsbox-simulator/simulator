@@ -1,7 +1,15 @@
 <div class="legend">
-    <div *ngFor="let key of getKeys(colorMap)" class="legend-item">
-      <span class="legend-color" [style.background]="colorMap[key]"></span>
-      <span class="legend-label">{{ key }}</span>
+  <div *ngFor="let key of getKeys(colorMap)" class="legend-item">
+    <span class="legend-color" [style.background]="colorMap[key]"></span>
+    <span class="legend-label">{{ key }}</span>
+  </div>
+</div>
+
+<div class="predicates">
+  <div *ngFor="let predicate of predicates">
+    <div *ngFor="let node of predicate.predicateNode; let i = index"
+         [ngStyle]="getPredicateStyle(predicate, i)">
+      <span>{{ getPredicateExpression(predicate, i) }}</span>
     </div>
   </div>
-  
+</div>

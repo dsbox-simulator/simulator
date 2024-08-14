@@ -1,13 +1,34 @@
-<div>
-    <h2>JSON Predicate Checker</h2>
-    <textarea [(ngModel)]="jsonInput" rows="10" cols="50" placeholder='Enter JSON here'></textarea><br>
-    
-    <div *ngFor="let predicateObj of predicates; let i = index">
-      <textarea [(ngModel)]="predicateObj.value" [attr.key]="predicateObj.id" rows="2" cols="50" placeholder='Enter predicate function here'></textarea><br>
-    </div>
-    
-    <button (click)="addPredicate()">Add Predicate</button><br>
-    <button (click)="checkPredicates()">Check Predicates</button>
-    
-    <p *ngFor="let result of results; let i = index">Predicate {{i + 1}} result: {{result}}</p>
+<div class="container mt-5">
+  <h2 class="text-center mb-4">Breakpoint</h2>
+
+  <div *ngFor="let predicateObj of predicates; let i = index" class="d-flex align-items-start mb-3">
+    <textarea class="form-control me-2" [(ngModel)]="predicateObj.value" (ngModelChange)="updatePredicate($event, i)" 
+              [attr.key]="predicateObj.id" rows="2" placeholder="Enter predicate function here"></textarea>
+    <button class="btn btn-danger" (click)="deletePredicate(i)">
+      <i class="bi bi-trash"></i>
+    </button>
   </div>
+  
+
+
+
+
+
+    <div class="d-flex justify-content-between mb-4">
+        <button class="btn btn-primary" (click)="addPredicate()">Add Predicate</button>
+    </div>
+
+  <div class="mb-3">
+      <textarea class="form-control" [(ngModel)]="jsonInput" rows="10" placeholder="Enter JSON here"></textarea>
+  </div>
+
+  <div class="d-flex justify-content-between mb-4">
+    <button class="btn btn-success" (click)="checkPredicates()">Check Predicates</button>
+  </div>
+ 
+
+  <div *ngFor="let result of results; let i = index" class="alert alert-info">
+      Predicate {{i + 1}} result: {{result}}
+  </div>
+</div>
+

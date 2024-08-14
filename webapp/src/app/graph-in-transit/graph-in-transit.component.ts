@@ -76,8 +76,6 @@ export class GraphInTransitComponent implements AfterViewInit {
         const x = centerX + radius * Math.cos(angle);
         const y = centerY + radius * Math.sin(angle);
 
-        console.log('InTransit: Node:', node.id, 'X:', x, 'Y:', y, 'Index', index, 'Angle', angle, 'Total Nodes', totalNodes);
-
         return {
           data: { id: node.id, type: 'node' },
           position: { x, y }

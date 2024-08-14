@@ -4,6 +4,7 @@
     "@angular/core": "^17.3.9",
     "@angular/router": "^17.3.9",
     "@types/cytoscape": "^3.21.1",
+    "@types/prismjs": "^1.26.4",
     "cytoscape": "^3.29.2",
     "sass": "^1.77.2"
   },
@@ -14,6 +15,8 @@
     "@angular/forms": "^17.3.9",
     "@angular/platform-browser": "^17.3.9",
     "bootstrap": "^5.3.3",
-    "electron": "^30.0.8"
+    "bootstrap-icons": "^1.11.3",
+    "electron": "^30.0.8",
+    "prismjs": "^1.29.0"
   }
 }

@@ -2,6 +2,9 @@ import { Component } from '@angular/core';
 import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
 import { JsonRpcWebSocketClient } from '../models/communication/RpcSocket';
 import { FormsModule } from '@angular/forms';
+import { PredicateStore } from '../json-predicate/Models/PredicateStore';
+import { LinkedPredicate } from '../json-predicate/Models/LinkedPredicate';
+import { EventStore } from '../models/EventStore';
 
 @Component({
   selector: 'app-debug-controls',
@@ -25,6 +28,15 @@ export class DebugControlsComponent {
     this.Break = false;
     while (!this.Break) {
       CoreSocketFactory.create().call('step', []);
+      const jsonInTransit = EventStore.getNonDeliveredDsMessages().map((message) => {
+         //JSON.stringify(message.sendMessage.params);
+         return JSON.parse(JSON.stringify(message.sendMessage.params));
+      });
+      console.log('Json in transit:', jsonInTransit);
+      PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
+        const result = predicate.evaluate(jsonInTransit);
+        console.log('Predicate:', predicate, 'Result:', result);
+      });
       await new Promise(resolve => setTimeout(resolve, this.StepTime));
     }
   }

@@ -29,7 +29,6 @@ export class JsonRpcWebSocketClient implements IRpcSocket{
       }
       else
         {
-          console.log("Received message: ", event.data);
             const rpcEvent = this.handleIncomingMessage(event.data);
             EventStore.addEvent(rpcEvent);
         }
@@ -55,7 +54,6 @@ export class JsonRpcWebSocketClient implements IRpcSocket{
         });
 
         const payloadString = JSON.stringify(payload);
-        console.log("Sending payload: ", payloadString);
         this.socket.send(payloadString);
       });
     }

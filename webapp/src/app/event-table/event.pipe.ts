@@ -12,8 +12,6 @@ export class EventPipe implements PipeTransform {
       return values;
     }
 
-    console.log("Pipes: " + values);
-
     return values.filter((value: JsonRpcEvent) => {
 
       //todo filter all

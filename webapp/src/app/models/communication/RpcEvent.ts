@@ -31,5 +31,5 @@ export interface JsonRpcEvent {
     jsonrpc: string;
     method: string;
     params: EventParams;
-    id: null;
+    id: string;
 }

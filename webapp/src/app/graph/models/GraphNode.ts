@@ -16,6 +16,14 @@ export class GraphNode {
     }
 
     public get posY(): number {
-      return this.networkNode.posY;
+
+      if(this.color === undefined)
+      {
+        return this.networkNode.posY;
+      }
+      else{
+        //If color is set its a marker node. Needs to be higher Up to fit better on the Diagram
+        return this.networkNode.posY - 15;
+      }
     }
 }

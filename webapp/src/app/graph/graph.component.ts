@@ -31,7 +31,7 @@ export class GraphComponent implements AfterViewInit {
   drop(event: CdkDragDrop<any[]>) {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
     GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
-    
+    this.initGraph();
   }
 
   updateNodePositions(width: number | undefined) {
@@ -44,15 +44,14 @@ export class GraphComponent implements AfterViewInit {
        containerWidth = this.cy.extent().x2;
     }
   
+    //Update Anker nodes according to the growing diagram.
     this.cy.nodes().forEach(node => {
       const data = node.data();
-      if (data.type === 'anker' && data.id.endsWith('d')) {
-        node.position('x', containerWidth! - 35);
+      if (data.type === 'anker' && data.id.endsWith('d')) {        
+        node.position('x', containerWidth! + 10);
       }
     });
 
-    //const scrollContainer = document.querySelector('.cytoscape-scroll-container');
-    //scrollContainer!.scrollLeft = containerWidth! - 35;
   }
   
   addNetworkNodeToGraph(networkNode: NetworkNode) {
@@ -109,8 +108,8 @@ export class GraphComponent implements AfterViewInit {
 
   
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
-    maxLength += 100;
-    this.cy.extent().x2 = maxLength;
+    //maxLength += 100;
+    //this.cy.extent().x2 = maxLength;
     const graphHeaderElement = document.getElementById('graph-header')!;
     const height = graphHeaderElement.offsetHeight; 
     const cyelement = document.getElementById('cy')!;
@@ -121,7 +120,10 @@ export class GraphComponent implements AfterViewInit {
 
     if(scrollbar !== null){
       const inputScrollbar = scrollbar as HTMLInputElement;
-      inputScrollbar.max = String(maxLength);
+      const scrollbarlenght = maxLength - window.innerWidth + 100;
+      inputScrollbar.max = String(scrollbarlenght);
+      inputScrollbar.value = String(scrollbarlenght);
+      this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
     }
 
     this.updateNodePositions(maxLength);
@@ -182,11 +184,6 @@ export class GraphComponent implements AfterViewInit {
         minY = 0;
       if(!maxY)
         maxY = Number.MAX_SAFE_INTEGER;
-
-      console.log("minX: ", minX);
-      console.log("maxX: ", maxX);
-      console.log("minY: ", minY);
-      console.log("maxY: ", maxY);
 
       return {
         x: Math.max(minX, Math.min(pos.x, maxX)),
@@ -279,33 +276,44 @@ export class GraphComponent implements AfterViewInit {
 
   initGraph() {
 
-  console.log("updateGraph");
-
 
     const networkNodes = GraphStore.networkNodes;
     const nodes = GraphStore.nodes;
     const edges = GraphStore.edges;
 
     const networkNodesElements = [
-      ...networkNodes.map((node) => ({ data: { id: node.id, type: 'anker'}, position: { x: 35, y: node.posY } } )),
-      ...networkNodes.map((node) => ({ data: { id: node.id + "d", type: 'anker'}, position: { x: node.length, y: node.posY }  })),
-      ...networkNodes.map((node) => ({ data: { id: node.id + "e", source: node.id, target: node.id + "d", type: 'anker' } })),
+      ...networkNodes.map((node) => ({ 
+        data: { id: node.id, type: 'anker' }, 
+        position: { x: 35, y: node.posY } 
+      })),
+      ...networkNodes.map((node) => ({ 
+        data: { id: node.id + "d", type: 'anker' }, 
+        position: { x: node.length, y: node.posY } 
+      })),
+      ...networkNodes.map((node) => ({ 
+        data: { id: node.id + "e", source: node.id, target: node.id + "d", type: 'anker' } 
+      })),
     ];
-
 
     const nodesElements = [
-      ...nodes.map((node) => ({ data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY}, position: { x: node.posX, y: node.posY } } )),
+      ...nodes.map((node) => ({ 
+        data: { id: node.id, type: 'node', minY: node.posY, maxY: node.posY }, 
+        position: { x: node.posX, y: node.posY } 
+      })),
     ];
+
+    // Create a set of valid node IDs for quick lookup
+    const nodeIds = new Set(nodes.map(node => node.id));
 
     const edgesElements = [
-        ...edges.map((edge) => ({ data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label } })),
+      ...edges
+        .filter(edge => nodeIds.has(edge.source.id) && nodeIds.has(edge.target.id))
+        .map(edge => ({ 
+          data: { id: edge.id, source: edge.source.id, target: edge.target.id, label: edge.label } 
+        })),
     ];
 
 
-
-    console.log("nodes: ", nodesElements);
-
-    console.log("edges: ", edgesElements);
 
     var maxLength = Math.max(...networkNodes.map(node => node.length));
     maxLength += 100;
@@ -396,11 +404,6 @@ export class GraphComponent implements AfterViewInit {
       if(!maxY)
         maxY = Number.MAX_SAFE_INTEGER;
 
-      console.log("minX: ", minX);
-      console.log("maxX: ", maxX);
-      console.log("minY: ", minY);
-      console.log("maxY: ", maxY);
-
       return {
         x: Math.max(minX, Math.min(pos.x, maxX)),
         y: Math.max(minY, Math.min(pos.y, maxY))
@@ -424,19 +427,8 @@ export class GraphComponent implements AfterViewInit {
       });
     });
     
-    //this.cy.maxZoom(2);
-    //this.cy.minZoom(0.5);
     this.cy.userZoomingEnabled(false);
-    this.cy.userPanningEnabled(true);
-    
-    //doesnt work
-    /*this.cy.container()!.addEventListener('wheel', (event) => {
-      event.preventDefault();
-
-      let factor = event.deltaY < 0 ? 1.1 : 0.9;
-
-      this.zoomWidth(factor);
-    });*/
+    this.cy.userPanningEnabled(false);    
 
     const scrollbar = document.getElementById('cy-scrollbar');
 
@@ -453,7 +445,6 @@ export class GraphComponent implements AfterViewInit {
       scrollbar.addEventListener('input', (event) => {
 
         const target = event.target as HTMLInputElement;
-        console.log("scrollbar value: ", target.value);
         this.cy!.pan({ x: target.valueAsNumber * -1, y: 0 });
       });
     }
