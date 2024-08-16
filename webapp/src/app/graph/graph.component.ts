@@ -123,7 +123,7 @@ export class GraphComponent implements AfterViewInit {
     this.bindNodeDragRestriction(nodeCreated);
   }
 
-  updateScrollbar(){
+  updateScrollbar(dontPan: boolean = false) {
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     const scrollbar = document.getElementById('cy-scrollbar');
 
@@ -131,8 +131,10 @@ export class GraphComponent implements AfterViewInit {
       const inputScrollbar = scrollbar as HTMLInputElement;
       const scrollbarlenght = maxLength - window.innerWidth + 600;
       inputScrollbar.max = String(scrollbarlenght);
-      inputScrollbar.value = String(scrollbarlenght);
-      this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
+      if(dontPan === false){ 
+        inputScrollbar.value = String(scrollbarlenght);
+        this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
+      }
     }
   }
 
@@ -530,7 +532,7 @@ export class GraphComponent implements AfterViewInit {
 
               console.log('pan_old:', panPos, 'pan_new:', this.cy?.pan(),'panAdjustment: ', panAdjustment);
 
-              this.updateScrollbar();
+              this.updateScrollbar(true);
             }else{
               //just pan
               const pan = this.cy?.pan();
