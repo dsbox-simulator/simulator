@@ -17,7 +17,7 @@ export class GraphStore {
     public static nodeCount: number = 1;
 
     private static readonly heightDiff = 70;
-    private static readonly widthDiff = 50;
+    public static widthDiff: number = 50.0;
 
 
 
@@ -122,7 +122,7 @@ export class GraphStore {
     
     GraphStore.networkNodes.forEach(node => {
       node.posY = (GraphStore.networkNodes.indexOf(node) + 1) * this.heightDiff;
-      console.log("node: " + node.id + " posY: " + node.posY, node)
+      //console.log("node: " + node.id + " posY: " + node.posY, node)
     });
 
     this.graphSubject.next("update");

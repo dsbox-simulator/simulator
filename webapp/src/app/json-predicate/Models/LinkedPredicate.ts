@@ -7,44 +7,24 @@ export class LinkedPredicate {
     public currentState: number = 0; // Index of the current predicate group
     private states: number[] = []; // List of states indicating transitions
     public endState: boolean = false;
+    public syntaxTree: Node;
      
   
-    constructor(expression: string){      
+    constructor(expression: string){     
       const conditionSections = expression.split(/\s*->\s*/);
 
-      for (let i = 0; i < conditionSections.length; i++) {
-        const tokenizer = new Tokenizer(conditionSections[i]);
-        const tokens = tokenizer.tokenize();
-    
-        //console.log('Tokens:', tokens);
-        const parser = new Parser(tokens);
-        const syntaxTree = parser.parse();
-        this.predicateNode.push(syntaxTree);
-      }
+      const tokenizer = new Tokenizer(expression);
+      const tokens = tokenizer.tokenize();
+  
+      //console.log('Tokens:', tokens);
+      const parser = new Parser(tokens);
+      this.syntaxTree = parser.parse();      
 
     }
   
     public evaluate(messages: any[]): boolean {
       //console.log('Evaluating linked predicate', this.currentState, this.predicateNode.length);
-      if (this.currentState >= this.predicateNode.length) {
-        return this.endState; // No more predicate to evaluate
-      }
-  
-      const currentGroup = this.predicateNode[this.currentState];
-      const result = currentGroup.evaluate(messages);
-  
-      if (result) {
-        // Move to the next state
-        this.currentState++;
-        if (this.currentState >= this.predicateNode.length) {
-          //We are in the end state
-          this.endState = true;
-          return true;
-        }
-        return false;
-      }
-  
-      return false;
+      return this.syntaxTree.evaluate(messages);
     }
 
     public reset() {

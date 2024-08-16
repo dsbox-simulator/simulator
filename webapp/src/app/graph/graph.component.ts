@@ -116,6 +116,15 @@ export class GraphComponent implements AfterViewInit {
     //cyelement.style.minWidth = `${maxLength}px`;
     cyelement.style.minHeight = `${height}px`; 
 
+
+    this.updateScrollbar();
+
+    this.updateNodePositions(maxLength);
+    this.bindNodeDragRestriction(nodeCreated);
+  }
+
+  updateScrollbar(){
+    var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     const scrollbar = document.getElementById('cy-scrollbar');
 
     if(scrollbar !== null){
@@ -125,9 +134,6 @@ export class GraphComponent implements AfterViewInit {
       inputScrollbar.value = String(scrollbarlenght);
       this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
     }
-
-    this.updateNodePositions(maxLength);
-    this.bindNodeDragRestriction(nodeCreated);
   }
 
   addEdgeToGraph(edge: GraphEdge) {
@@ -464,6 +470,68 @@ export class GraphComponent implements AfterViewInit {
         node.position(constrainedPos);
       }
     });
+
+    this.addScrollLogic();
+
+  }
+
+  addScrollLogic(){
+    // Assuming `cy` is your Cytoscape instance
+    if (this.cy) {
+      const container = this.cy.container();
+
+      if (container) {
+        container.addEventListener('wheel', (event) => {
+            event.preventDefault(); // Prevent the default scroll behavior
+    
+            console.log('User scrolled on the graph', event);
+    
+            // Determine scroll direction
+            const scrollDirection = event.deltaY > 0 ? 'down' : 'up';
+            console.log(`Scrolling ${scrollDirection}`);
+    
+            // Adjust widthDiff based on scroll direction
+            const adjustment = GraphStore.widthDiff * 0.05;
+            const oldwidth = GraphStore.widthDiff;
+    
+            if (scrollDirection === 'down') {
+                GraphStore.widthDiff -= adjustment;
+            } else {
+                GraphStore.widthDiff += adjustment;
+            }
+
+
+            var panAdjustment = GraphStore.widthDiff / oldwidth;
+            var adjustmentScale = 1 / panAdjustment;
+    
+            // Adjust node positions based on the new widthDiff
+            this.cy?.nodes().forEach(node => {
+                const pos = node.position();
+                const index = pos.x / oldwidth;    
+                node.position({ x: index * GraphStore.widthDiff, y: pos.y });
+            });
+
+            GraphStore.nodes.forEach(node => {
+                node.posX = node.posX / adjustmentScale;
+            });
+
+            GraphStore.networkNodes.forEach(node => {
+                console.log('node.length_old:', node.length);
+                node.length = node.length / adjustmentScale;
+                console.log('node.length_new:', node.length);
+            });
+
+            const panPos = this.cy?.pan().x;
+            const panPosY = this.cy?.pan().y;
+            this.cy?.pan({ x: panPos! * panAdjustment, y: panPosY! });
+
+            console.log('pan_old:', panPos, 'pan_new:', this.cy?.pan(),'panAdjustment: ', panAdjustment);
+
+            this.updateScrollbar();
+        });
+    }
+    
+    }
 
   }
 

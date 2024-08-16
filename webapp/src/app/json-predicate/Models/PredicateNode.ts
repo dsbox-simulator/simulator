@@ -17,10 +17,13 @@ export class LambdaNode extends Node {
     evaluate(contexts: any[]): boolean {
         for (let context of contexts) {
             try {
-                //console.log('Evaluating lambda node with context:', context, this.originalExpression);
                 if (this.expression(context)) {
+
+                console.log('Evaluating lambda node with context TRUE:', context, this.originalExpression);
                     return true;
                 }
+
+                console.log('Evaluating lambda node with context FALSE:', context, this.originalExpression);
             } catch (e) {
                 console.log(e);
             }
@@ -63,3 +66,37 @@ export class OperatorNode extends Node {
     }
 }
 
+export class SequenceNode extends Node {
+    private left: Node;
+    private right: Node;
+    private leftOccurred: boolean;
+    private fullfilled: boolean;
+
+    constructor(left: Node, right: Node) {
+        super();
+        this.left = left;
+        this.right = right;
+        this.leftOccurred = false;
+        this.fullfilled = false;
+    }
+
+    evaluate(contexts: any[]): boolean {
+
+        //console.log('Evaluating sequence node', this.left, this.right, this.leftOccurred, this.fullfilled);
+        if(this.fullfilled){
+            return true;
+        }
+        if(!this.leftOccurred){
+            this.leftOccurred = this.left.evaluate(contexts);
+            return false;
+        }else{
+            this.fullfilled =  this.right.evaluate(contexts);
+            console.log('Evaluating sequence node', this.left, this.right, this.leftOccurred, this.fullfilled);
+            return this.fullfilled;
+        }
+    }
+
+    toString(): string {
+        return `(${this.left.toString()} -> ${this.right.toString()})`;
+    }
+}

@@ -33,7 +33,6 @@ export class GraphLegendComponent implements OnInit, OnDestroy {
     this.subscriptions.add(
       TypeColorStore.addedNewColor.subscribe(() => {
         this.colorMap = { ...TypeColorStore.colorMap };
-        console.log('Updated ColorMap:', this.colorMap);
       })
     );
   }

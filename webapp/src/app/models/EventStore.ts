@@ -19,7 +19,7 @@ export class EventStore {
 
   static addEvent(event: JsonRpcEvent) {
     EventStore.events.push(event);
-    console.log("Event:", JSON.stringify(event));
+    //console.log("Event:", JSON.stringify(event));
     this.handleEvent(event);
     EventStore.eventsUpdated.next(event);
   }
