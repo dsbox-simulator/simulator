@@ -17,7 +17,7 @@ export class LambdaNode extends Node {
     evaluate(contexts: any[]): boolean {
         for (let context of contexts) {
             try {
-                console.log('Evaluating lambda node with context:', context, this.originalExpression);
+                //console.log('Evaluating lambda node with context:', context, this.originalExpression);
                 if (this.expression(context)) {
                     return true;
                 }

@@ -120,7 +120,7 @@ export class GraphComponent implements AfterViewInit {
 
     if(scrollbar !== null){
       const inputScrollbar = scrollbar as HTMLInputElement;
-      const scrollbarlenght = maxLength - window.innerWidth + 100;
+      const scrollbarlenght = maxLength - window.innerWidth + 600;
       inputScrollbar.max = String(scrollbarlenght);
       inputScrollbar.value = String(scrollbarlenght);
       this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });

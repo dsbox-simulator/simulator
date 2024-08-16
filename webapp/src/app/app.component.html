@@ -66,7 +66,8 @@
   
 
     <div class="text-center">
-      <div id="myTabContent" class="tab-content">
+      <div id="myTabContent" class="tab-content" >
+     
         
         <div class="tab-pane fade tab-container" [class.active]="activeTab === 'home'"
           [class.show]="activeTab === 'home'" id="home" role="tabpanel">
@@ -94,9 +95,10 @@
             
           <div class="tab-pane fade" [class.active]="activeTab === 'Breakpoint'" [class.show]="activeTab === 'Breakpoint'"
               id="Breakpoint" role="tabpanel">
-            <app-json-predicate></app-json-predicate>
-          </div>
-          
+              <div class="col-12">
+                <app-json-predicate></app-json-predicate>
+            </div>
+          </div>        
 
         </div>
       </div>
@@ -119,8 +121,9 @@
       </figure>
     </div>
 
-
-
-    <router-outlet />
+    
 
   </div>
+
+  <app-notification></app-notification>
+  <router-outlet></router-outlet>

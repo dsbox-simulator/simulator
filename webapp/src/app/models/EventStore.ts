@@ -19,13 +19,13 @@ export class EventStore {
 
   static addEvent(event: JsonRpcEvent) {
     EventStore.events.push(event);
+    console.log("Event:", JSON.stringify(event));
     this.handleEvent(event);
     EventStore.eventsUpdated.next(event);
   }
 
   static handleEvent(event: JsonRpcEvent) {
-    const  data  = event.params.data;
-    
+    const  data  = event.params.data;   
    
     if (data && data.type === "send_message") {
 

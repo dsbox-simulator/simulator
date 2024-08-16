@@ -16,7 +16,7 @@ export class LinkedPredicate {
         const tokenizer = new Tokenizer(conditionSections[i]);
         const tokens = tokenizer.tokenize();
     
-        console.log('Tokens:', tokens);
+        //console.log('Tokens:', tokens);
         const parser = new Parser(tokens);
         const syntaxTree = parser.parse();
         this.predicateNode.push(syntaxTree);
@@ -25,7 +25,7 @@ export class LinkedPredicate {
     }
   
     public evaluate(messages: any[]): boolean {
-      console.log('Evaluating linked predicate', this.currentState, this.predicateNode.length);
+      //console.log('Evaluating linked predicate', this.currentState, this.predicateNode.length);
       if (this.currentState >= this.predicateNode.length) {
         return this.endState; // No more predicate to evaluate
       }

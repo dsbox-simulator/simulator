@@ -8,13 +8,14 @@ import { CoreSocketFactory } from './models/communication/CoreSocketFactory';
 import { GraphInTransitComponent } from "./graph-in-transit/graph-in-transit.component";
 import { JsonRpcEvent } from './models/communication/RpcEvent';
 import { JsonPredicateComponent } from "./json-predicate/json-predicate.component";
+import { NotificationComponent } from "./notification/notification.component";
 
 @Component({
     selector: 'app-root',
     standalone: true,
     templateUrl: './app.component.html',
     styleUrl: './app.component.scss',
-    imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent, GraphInTransitComponent, JsonPredicateComponent]
+    imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent, GraphInTransitComponent, JsonPredicateComponent, NotificationComponent]
 })
 
 export class AppComponent {

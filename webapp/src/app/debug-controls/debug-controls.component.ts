@@ -5,19 +5,20 @@ import { FormsModule } from '@angular/forms';
 import { PredicateStore } from '../json-predicate/Models/PredicateStore';
 import { LinkedPredicate } from '../json-predicate/Models/LinkedPredicate';
 import { EventStore } from '../models/EventStore';
+import { NotificationService } from '../notification.service';
 
 @Component({
   selector: 'app-debug-controls',
   standalone: true,
   imports: [FormsModule],
   templateUrl: './debug-controls.component.html',
-  styleUrl: './debug-controls.component.css'
+  styleUrls: ['./debug-controls.component.css'] // Fix typo from 'styleUrl' to 'styleUrls'
 })
 export class DebugControlsComponent {
   Break: boolean = false;
   StepTime: number = 1000;
-  constructor() {
-  }
+
+  constructor(private notificationService: NotificationService) {}
 
   public send(data: string) {
     this.Break = true;
@@ -36,25 +37,22 @@ export class DebugControlsComponent {
   }
 
   private checkPredicates() {
-     //Check Break condition
-     const jsonInTransit = EventStore.getNonDeliveredDsMessages().map((message) => {
-      //JSON.stringify(message.sendMessage.params);
+    const jsonInTransit = EventStore.getNonDeliveredDsMessages().map((message) => {
       return JSON.parse(JSON.stringify(message.sendMessage.params));
-   });
-   console.log('Json in transit:', jsonInTransit);
-   PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
-    if (predicate.endState === true) {
-        // Skip this predicate if endState is true
-        return;
-    }
-    const result = predicate.evaluate(jsonInTransit);
-    if (result === true) {
-        this.Break = true;
+    });
 
-        alert('Break condition was met.');
-    }
-  });
+    console.log('Json in transit:', jsonInTransit);
 
+    PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
+      if (predicate.endState === true) {
+          return;
+      }
+      const result = predicate.evaluate(jsonInTransit);
+      if (result === true) {
+          this.Break = true;
+          this.notificationService.showNotification('Break condition was met.');
+      }
+    });
   }
 
   public break() {
