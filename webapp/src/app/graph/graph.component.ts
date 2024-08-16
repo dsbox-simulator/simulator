@@ -489,46 +489,67 @@ export class GraphComponent implements AfterViewInit {
             // Determine scroll direction
             const scrollDirection = event.deltaY > 0 ? 'down' : 'up';
             console.log(`Scrolling ${scrollDirection}`);
+
+
+            if (event.ctrlKey) {
     
-            // Adjust widthDiff based on scroll direction
-            const adjustment = GraphStore.widthDiff * 0.05;
-            const oldwidth = GraphStore.widthDiff;
-    
-            if (scrollDirection === 'down') {
-                GraphStore.widthDiff -= adjustment;
-            } else {
-                GraphStore.widthDiff += adjustment;
+              // Adjust widthDiff based on scroll direction
+              const adjustment = GraphStore.widthDiff * 0.05;
+              const oldwidth = GraphStore.widthDiff;
+      
+              if (scrollDirection === 'down') {
+                  GraphStore.widthDiff -= adjustment;
+              } else {
+                  GraphStore.widthDiff += adjustment;
+              }
+
+
+              var panAdjustment = GraphStore.widthDiff / oldwidth;
+              var adjustmentScale = 1 / panAdjustment;
+      
+              // Adjust node positions based on the new widthDiff
+              this.cy?.nodes().forEach(node => {
+                  const pos = node.position();
+                  const index = pos.x / oldwidth;    
+                  node.position({ x: index * GraphStore.widthDiff, y: pos.y });
+              });
+
+              GraphStore.nodes.forEach(node => {
+                  node.posX = node.posX / adjustmentScale;
+              });
+
+              GraphStore.networkNodes.forEach(node => {
+                  console.log('node.length_old:', node.length);
+                  node.length = node.length / adjustmentScale;
+                  console.log('node.length_new:', node.length);
+              });
+
+              const panPos = this.cy?.pan().x;
+              const panPosY = this.cy?.pan().y;
+              this.cy?.pan({ x: panPos! * panAdjustment, y: panPosY! });
+
+              console.log('pan_old:', panPos, 'pan_new:', this.cy?.pan(),'panAdjustment: ', panAdjustment);
+
+              this.updateScrollbar();
+            }else{
+              //just pan
+              const pan = this.cy?.pan();
+              var delta = event.deltaX;
+              if(delta === 0){
+                delta = event.deltaY;
+              }
+
+              this.cy?.pan({ x: pan!.x + delta, y: pan!.y });
+              const scrollbar = document.getElementById('cy-scrollbar');
+
+              if(scrollbar !== null){
+                const inputScrollbar = scrollbar as HTMLInputElement;
+                inputScrollbar.value = String(this.cy!.pan().x * -1);
+              }
+              
             }
-
-
-            var panAdjustment = GraphStore.widthDiff / oldwidth;
-            var adjustmentScale = 1 / panAdjustment;
-    
-            // Adjust node positions based on the new widthDiff
-            this.cy?.nodes().forEach(node => {
-                const pos = node.position();
-                const index = pos.x / oldwidth;    
-                node.position({ x: index * GraphStore.widthDiff, y: pos.y });
-            });
-
-            GraphStore.nodes.forEach(node => {
-                node.posX = node.posX / adjustmentScale;
-            });
-
-            GraphStore.networkNodes.forEach(node => {
-                console.log('node.length_old:', node.length);
-                node.length = node.length / adjustmentScale;
-                console.log('node.length_new:', node.length);
-            });
-
-            const panPos = this.cy?.pan().x;
-            const panPosY = this.cy?.pan().y;
-            this.cy?.pan({ x: panPos! * panAdjustment, y: panPosY! });
-
-            console.log('pan_old:', panPos, 'pan_new:', this.cy?.pan(),'panAdjustment: ', panAdjustment);
-
-            this.updateScrollbar();
-        });
+          });
+      
     }
     
     }
