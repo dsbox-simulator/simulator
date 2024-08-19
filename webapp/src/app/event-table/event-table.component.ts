@@ -3,7 +3,7 @@ import { EventStore } from '../models/EventStore';
 import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { JsonRpcEvent } from '../models/communication/RpcEvent';
-import { FormsModule } from '@angular/forms'; // Import FormsModule here
+import { FormsModule } from '@angular/forms';
 import { EventPipe } from './event.pipe';
 import { CoreSocketFactory } from '../models/communication/CoreSocketFactory';
 import { HighlightJsonPipe } from './json-highlight.pipe';
@@ -30,12 +30,7 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
   public searchText = '';
   public sortKey = '';
 
-  // State to manage JSON formatting toggle
   formatToggle: { [key: number]: boolean } = {};
-
-  sort(key: string) {
-    this.sortKey = key;
-  }
 
   constructor() { }
 
@@ -72,7 +67,6 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
     EventStore.dropEvent(event);
   }
 
-  // Method to toggle JSON formatting
   toggleFormat(timestamp: number) {
     if (this.formatToggle[timestamp] === undefined) {
       this.formatToggle[timestamp] = true;
@@ -83,5 +77,14 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
 
   isFormatted(timestamp: number): boolean {
     return this.formatToggle[timestamp] || false;
+  }
+
+  copyToClipboard(event: JsonRpcEvent) {
+    const jsonContent = JSON.stringify(event.params.data, null, 2); // Pretty print JSON
+    navigator.clipboard.writeText(jsonContent).then(() => {
+      console.log('Copied to clipboard!');
+    }).catch(err => {
+      console.error('Could not copy text: ', err);
+    });
   }
 }

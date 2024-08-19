@@ -3,7 +3,7 @@
     <input type="search" class="form-control" [(ngModel)]="filter" placeholder="Filter Messages">
   </div>
 
-  <table class="table table-hover">
+  <table class="table table-hover d-block w-100 overflow-x-scroll">
     <thead>
       <tr>
         <th scope="col">Timestamp</th>
@@ -11,6 +11,7 @@
         <th scope="col">Source</th>
         <th scope="col">Destination</th>
         <th scope="col">Body</th>
+        <th>Copy JSON</th>
         <th *ngIf="delivered">Deliver Message</th>
         <th *ngIf="delivered">Drop Message</th>
       </tr>
@@ -41,6 +42,12 @@
               [innerHTML]="isFormatted(event.params.timestamp.logical) ? (event.params.data | json | highlightJson) : (event.params.data | highlightJson)">
           </td>
         </ng-template>
+
+        <!-- Copy button -->
+        <td>
+          <button (click)="copyToClipboard(event)" class="btn btn-secondary">Copy</button>
+        </td>
+
         <td *ngIf="delivered"><button (click)="deliverEvent(event)" class="btn btn-primary">Deliver</button></td>
         <td *ngIf="delivered"><button (click)="dropEvent(event)" class="btn btn-primary">Drop</button></td>
       </tr>

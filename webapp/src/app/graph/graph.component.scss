@@ -1,11 +1,12 @@
 $height: 500px;
 
-.container {
+.graph-container {
   width: 100%;
   display: flex;
-  align-items: stretch;
+  //align-items: stretch;
   margin: 0;
-  padding: 0;
+  //padding: 0;
+  overflow: hidden;
 }
 
 .left-element {
@@ -19,11 +20,11 @@ $height: 500px;
   display: flex;
   flex-direction: column;
   flex-grow: 1; /* Take up the remaining space */
-  width: 100%; /* Ensure full width usage */
+  /*width: 100%; /* Ensure full width usage */
 }
 
 #cy {
-  width: 100%; /* Ensure full width within cy-container */
+  width: 100%;  /*Ensure full width within cy-container */
   height: $height;
   display: block;
   text-align: left;

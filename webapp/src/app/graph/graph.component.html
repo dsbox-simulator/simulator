@@ -1,5 +1,5 @@
-<div class="container col-12">
-  <div id="graph-header" class="left-element col-1">
+<div class="graph-container w-100 px-3">
+  <div id="graph-header" class="left-element">
     <div class="node-start"></div>
     <div cdkDropList (cdkDropListDropped)="drop($event)">
       <div *ngFor="let node of networkNodes" cdkDrag>
@@ -8,13 +8,12 @@
     </div>
   </div>
 
-  <div class="cy-container col-11">
+  <div class="cy-container">
     <div id="cy"></div>
-    <input type="range" id="cy-scrollbar" style="width: 100%;">
+    <input type="range" id="cy-scrollbar" style="width: 98%;">
   </div>
 </div>
 
 <div class="legend-container">
-  <div style="width: 0px;"></div>
   <app-graph-legend class="app-legend"></app-graph-legend>
 </div>
