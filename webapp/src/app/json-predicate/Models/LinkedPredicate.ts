@@ -3,9 +3,9 @@ import { Tokenizer } from './Tokenizer';
 import { Node } from './PredicateNode';
 
 export class LinkedPredicate {
-    public predicateNode: Node[] = [];
-    public currentState: number = 0; // Index of the current predicate group
-    private states: number[] = []; // List of states indicating transitions
+    //public predicateNode: Node[] = [];
+    //public currentState: number = 0; // Index of the current predicate group
+    //private states: number[] = []; // List of states indicating transitions
     public endState: boolean = false;
     public syntaxTree: Node;
      
@@ -24,12 +24,16 @@ export class LinkedPredicate {
   
     public evaluate(messages: any[]): boolean {
       //console.log('Evaluating linked predicate', this.currentState, this.predicateNode.length);
-      return this.syntaxTree.evaluate(messages);
+      this.syntaxTree.setEvaluationResult(messages);
+      return this.syntaxTree.getLastEvaluationResult() || false;
     }
 
     public reset() {
-      this.currentState = 0;
       this.endState = false;
+    }
+
+    public toString(): string {
+        return `(${this.syntaxTree.toString()})`;
     }
   }
   

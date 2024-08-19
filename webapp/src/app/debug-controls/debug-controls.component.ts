@@ -43,11 +43,12 @@ export class DebugControlsComponent {
 
     console.log('Json in transit:', jsonInTransit);
 
-    PredicateStore.getEvents().forEach((predicate: LinkedPredicate) => {
+    PredicateStore.getEvents().forEach((predicate: LinkedPredicate, i: number) => {
       if (predicate.endState === true) {
           return;
       }
       const result = predicate.evaluate(jsonInTransit);
+      PredicateStore.updateEvent(i, predicate);
       if (result === true) {
           this.Break = true;
           this.notificationService.showNotification('Break condition was met.');

@@ -1,7 +1,21 @@
 export abstract class Node {
+    protected lastEvaluationResult: boolean | null = null;
+
     abstract evaluate(contexts: any[]): boolean;
-    
     abstract toString(): string;
+
+    setEvaluationResult(contexts: any[]): void {
+        this.lastEvaluationResult = this.evaluate(contexts);
+    }
+
+    getLastEvaluationResult(): boolean | null {
+        return this.lastEvaluationResult;
+    }
+
+    // New method to collect expressions and their evaluation results
+    collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
+        return [{ expression: this.toString(), result: this.lastEvaluationResult }];
+    }
 }
 
 export class LambdaNode extends Node {
@@ -18,24 +32,29 @@ export class LambdaNode extends Node {
         for (let context of contexts) {
             try {
                 if (this.expression(context)) {
-
-                console.log('Evaluating lambda node with context TRUE:', context, this.originalExpression);
+                    console.log('Evaluating lambda node with context TRUE:', context, this.originalExpression);
+                    this.lastEvaluationResult = true;
                     return true;
                 }
-
                 console.log('Evaluating lambda node with context FALSE:', context, this.originalExpression);
             } catch (e) {
                 console.log(e);
             }
         }
+        this.lastEvaluationResult = false;
         return false;
     }
 
     toString(): string {
         return this.originalExpression;
     }
-}
 
+    // Override to return only this node's expression and result
+    override collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
+        console.log('Collecting expressions with results for node:', this.toString(), this.getLastEvaluationResult());
+        return [{ expression: this.originalExpression, result: this.getLastEvaluationResult() }];
+    }
+}
 
 export class OperatorNode extends Node {
     private operator: string;
@@ -64,33 +83,38 @@ export class OperatorNode extends Node {
     toString(): string {
         return `(${this.left.toString()} ${this.operator} ${this.right.toString()})`;
     }
+
+    // Override to gather expressions and results from both left and right nodes, plus the operator node itself
+    override collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
+        return [
+            ...this.left.collectExpressionsWithResults(),
+            ...this.right.collectExpressionsWithResults(),
+           // { expression: this.toString(), result: this.getLastEvaluationResult() }
+        ];
+    }
 }
 
 export class SequenceNode extends Node {
     private left: Node;
     private right: Node;
-    private leftOccurred: boolean;
-    private fullfilled: boolean;
+    private leftOccurred: boolean = false;
+    private fullfilled: boolean = false;
 
     constructor(left: Node, right: Node) {
         super();
         this.left = left;
         this.right = right;
-        this.leftOccurred = false;
-        this.fullfilled = false;
     }
 
     evaluate(contexts: any[]): boolean {
-
-        //console.log('Evaluating sequence node', this.left, this.right, this.leftOccurred, this.fullfilled);
-        if(this.fullfilled){
+        if (this.fullfilled) {
             return true;
         }
-        if(!this.leftOccurred){
+        if (!this.leftOccurred) {
             this.leftOccurred = this.left.evaluate(contexts);
             return false;
-        }else{
-            this.fullfilled =  this.right.evaluate(contexts);
+        } else {
+            this.fullfilled = this.right.evaluate(contexts);
             console.log('Evaluating sequence node', this.left, this.right, this.leftOccurred, this.fullfilled);
             return this.fullfilled;
         }
@@ -98,5 +122,14 @@ export class SequenceNode extends Node {
 
     toString(): string {
         return `(${this.left.toString()} -> ${this.right.toString()})`;
+    }
+
+    // Override to gather expressions and results from both left and right nodes, plus the sequence node itself
+    override collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
+        return [
+            ...this.left.collectExpressionsWithResults(),
+            ...this.right.collectExpressionsWithResults(),
+           // { expression: this.toString(), result: this.getLastEvaluationResult() }
+        ];
     }
 }

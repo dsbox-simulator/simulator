@@ -18,7 +18,7 @@ import { PredicateStore } from '../json-predicate/Models/PredicateStore';
 })
 export class GraphLegendComponent implements OnInit, OnDestroy {
   colorMap: { [key: string]: string } = TypeColorStore.colorMap;
-  predicates: { predicate: LinkedPredicate, expressions: string[] }[] = [];
+  predicates: { predicate: LinkedPredicate, expressions: { expression: string, result: boolean | null }[] }[] = [];
   private subscriptions: Subscription = new Subscription();
 
   ngOnInit(): void {
@@ -44,33 +44,30 @@ export class GraphLegendComponent implements OnInit, OnDestroy {
   private updatePredicates(): void {
     this.predicates = PredicateStore.getEvents().map(predicate => ({
       predicate,
-      expressions: predicate.predicateNode.map((node, i) => this.getPredicateExpression(predicate, i))
+      expressions: predicate.syntaxTree.collectExpressionsWithResults()
     }));
+
+    console.log('Updating predicates', this.predicates);
   }
 
-  getKeys(obj: { [key: string]: string }): string[] {
-    return Object.keys(obj);
-  }
-
-  getPredicateStyle(predicate: LinkedPredicate, nodeIndex: number): { [key: string]: string } {
-    const isActive = nodeIndex < predicate.currentState;
+  getPredicateStyle(result: boolean | null): { [key: string]: string } {
     return {
-      backgroundColor: isActive ? 'green' : 'red',
+      backgroundColor: result === null ? 'gray' : (result ? 'green' : 'red'),
       padding: '5px',
       borderRadius: '3px',
       margin: '2px'
     };
   }
 
-  getPredicateExpression(predicate: LinkedPredicate, nodeIndex: number): string {
-    return predicate.predicateNode[nodeIndex].toString();
+  getKeys(obj: { [key: string]: string }): string[] {
+    return Object.keys(obj);
   }
 
   trackByPredicate(index: number, item: { predicate: LinkedPredicate }): number {
-    return index; // Use the index if no unique ID is available
+    return index;
   }
 
   trackByIndex(index: number): number {
-    return index; // Track by index
+    return index;
   }
 }
