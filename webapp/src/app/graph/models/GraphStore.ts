@@ -16,7 +16,7 @@ export class GraphStore {
 
     public static nodeCount: number = 1;
 
-    private static readonly heightDiff = 70;
+    public static readonly heightDiff = 70;
     public static widthDiff: number = 50.0;
 
 

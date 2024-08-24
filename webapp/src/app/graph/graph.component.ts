@@ -9,6 +9,7 @@ import { GraphNode } from './models/GraphNode';
 import { GraphEdge } from './models/GraphEdge';
 import { GraphLegendComponent } from "../graph-legend/graph-legend.component";
 import { TypeColorStore } from '../models/TypeColorStore';
+import { net } from 'electron';
 
 
 @Component({
@@ -24,15 +25,61 @@ import { TypeColorStore } from '../models/TypeColorStore';
 })
 
 export class GraphComponent implements AfterViewInit {
-
+  // isProgrammaticUpdate needed to update the Y Position of the nodes
+  isProgrammaticUpdate = false;
   networkNodes = GraphStore.networkNodes;
   cy: cytoscape.Core | undefined;
 
   drop(event: CdkDragDrop<any[]>) {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
     GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
-    this.initGraph();
+  
+    if (this.cy === undefined) {
+      return;
+    }
+  
+    this.isProgrammaticUpdate = true;
+  
+    this.cy.nodes().forEach(node => {
+      const posY = node.position().y;
+      let offsetY = 0;
+      let networkNodeIndex = this.networkNodes.findIndex(node => node.posY === posY);
+
+      if(networkNodeIndex === -1) {
+        // -15 offset are Markers on the NetworkNodes
+        networkNodeIndex = this.networkNodes.findIndex(node => node.posY === posY + 15);
+        offsetY = -15;
+      }
+  
+      if (networkNodeIndex === event.previousIndex) {
+        networkNodeIndex = event.currentIndex;
+      } else if (networkNodeIndex === event.currentIndex) {
+        networkNodeIndex = event.previousIndex;
+      } else {
+        // Go to next node
+        return;
+      }
+  
+      const newYPosition = this.networkNodes[networkNodeIndex].posY + offsetY; // Get the new y position
+      const currentPosition = node.position();
+  
+      node.position({
+        x: currentPosition.x,
+        y: newYPosition
+      });
+
+      // Update node data to reflect new constraints
+      node.data({
+        minY: newYPosition,
+        maxY: newYPosition
+      });
+
+    });
+  
+    this.isProgrammaticUpdate = false;
   }
+  
+  
 
   updateNodePositions(width: number | undefined) {
 
@@ -174,47 +221,48 @@ export class GraphComponent implements AfterViewInit {
     });
   }
 
-  bindNodeDragRestriction(node: any){
-
+  bindNodeDragRestriction(node: any) {
     function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
       var data = node.data();
-
       var minX = data.minX;
       var maxX = data.maxX;
       var minY = data.minY;
       var maxY = data.maxY;
-
-      if(!minX)
-        minX = 0;
-      if(!maxX)
-        maxX = Number.MAX_SAFE_INTEGER;
-      if(!minY)
-        minY = 0;
-      if(!maxY)
-        maxY = Number.MAX_SAFE_INTEGER;
-
+  
+      if(!minX) minX = 0;
+      if(!maxX) maxX = Number.MAX_SAFE_INTEGER;
+      if(!minY) minY = 0;
+      if(!maxY) maxY = Number.MAX_SAFE_INTEGER;
+  
       return {
         x: Math.max(minX, Math.min(pos.x, maxX)),
         y: Math.max(minY, Math.min(pos.y, maxY))
       };
     }
-
-    node.on('dragfree', function(event: { target: any; }) {
+  
+    node.on('dragfree', (event: { target: any; }) => {
       var node = event.target;
       var pos = node.position();
-      var constrainedPos = constrainPosition(node, pos);
-      node.position(constrainedPos);
-    });
-
-    node.on('position', function(event: { target: any; }) {
-      var node = event.target;
-      var pos = node.position();
-      var constrainedPos = constrainPosition(node, pos);
-      if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
+      if (!this.isProgrammaticUpdate) {
+        var constrainedPos = constrainPosition(node, pos);
         node.position(constrainedPos);
       }
     });
+  
+    node.on('position', (event: { target: any; }) => {
+      var node = event.target;
+      var pos = node.position();
+      console.log('Position:', pos);
+      if (!this.isProgrammaticUpdate) {
+        var constrainedPos = constrainPosition(node, pos);
+        if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
+          node.position(constrainedPos);
+        }
+      }
+    });
   }
+  
+  
 
   appendStyle(type: string, color: string){
 
