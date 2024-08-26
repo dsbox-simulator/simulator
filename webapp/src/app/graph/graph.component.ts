@@ -10,6 +10,7 @@ import { GraphEdge } from './models/GraphEdge';
 import { GraphLegendComponent } from "../graph-legend/graph-legend.component";
 import { TypeColorStore } from '../models/TypeColorStore';
 import { net } from 'electron';
+import { ConfigurationStore } from '../configurationStore';
 
 
 @Component({
@@ -33,7 +34,10 @@ export class GraphComponent implements AfterViewInit {
   drop(event: CdkDragDrop<any[]>) {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
     GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
-  
+
+    ConfigurationStore.addNetworkNodePosition(GraphStore.networkNodes[event.currentIndex].label, event.currentIndex);
+    ConfigurationStore.addNetworkNodePosition(GraphStore.networkNodes[event.previousIndex].label, event.previousIndex);
+
     if (this.cy === undefined) {
       return;
     }
@@ -43,6 +47,28 @@ export class GraphComponent implements AfterViewInit {
     this.cy.nodes().forEach(node => {
       const posY = node.position().y;
       let offsetY = 0;
+
+      console.log('Node:', node.data().id);
+      let graphNode = GraphStore.nodes.find(n => n.id === node.data().id);
+
+      if (graphNode === undefined) {
+        return;
+      }
+      const nodePosition = node.position();
+
+      node.position({
+        x: nodePosition.x,
+        y: graphNode?.posY!
+      });
+
+      // Update node data to reflect new constraints
+      node.data({
+        minY: graphNode?.posY!,
+        maxY: graphNode?.posY!
+      });
+      
+      return;
+
       let networkNodeIndex = this.networkNodes.findIndex(node => node.posY === posY);
 
       if(networkNodeIndex === -1) {
@@ -126,6 +152,16 @@ export class GraphComponent implements AfterViewInit {
   
     // Call updateNodePositions to ensure all nodes are correctly positioned
     this.updateNodePositions(undefined);
+    
+
+    //Dirty way of setting the height of the cytoscape container
+    //The Cytoscape container doesnt grow dynamically with the graph so wie have to set the Height manually
+    let len = this.networkNodes.length * GraphStore.heightDiff + 50;
+
+    const cyContainer = document.getElementById('cy');
+    if (cyContainer) {
+        cyContainer.style.height = len+'px'; // Set the desired height
+    }
   }
 
   addNodeToGraph(node: GraphNode) {
@@ -176,7 +212,7 @@ export class GraphComponent implements AfterViewInit {
 
     if(scrollbar !== null){
       const inputScrollbar = scrollbar as HTMLInputElement;
-      const scrollbarlenght = maxLength - window.innerWidth + 600;
+      const scrollbarlenght = maxLength - window.innerWidth + 200;
       inputScrollbar.max = String(scrollbarlenght);
       if(dontPan === false){ 
         inputScrollbar.value = String(scrollbarlenght);

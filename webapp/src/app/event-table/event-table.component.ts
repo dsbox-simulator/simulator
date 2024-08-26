@@ -65,6 +65,7 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
   dropEvent(event: JsonRpcEvent) {
     CoreSocketFactory.create().call('drop', [event.params.timestamp.logical]);
     EventStore.dropEvent(event);
+    this.updateEvents();
   }
 
   toggleFormat(timestamp: number) {

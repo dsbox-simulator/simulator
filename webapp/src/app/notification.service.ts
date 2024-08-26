@@ -11,8 +11,8 @@ export class NotificationService {
   showNotification(message: string) {
     console.log('Notification:', message);
     this.notificationSubject.next(message);
-    /*setTimeout(() => {
+    setTimeout(() => {
       this.notificationSubject.next(null);
-    }, 3000); // Hide after 3 seconds */
+    }, 3000); // Hide after 3 seconds 
   }
 }

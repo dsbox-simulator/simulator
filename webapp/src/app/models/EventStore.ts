@@ -78,7 +78,8 @@ export class EventStore {
 
 
   static dropEvent(event: JsonRpcEvent) {
-    
+    let dsevent = this.messages.findIndex(msg => msg.sendMessage === event);
+    this.messages[dsevent].droped();
   }
 
   static getNonDeliveredMessages() {

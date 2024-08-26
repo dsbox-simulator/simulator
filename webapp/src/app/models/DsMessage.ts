@@ -3,6 +3,7 @@ import { JsonRpcEvent, MessageBody } from "./communication/RpcEvent";
 
 export class DsMessage {
     
+    
     public sendMessage: JsonRpcEvent;
     public deliverMessage: JsonRpcEvent | null;
     public id: number;
@@ -16,6 +17,7 @@ export class DsMessage {
     public color: string | undefined;
     public type: string | undefined;
     public typeColor: string | undefined;
+    public dropped: boolean = false;
 
     private static readonly IgnoreTypes = ["launch", "launch_finished", "init", "all_servers"];
 
@@ -68,5 +70,11 @@ export class DsMessage {
             console.log("Failed to parse JSON body: " + e);
           }
     }
+
+    droped() {
+        this.dropped = true;
+        this.delivered = true;
+        this.update = true;
+      }
 
 }

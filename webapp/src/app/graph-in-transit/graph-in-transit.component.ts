@@ -2,6 +2,7 @@ import { AfterViewInit, Component } from '@angular/core';
 import cytoscape from 'cytoscape';
 import { GraphStore } from '../graph/models/GraphStore';
 import { EventStore } from '../models/EventStore';
+import { ConfigurationStore } from '../configurationStore';
 
 @Component({
   selector: 'app-graph-in-transit',
@@ -15,6 +16,7 @@ export class GraphInTransitComponent implements AfterViewInit {
   nodePositions: { [key: string]: { x: number, y: number } } = {};
 
   ngAfterViewInit(): void {
+    this.nodePositions = ConfigurationStore.nodePositions;
     this.initGraph();
   }
 
@@ -51,9 +53,9 @@ export class GraphInTransitComponent implements AfterViewInit {
     // Convert the unique nodes to node elements positioned in a circle
     const originalTotalNodes = GraphStore.networkNodes.length;
     //Take the next power of 2 to calculate the position of the nodes in the circle
-    //Basiccly fill the gaps between the Nodes in the circle
+    //Basicly fill the gaps between the Nodes in the circle
     const totalNodes = this.getNextPowerOf2(originalTotalNodes);
-    const radius = 80; 
+    const radius = 80;
     const centerX = 130; 
     const centerY = 130; 
     const angleStep = (2 * Math.PI) / totalNodes;
@@ -75,6 +77,9 @@ export class GraphInTransitComponent implements AfterViewInit {
         const angle = calcIndex * angleStep;
         const x = centerX + radius * Math.cos(angle);
         const y = centerY + radius * Math.sin(angle);
+
+        this.nodePositions[node.id] = { x, y };
+        ConfigurationStore.nodePositions = this.nodePositions;
 
         return {
           data: { id: node.id, type: 'node' },

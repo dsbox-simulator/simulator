@@ -20,15 +20,17 @@ $height: auto;
   display: flex;
   flex-direction: column;
   flex-grow: 1; /* Take up the remaining space */
-  /*width: 100%; /* Ensure full width usage */
 }
 
 #cy {
-  width: 100%;  /*Ensure full width within cy-container */
-  height: $height;
+  width: 100%; 
+  flex-grow: 1; 
+  height: fit-content; /* Fill parent container */
   display: block;
   text-align: left;
+  min-height: unset !important;
 }
+
 
 .cytoscape-scroll-container {
   flex: 4;

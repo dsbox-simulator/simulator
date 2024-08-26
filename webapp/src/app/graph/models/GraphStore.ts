@@ -8,6 +8,7 @@ import { DsMessage } from '../../models/DsMessage';
 import { Version } from '@angular/core';
 import { JsonRpcEvent } from '../../models/communication/RpcEvent';
 import { DsLogMessage } from '../../models/DsLogMessage';
+import { ConfigurationStore } from '../../configurationStore';
 
 export class GraphStore {
     public static  edges: GraphEdge[] = [];
@@ -72,7 +73,7 @@ export class GraphStore {
   });
 
 
-  static addNetworkNode(node: NetworkNode) {
+  static addNetworkNode(node: NetworkNode) {    
     node.posY = (GraphStore.networkNodes.length + 1) * this.heightDiff;
     GraphStore.networkNodes.push(node);  
     this.graphNetWorkNode.next(node);

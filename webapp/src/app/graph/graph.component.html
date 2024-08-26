@@ -1,19 +1,20 @@
 <div class="graph-container w-100 px-3">
-  <div id="graph-header" class="left-element">
-    <div class="node-start"></div>
-    <div cdkDropList (cdkDropListDropped)="drop($event)">
-      <div *ngFor="let node of networkNodes" cdkDrag>
-        <div class="node-div">{{ node.id }}</div>
+  <div class="cy-container overflow-y-auto">
+    <div style="max-height: 45vh; overflow-y: auto; overflow-x: hidden; display: flex;">
+      <div id="graph-header" class="left-element" style="margin-top: -35px;">
+        <div class="node-start"></div>
+        <div cdkDropList (cdkDropListDropped)="drop($event)">
+          <div *ngFor="let node of networkNodes" cdkDrag>
+            <div class="node-div">{{ node.id }}</div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-
-  <div class="cy-container">
-    <div style="max-height: 45vh;">
+      <div class="h-auto w-100" style="margin-top: -35px;">
         <div id="cy"></div>
       </div>
+      </div>
     <input type="range" id="cy-scrollbar" style="width: 98%;">
-  </div>
+  </div>  
 </div>
 
 <div class="legend-container">
