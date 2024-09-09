@@ -35,16 +35,19 @@ export class GraphComponent implements AfterViewInit {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
     GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
 
-    ConfigurationStore.addNetworkNodePosition(GraphStore.networkNodes[event.currentIndex].label, event.currentIndex);
-    ConfigurationStore.addNetworkNodePosition(GraphStore.networkNodes[event.previousIndex].label, event.previousIndex);
-
     if (this.cy === undefined) {
       return;
     }
   
+    this.recalculateNodePositions();
+  }
+
+  recalculateNodePositions() {
+
+    this.networkNodes = GraphStore.networkNodes;
     this.isProgrammaticUpdate = true;
   
-    this.cy.nodes().forEach(node => {
+    this.cy!.nodes().forEach(node => {
       const posY = node.position().y;
       let offsetY = 0;
 
@@ -52,7 +55,19 @@ export class GraphComponent implements AfterViewInit {
       let graphNode = GraphStore.nodes.find(n => n.id === node.data().id);
 
       if (graphNode === undefined) {
+        if(node.data().type === 'anker') {
+          const nodePosition = node.position();
+          let networkNode = GraphStore.networkNodes.find(n => n.id === node.data().id || n.id + 'd' === node.data().id);
+          
+          if(nodePosition.y !== networkNode?.posY) {
+            node.position({
+              x: nodePosition.x,
+              y: networkNode?.posY!
+            });
+          }
+        }
         return;
+        
       }
       const nodePosition = node.position();
 
@@ -65,40 +80,7 @@ export class GraphComponent implements AfterViewInit {
       node.data({
         minY: graphNode?.posY!,
         maxY: graphNode?.posY!
-      });
-      
-      return;
-
-      let networkNodeIndex = this.networkNodes.findIndex(node => node.posY === posY);
-
-      if(networkNodeIndex === -1) {
-        // -15 offset are Markers on the NetworkNodes
-        networkNodeIndex = this.networkNodes.findIndex(node => node.posY === posY + 15);
-        offsetY = -15;
-      }
-  
-      if (networkNodeIndex === event.previousIndex) {
-        networkNodeIndex = event.currentIndex;
-      } else if (networkNodeIndex === event.currentIndex) {
-        networkNodeIndex = event.previousIndex;
-      } else {
-        // Go to next node
-        return;
-      }
-  
-      const newYPosition = this.networkNodes[networkNodeIndex].posY + offsetY; // Get the new y position
-      const currentPosition = node.position();
-  
-      node.position({
-        x: currentPosition.x,
-        y: newYPosition
-      });
-
-      // Update node data to reflect new constraints
-      node.data({
-        minY: newYPosition,
-        maxY: newYPosition
-      });
+      });       
 
     });
   
@@ -122,7 +104,7 @@ export class GraphComponent implements AfterViewInit {
       const data = node.data();
       if (data.type === 'anker' && data.id.endsWith('d')) {        
         node.position('x', containerWidth! + 10);
-      }
+      }      
     });
 
   }
@@ -160,8 +142,8 @@ export class GraphComponent implements AfterViewInit {
 
     const cyContainer = document.getElementById('cy');
     if (cyContainer) {
-        cyContainer.style.height = len+'px'; // Set the desired height
-    }
+        cyContainer.style.height = len+'px'; 
+      }
   }
 
   addNodeToGraph(node: GraphNode) {
@@ -191,12 +173,9 @@ export class GraphComponent implements AfterViewInit {
 
   
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
-    //maxLength += 100;
-    //this.cy.extent().x2 = maxLength;
     const graphHeaderElement = document.getElementById('graph-header')!;
     const height = graphHeaderElement.offsetHeight; 
     const cyelement = document.getElementById('cy')!;
-    //cyelement.style.minWidth = `${maxLength}px`;
     cyelement.style.minHeight = `${height}px`; 
 
 
@@ -212,10 +191,14 @@ export class GraphComponent implements AfterViewInit {
 
     if(scrollbar !== null){
       const inputScrollbar = scrollbar as HTMLInputElement;
-      const scrollbarlenght = maxLength - window.innerWidth + 200;
+      let scrollbarlenght = maxLength - window.innerWidth + 200;
       inputScrollbar.max = String(scrollbarlenght);
       if(dontPan === false){ 
+        if(scrollbarlenght < 0){
+          scrollbarlenght = 0;
+        }
         inputScrollbar.value = String(scrollbarlenght);
+        console.log('scrollbarlenght:', scrollbarlenght);
         this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
       }
     }
@@ -333,6 +316,10 @@ export class GraphComponent implements AfterViewInit {
 
   subscription5 = TypeColorStore.addedNewColor.subscribe((map) => {
     this.appendStyle(map.key, map.color);
+  });
+
+  subscription6 = GraphStore.graphNetWorkNodeorderChanged.subscribe((networkNode) => {
+    this.recalculateNodePositions();
   });
 
   zoomWidth(factor: number) {
@@ -613,8 +600,6 @@ export class GraphComponent implements AfterViewInit {
               const panPos = this.cy?.pan().x;
               const panPosY = this.cy?.pan().y;
               this.cy?.pan({ x: panPos! * panAdjustment, y: panPosY! });
-
-              console.log('pan_old:', panPos, 'pan_new:', this.cy?.pan(),'panAdjustment: ', panAdjustment);
 
               this.updateScrollbar(true);
             }else{

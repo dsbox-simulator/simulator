@@ -25,6 +25,7 @@ export class GraphStore {
   static graphSubject: Subject<string> = new Subject<string>();
 
   static graphNetWorkNode: Subject<NetworkNode> = new Subject<NetworkNode>();
+  static graphNetWorkNodeorderChanged: Subject<NetworkNode> = new Subject<NetworkNode>();
   static graphNode: Subject<GraphNode> = new Subject<GraphNode>();
   static graphEdge: Subject<GraphEdge> = new Subject<GraphEdge>();
 
@@ -74,10 +75,44 @@ export class GraphStore {
 
 
   static addNetworkNode(node: NetworkNode) {    
+
     node.posY = (GraphStore.networkNodes.length + 1) * this.heightDiff;
     GraphStore.networkNodes.push(node);  
+
+    var positions = ConfigurationStore.networkNodePositions; // { [key: string]: number } = {};
+    
+    console.log("FilterEasyforme positions", positions);
+    // Create list/array GraphStore.networkNodes with corresponding positions
+    let nodeListWithPositions = GraphStore.networkNodes.map((node, index) => {
+        return {
+            node: node,
+            position: positions[node.label] !== undefined ? positions[node.label] : index
+        };
+    });
+
+    console.log("FilterEasyforme NodeListWithPositions", nodeListWithPositions);
+
+    // Handle duplicates: if positions are duplicate, increment until unique
+    nodeListWithPositions.forEach((item, index) => {
+        let pos = item.position;
+        while (nodeListWithPositions.some((other, idx) => idx !== index && other.position === pos)) {
+            pos += 1;
+        }
+        item.position = pos;
+    });
+
+    // Sort the list by position and reassign positions based on sorted order
+    nodeListWithPositions.sort((a, b) => a.position - b.position);
+
+    console.log("FilterEasyforme NodeListWithPositions", nodeListWithPositions);
+    // Update GraphStore.networkNodes with sorted nodes
+    GraphStore.networkNodes = nodeListWithPositions.map(item => item.node);
+    console.log("FilterEasyforme NetworkNodes", GraphStore.networkNodes);
+
+    this.changeNetWorkNodeOrderIntern();
     this.graphNetWorkNode.next(node);
-  }
+    this.graphNetWorkNodeorderChanged.next(node);
+}
 
   static addEdge(edge: GraphEdge) {
     if(edge.source.posX + 100 < edge.target.posX) {
@@ -121,11 +156,24 @@ export class GraphStore {
 
   static changeNetworkNodeOrder(oldIndex: number, newIndex: number) {
     
+
+    ConfigurationStore.networkNodePositions = {};
     GraphStore.networkNodes.forEach(node => {
       node.posY = (GraphStore.networkNodes.indexOf(node) + 1) * this.heightDiff;
-      //console.log("node: " + node.id + " posY: " + node.posY, node)
+      //store the new position of the network nodes
+      ConfigurationStore.networkNodePositions[node.label] = GraphStore.networkNodes.indexOf(node);
     });
 
+    ConfigurationStore.saveConfiguration();
+
+    this.graphSubject.next("update");
+  }
+
+  static changeNetWorkNodeOrderIntern(){
+
+    GraphStore.networkNodes.forEach(node => {
+      node.posY = (GraphStore.networkNodes.indexOf(node) + 1) * this.heightDiff;
+    });
     this.graphSubject.next("update");
   }
 }

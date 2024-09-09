@@ -6,6 +6,7 @@ import { PredicateStore } from '../json-predicate/Models/PredicateStore';
 import { LinkedPredicate } from '../json-predicate/Models/LinkedPredicate';
 import { EventStore } from '../models/EventStore';
 import { NotificationService } from '../notification.service';
+import { ConfigurationStore } from '../configurationStore';
 
 @Component({
   selector: 'app-debug-controls',
@@ -16,9 +17,14 @@ import { NotificationService } from '../notification.service';
 })
 export class DebugControlsComponent {
   Break: boolean = false;
-  StepTime: number = 1000;
+  StepTime: number = ConfigurationStore.stepTime;
 
   constructor(private notificationService: NotificationService) {}
+
+  public onChangeStepTime() {
+    ConfigurationStore.stepTime = this.StepTime;
+    ConfigurationStore.saveConfiguration();
+  }
 
   public send(data: string) {
     this.Break = true;
@@ -58,5 +64,6 @@ export class DebugControlsComponent {
 
   public break() {
     this.Break = true;
+    ConfigurationStore.loadConfiguration();
   }
 }

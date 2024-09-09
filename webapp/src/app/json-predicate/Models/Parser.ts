@@ -1,4 +1,4 @@
-import { LambdaNode, OperatorNode, SequenceNode, Node } from "./PredicateNode";
+import { LambdaNode, OperatorNode, SequenceNode, Node, NegationNode } from "./PredicateNode";
 
 export class Parser {
     private tokens: string[];
@@ -13,18 +13,24 @@ export class Parser {
         const output: Node[] = [];
         const operators: string[] = [];
 
-        const precedence: Record<string, number> = { 'AND': 2, 'OR': 1, '->': 0 };
+        const precedence: Record<string, number> = { 'NOT': 3, 'AND': 2, 'OR': 1, '->': 0 }; 
 
         const applyOperator = () => {
             const operator = operators.pop();
             if (!operator) return;
-            const right = output.pop();
-            const left = output.pop();
-            if (!left || !right) return;
-            if (operator === '->') {
-                output.push(new SequenceNode(left, right));
+            if (operator === 'NOT') {
+                const right = output.pop();
+                if (!right) return;
+                output.push(new NegationNode(right));
             } else {
-                output.push(new OperatorNode(operator, left, right));
+                const right = output.pop();
+                const left = output.pop();
+                if (!left || !right) return;
+                if (operator === '->') {
+                    output.push(new SequenceNode(left, right));
+                } else {
+                    output.push(new OperatorNode(operator, left, right));
+                }
             }
         };
 
@@ -38,7 +44,7 @@ export class Parser {
                     applyOperator();
                 }
                 operators.pop();
-            } else if (['AND', 'OR', '->'].includes(token)) {
+            } else if (['NOT', 'AND', 'OR', '->'].includes(token)) {
                 while (operators.length && precedence[operators[operators.length - 1]] >= precedence[token]) {
                     applyOperator();
                 }
@@ -47,7 +53,7 @@ export class Parser {
                 const expressionTokens = [token];
                 while (
                     this.currentPosition + 1 < this.tokens.length &&
-                    !['AND', 'OR', '->', '(', ')'].includes(this.tokens[this.currentPosition + 1])
+                    !['NOT', 'AND', 'OR', '->', '(', ')'].includes(this.tokens[this.currentPosition + 1])
                 ) {
                     this.currentPosition++;
                     expressionTokens.push(this.tokens[this.currentPosition]);
@@ -56,7 +62,7 @@ export class Parser {
                 const expression = expressionTokens.join(' ');
                 const modifiedExpression = this.addMsgPrefix(expression);
                 const lambda = (new Function('zdjnfprefix', `return ${modifiedExpression};`)) as (context: any) => boolean;
-                output.push(new LambdaNode(lambda, expression)); 
+                output.push(new LambdaNode(lambda, expression));
             }
 
             this.currentPosition++;

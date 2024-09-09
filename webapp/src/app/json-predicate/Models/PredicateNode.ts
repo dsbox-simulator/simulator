@@ -94,6 +94,33 @@ export class OperatorNode extends Node {
     }
 }
 
+export class NegationNode extends Node {
+    private operand: Node;
+
+    constructor(operand: Node) {
+        super();
+        this.operand = operand;
+    }
+
+    evaluate(contexts: any[]): boolean {
+        const result = !this.operand.evaluate(contexts);
+        this.lastEvaluationResult = result;
+        return result;
+    }
+
+    toString(): string {
+        return `(NOT ${this.operand.toString()})`;
+    }
+
+    override collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
+        return [
+            ...this.operand.collectExpressionsWithResults(),
+            // { expression: this.toString(), result: this.getLastEvaluationResult() }
+        ];
+    }
+}
+
+
 export class SequenceNode extends Node {
     private left: Node;
     private right: Node;

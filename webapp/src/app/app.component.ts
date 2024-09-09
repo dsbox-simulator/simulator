@@ -1,4 +1,4 @@
-import { Component,HostListener } from '@angular/core';
+import { Component,HostListener, OnInit } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { GraphComponent } from "./graph/graph.component";
 import { DebugControlsComponent } from "./debug-controls/debug-controls.component";
@@ -9,6 +9,7 @@ import { GraphInTransitComponent } from "./graph-in-transit/graph-in-transit.com
 import { JsonRpcEvent } from './models/communication/RpcEvent';
 import { JsonPredicateComponent } from "./json-predicate/json-predicate.component";
 import { NotificationComponent } from "./notification/notification.component";
+import { ConfigurationStore } from './configurationStore';
 
 @Component({
     selector: 'app-root',
@@ -18,7 +19,7 @@ import { NotificationComponent } from "./notification/notification.component";
     imports: [RouterOutlet, GraphComponent, DebugControlsComponent, EventTableComponent, GraphInTransitComponent, JsonPredicateComponent, NotificationComponent]
 })
 
-export class AppComponent {
+export class AppComponent implements OnInit {
 openFile() {
   const inputElement = document.getElementById('loadFile');
   if (inputElement) {
@@ -105,6 +106,10 @@ setLightMode() {
   private lightThemeClass = 'light-theme';
 
   constructor() { }
+  ngOnInit(): void {
+    ConfigurationStore.loadConfiguration();
+
+  }
 
   setLightTheme() {
     document.body.classList.remove(this.darkThemeClass);

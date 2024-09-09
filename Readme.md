@@ -58,3 +58,7 @@ of the `webapp` folder directly. This means that the webapp may be changed and t
 running. In release mode however, the webapp is embedded into the binary, so that it can run self-contained.
 
 For more information on Nodes and how to implement them, see `nodes/Readme.md`
+
+cargo run -- "webapp/raft-alg/client.lua" --servers "nwebapp/raft-alg/server.lua" -i
+
+cargo run -- "nodes/lua/primary-based-remote-write/client.lua" --servers "nodes/lua/primary-based-remote-write/server.lua" -i
