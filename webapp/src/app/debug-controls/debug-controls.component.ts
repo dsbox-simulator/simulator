@@ -7,36 +7,49 @@ import { LinkedPredicate } from '../json-predicate/Models/LinkedPredicate';
 import { EventStore } from '../models/EventStore';
 import { NotificationService } from '../notification.service';
 import { ConfigurationStore } from '../configurationStore';
+import { JsonRpcEvent } from '../models/communication/RpcEvent';
 
 @Component({
   selector: 'app-debug-controls',
   standalone: true,
   imports: [FormsModule],
   templateUrl: './debug-controls.component.html',
-  styleUrls: ['./debug-controls.component.css'] // Fix typo from 'styleUrl' to 'styleUrls'
+  styleUrls: ['./debug-controls.component.css'] 
 })
+
+/**
+ * DebugControlsComponent is a component that allows the user to control the simulation.
+ */
 export class DebugControlsComponent {
   Break: boolean = false;
   StepTime: number = ConfigurationStore.stepTime;
 
   constructor(private notificationService: NotificationService) {}
 
-  public onChangeStepTime() {
-    ConfigurationStore.stepTime = this.StepTime;
+  subscription = EventStore.eventsUpdated.subscribe((event: JsonRpcEvent) => {
+    this.checkPredicates();
+  });
+
+  subscription2 = ConfigurationStore.configurationLoaded.subscribe(() => {
+
+    this.StepTime = ConfigurationStore.stepTime;
+  });
+
+  public onChangeStepTime(newValue: number) {
+    ConfigurationStore.stepTime = newValue;
     ConfigurationStore.saveConfiguration();
   }
 
   public send(data: string) {
     this.Break = true;
     CoreSocketFactory.create().call(data, []);
-    this.checkPredicates();
   }
 
   public async resume() {
     this.Break = false;
     while (!this.Break) {
+
       CoreSocketFactory.create().call('step', []);
-      this.checkPredicates();
      
       await new Promise(resolve => setTimeout(resolve, this.StepTime));
     }
@@ -47,7 +60,6 @@ export class DebugControlsComponent {
       return JSON.parse(JSON.stringify(message.sendMessage.params));
     });
 
-    console.log('Json in transit:', jsonInTransit);
 
     PredicateStore.getEvents().forEach((predicate: LinkedPredicate, i: number) => {
       if (predicate.endState === true) {

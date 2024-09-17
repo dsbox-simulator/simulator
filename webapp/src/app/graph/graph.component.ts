@@ -25,12 +25,24 @@ import { ConfigurationStore } from '../configurationStore';
     ]
 })
 
+/**
+ * GraphComponent is a component that displays the graph.
+ * Adds all the important stuff to the graph from cytoscape
+ */
 export class GraphComponent implements AfterViewInit {
   // isProgrammaticUpdate needed to update the Y Position of the nodes
   isProgrammaticUpdate = false;
   networkNodes = GraphStore.networkNodes;
   cy: cytoscape.Core | undefined;
 
+
+  
+
+  /**
+   * Reorder the network nodes
+   * @param event 
+   * @returns 
+   */
   drop(event: CdkDragDrop<any[]>) {
     moveItemInArray(this.networkNodes, event.previousIndex, event.currentIndex);
     GraphStore.changeNetworkNodeOrder(event.previousIndex, event.currentIndex);
@@ -47,11 +59,11 @@ export class GraphComponent implements AfterViewInit {
     this.networkNodes = GraphStore.networkNodes;
     this.isProgrammaticUpdate = true;
   
+    // Update the positions of all nodes
     this.cy!.nodes().forEach(node => {
       const posY = node.position().y;
       let offsetY = 0;
 
-      console.log('Node:', node.data().id);
       let graphNode = GraphStore.nodes.find(n => n.id === node.data().id);
 
       if (graphNode === undefined) {
@@ -88,7 +100,10 @@ export class GraphComponent implements AfterViewInit {
   }
   
   
-
+  /**
+    * Makes sure the network nodes grow with the diagram
+    * @param width 
+    */
   updateNodePositions(width: number | undefined) {
 
     if (this.cy === undefined) {     
@@ -109,6 +124,10 @@ export class GraphComponent implements AfterViewInit {
 
   }
   
+  /**
+   * Adds a network node to the graph
+   * @param networkNode 
+   */
   addNetworkNodeToGraph(networkNode: NetworkNode) {
     const newNodeElement = {
       data: { id: networkNode.id, type: 'anker' },
@@ -146,6 +165,9 @@ export class GraphComponent implements AfterViewInit {
       }
   }
 
+/**
+  * Adds a node to the graph
+  */
   addNodeToGraph(node: GraphNode) {
 
     if (this.cy === undefined) {
@@ -171,6 +193,7 @@ export class GraphComponent implements AfterViewInit {
       nodeCreated = this.cy.add(newNodeElement);
     }
 
+  //after adding the node we have to update the length of the scrollbar and network nodes
   
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     const graphHeaderElement = document.getElementById('graph-header')!;
@@ -185,6 +208,9 @@ export class GraphComponent implements AfterViewInit {
     this.bindNodeDragRestriction(nodeCreated);
   }
 
+/**
+  * Updates the scrollbar values
+  */
   updateScrollbar(dontPan: boolean = false) {
     var maxLength = Math.max(...GraphStore.networkNodes.map(node => node.length));
     const scrollbar = document.getElementById('cy-scrollbar');
@@ -198,12 +224,14 @@ export class GraphComponent implements AfterViewInit {
           scrollbarlenght = 0;
         }
         inputScrollbar.value = String(scrollbarlenght);
-        console.log('scrollbarlenght:', scrollbarlenght);
         this.cy!.pan({ x: scrollbarlenght * -1, y: 0 });
       }
     }
   }
 
+/**
+  * Adds an edge to the graph
+  */
   addEdgeToGraph(edge: GraphEdge) {
 
     var newEdgeElement;
@@ -225,7 +253,10 @@ export class GraphComponent implements AfterViewInit {
     this.bindEdgeEvents(newEdge);
   }
 
-
+/**
+  * Bind Events to the new Edge
+  * Show Message when you hover the edge
+  */
   bindEdgeEvents(edge: any) {
     edge.on('mouseover', (event: { target: any; }) => {
       var edge = event.target;
@@ -240,6 +271,10 @@ export class GraphComponent implements AfterViewInit {
     });
   }
 
+/**
+* Bind Event to the new Node
+* Make sure the node is not dragged out of the network node
+*/
   bindNodeDragRestriction(node: any) {
     function constrainPosition(node: { data: () => any; }, pos: { x: number; y: number; }) {
       var data = node.data();
@@ -271,7 +306,6 @@ export class GraphComponent implements AfterViewInit {
     node.on('position', (event: { target: any; }) => {
       var node = event.target;
       var pos = node.position();
-      console.log('Position:', pos);
       if (!this.isProgrammaticUpdate) {
         var constrainedPos = constrainPosition(node, pos);
         if (pos.x !== constrainedPos.x || pos.y !== constrainedPos.y) {
@@ -282,7 +316,12 @@ export class GraphComponent implements AfterViewInit {
   }
   
   
-
+/**
+ * Creates a Style for a specific message type
+ * @param type 
+ * @param color 
+ * @returns 
+ */
   appendStyle(type: string, color: string){
 
     if(this.cy === undefined) {
@@ -321,7 +360,19 @@ export class GraphComponent implements AfterViewInit {
   subscription6 = GraphStore.graphNetWorkNodeorderChanged.subscribe((networkNode) => {
     this.recalculateNodePositions();
   });
+  
 
+  subscription7 = ConfigurationStore.configurationLoaded.subscribe((loaded) => {
+    GraphStore.setNetworkOrderFromConfig();
+    this.recalculateNodePositions();
+  });
+
+  /**
+   * Custom Zoom function
+   * only zooms the width
+   * @param factor 
+   * @returns 
+   */
   zoomWidth(factor: number) {
     if (this.cy === undefined) {
         return;
@@ -352,7 +403,9 @@ export class GraphComponent implements AfterViewInit {
 }
 
 
-
+/**
+ * Initialize the Graph
+ */
   initGraph() {
 
 
@@ -405,7 +458,7 @@ export class GraphComponent implements AfterViewInit {
 
       style: [ // the stylesheet for the graph
           {
-            selector: 'node',
+            selector: 'node', //default node style
             style: {
               'width': 7,
               'height': 7,
@@ -415,7 +468,7 @@ export class GraphComponent implements AfterViewInit {
             }
           },
           {
-            selector: 'node[type="anker"]', 
+            selector: 'node[type="anker"]',  //default style for the ends of the the network node
             style: {            
               'width': 0.5,
               'height': 0.5,
@@ -424,7 +477,7 @@ export class GraphComponent implements AfterViewInit {
             }
           },
           {
-            selector: 'node[type="marker"]',
+            selector: 'node[type="marker"]', //defualt marker style
             style: {            
               'width': 20,
               'height': 30,
@@ -433,7 +486,7 @@ export class GraphComponent implements AfterViewInit {
             }
           },
           {
-            selector: 'edge',
+            selector: 'edge', //default edge style
             style: {
               'width': 2,
               'line-color': '#b58900',
@@ -450,7 +503,7 @@ export class GraphComponent implements AfterViewInit {
             }
           },
           {
-            selector: 'edge[type="anker"]',
+            selector: 'edge[type="anker"]', //netowrk node
             style: {
               'width': 2,
               'line-color': '#fff',
@@ -548,6 +601,9 @@ export class GraphComponent implements AfterViewInit {
 
   }
 
+  /**
+   * custom scrolling/zoom of the graph
+   */
   addScrollLogic(){
     // Assuming `cy` is your Cytoscape instance
     if (this.cy) {
@@ -555,14 +611,10 @@ export class GraphComponent implements AfterViewInit {
 
       if (container) {
         container.addEventListener('wheel', (event) => {
-            event.preventDefault(); // Prevent the default scroll behavior
-    
-            console.log('User scrolled on the graph', event);
+            event.preventDefault(); // Prevent the default scroll behavior    
     
             // Determine scroll direction
             const scrollDirection = event.deltaY > 0 ? 'down' : 'up';
-            console.log(`Scrolling ${scrollDirection}`);
-
 
             if (event.ctrlKey) {
     
@@ -592,9 +644,7 @@ export class GraphComponent implements AfterViewInit {
               });
 
               GraphStore.networkNodes.forEach(node => {
-                  console.log('node.length_old:', node.length);
                   node.length = node.length / adjustmentScale;
-                  console.log('node.length_new:', node.length);
               });
 
               const panPos = this.cy?.pan().x;

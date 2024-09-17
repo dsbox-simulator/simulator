@@ -9,7 +9,6 @@ export class NotificationService {
   notification$ = this.notificationSubject.asObservable();
 
   showNotification(message: string) {
-    console.log('Notification:', message);
     this.notificationSubject.next(message);
     setTimeout(() => {
       this.notificationSubject.next(null);

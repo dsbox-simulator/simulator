@@ -2,6 +2,9 @@ import { EventStore } from "../EventStore";
 import { IRpcSocket } from "./IRpcSocket";
 import { JsonRpcEvent } from "./RpcEvent";
 
+/**
+ * Memory socket for Record and Play functionality
+ */
 export class RpcMemorySocket implements IRpcSocket {
 
     RpcEvents: JsonRpcEvent[] = [];
@@ -13,7 +16,6 @@ export class RpcMemorySocket implements IRpcSocket {
     call(method: string, params: any[]): Promise<any> {
         if(method.toLowerCase() === "step"){
             const event = this.RpcEvents.shift();
-            console.log("Event Memory: ", event);
             if(event){
             EventStore.addEvent(event);
             }

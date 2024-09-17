@@ -1,5 +1,5 @@
 
-<input (onchange)="onChangeStepTime()" [(ngModel)]="StepTime" type="number" id="typeNumber" class="form-control" style="width: 150px; display: inherit;" />
+<input (ngModelChange)="onChangeStepTime($event)" [(ngModel)]="StepTime" type="number" id="typeNumber" class="form-control" style="width: 150px; display: inherit;" />
 
 <button class="btn btn-primary" (click)="send('step')" title="press 'i' to Step"> Step </button>
 <button class="btn btn-primary" (click)="resume()" title="press 'o' to Resume "> Resume </button>

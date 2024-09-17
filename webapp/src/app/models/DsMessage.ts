@@ -1,6 +1,9 @@
 import { TypeColorStore } from "./TypeColorStore";
 import { JsonRpcEvent, MessageBody } from "./communication/RpcEvent";
 
+/**
+ * Represents a message that is sent between nodes, stores all Events that are related to this message * 
+ */
 export class DsMessage {
     
     
@@ -67,7 +70,6 @@ export class DsMessage {
             this.typeColor = TypeColorStore.getColor(this.type);
         } catch (e) {
             //ignore
-            console.log("Failed to parse JSON body: " + e);
           }
     }
 

@@ -1,5 +1,8 @@
 import { GraphNode } from "./GraphNode";
 
+/*
+    * Represents an edge in the graph
+    */
 export class GraphEdge {
     source: GraphNode;
     target: GraphNode;

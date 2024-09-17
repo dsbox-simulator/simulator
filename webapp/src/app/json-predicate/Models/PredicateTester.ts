@@ -1,6 +1,9 @@
 import { Parser } from "./Parser";
 import { Tokenizer } from "./Tokenizer";
 
+/**
+ * PredicateTester class that tests the predicate parser. Not used in the application.
+ */
 export class PredicateTester {
     private expression: string;
     private messages: any[][];

@@ -1,18 +1,29 @@
 import { LambdaNode, OperatorNode, SequenceNode, Node, NegationNode } from "./PredicateNode";
 
+/**
+ * Parser class that parses tokens into a syntax tree.
+ */
 export class Parser {
     private tokens: string[];
     private currentPosition: number;
 
+    /**
+     * 
+     * @param tokens String array of tokens to parse.
+     */
     constructor(tokens: string[]) {
         this.tokens = tokens;
         this.currentPosition = 0;
     }
 
+    /**
+     * 
+     * @returns The syntax tree.
+     */
     parse(): Node {
         const output: Node[] = [];
         const operators: string[] = [];
-
+        // Priority of operators
         const precedence: Record<string, number> = { 'NOT': 3, 'AND': 2, 'OR': 1, '->': 0 }; 
 
         const applyOperator = () => {
@@ -75,13 +86,19 @@ export class Parser {
         return output[0];
     }
 
+    /**
+     * Adds a prefix to message fields in the expression.
+     * 
+     * @param expression The expression to add the prefix to.
+     * @returns The expression with the prefix added.
+     */
     private addMsgPrefix(expression: string): string {
         const regex = /(?<!\w)([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)(?=\s*(?:\(|\.|\s*(?:===|!==|<=|>=|<|>|=|!=|AND|OR|->)))/g;
         return expression.replace(regex, (match) => {
             if (match === 'true' || match === 'false' || /^['"].*['"]$/.test(match)) {
                 return match;
             }
-            return `zdjnfprefix.${match}`;
+            return `zdjnfprefix.data.msg.${match}`;
         });
     }
 }

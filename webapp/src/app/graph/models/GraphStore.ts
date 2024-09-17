@@ -10,6 +10,9 @@ import { JsonRpcEvent } from '../../models/communication/RpcEvent';
 import { DsLogMessage } from '../../models/DsLogMessage';
 import { ConfigurationStore } from '../../configurationStore';
 
+/**
+ * Stores all graph data
+ */
 export class GraphStore {
     public static  edges: GraphEdge[] = [];
     public static nodes: GraphNode[] = [];
@@ -34,12 +37,19 @@ export class GraphStore {
         //GraphStore.handleNewEvent(event);
   });
 
+  /**
+   * Subscription to the nodeSetupsUpdated event
+   */
   static subscription2 = EventStore.nodeSetupsUpdated.subscribe((nodeSetup: DsNodeSetup) => {    
       const networkNode = new NetworkNode(nodeSetup.id, nodeSetup.id);
       this.addNetworkNode(networkNode);
       this.graphSubject.next("update");
   });
 
+  /**
+   * Subscription to the deliveredMessage event
+   * Add the delivered message as a node and edge to the graph
+   */
   static subscription3 = EventStore.deliveredMessage.subscribe((message: DsMessage) => {
 
     var srcNode = GraphStore.nodes.find(node => node.id === message.send_logical_timestamp.toString())
@@ -55,6 +65,10 @@ export class GraphStore {
     this.addEdge(edge);
   });
 
+  /**
+   * Subscription to the messagesUpdated event
+   * Add the message as a node to the graph
+   */
   static subscription4 = EventStore.messagesUpdated.subscribe((message: DsMessage) => {
     const source = GraphStore.networkNodes.find(node => node.id === message.source);
     if(!source) {return;}
@@ -64,6 +78,11 @@ export class GraphStore {
     this.graphSubject.next("update");
   });
 
+  /**
+   * Subscription to the logMessagesUpdated event
+   * Add the log message as a node to the graph
+   * The color of the node is set to the color of the log message
+   */
   static subscription5 = EventStore.logMessagesUpdated.subscribe((logMessage: DsLogMessage) => {
     const source = GraphStore.networkNodes.find(node => node.id === logMessage.source);
     if(!source) {return;}
@@ -74,6 +93,11 @@ export class GraphStore {
   });
 
 
+  /**
+   * 
+   * @param node the node to add
+   * Add a network node (vertical line) to the graph
+   */
   static addNetworkNode(node: NetworkNode) {    
 
     node.posY = (GraphStore.networkNodes.length + 1) * this.heightDiff;
@@ -81,7 +105,6 @@ export class GraphStore {
 
     var positions = ConfigurationStore.networkNodePositions; // { [key: string]: number } = {};
     
-    console.log("FilterEasyforme positions", positions);
     // Create list/array GraphStore.networkNodes with corresponding positions
     let nodeListWithPositions = GraphStore.networkNodes.map((node, index) => {
         return {
@@ -89,8 +112,6 @@ export class GraphStore {
             position: positions[node.label] !== undefined ? positions[node.label] : index
         };
     });
-
-    console.log("FilterEasyforme NodeListWithPositions", nodeListWithPositions);
 
     // Handle duplicates: if positions are duplicate, increment until unique
     nodeListWithPositions.forEach((item, index) => {
@@ -104,10 +125,8 @@ export class GraphStore {
     // Sort the list by position and reassign positions based on sorted order
     nodeListWithPositions.sort((a, b) => a.position - b.position);
 
-    console.log("FilterEasyforme NodeListWithPositions", nodeListWithPositions);
     // Update GraphStore.networkNodes with sorted nodes
     GraphStore.networkNodes = nodeListWithPositions.map(item => item.node);
-    console.log("FilterEasyforme NetworkNodes", GraphStore.networkNodes);
 
     this.changeNetWorkNodeOrderIntern();
     this.graphNetWorkNode.next(node);
@@ -175,5 +194,13 @@ export class GraphStore {
       node.posY = (GraphStore.networkNodes.indexOf(node) + 1) * this.heightDiff;
     });
     this.graphSubject.next("update");
+  }
+
+  public static setNetworkOrderFromConfig(){
+    let temp = GraphStore.networkNodes;
+    GraphStore.networkNodes = [];
+    temp.forEach(node => {
+      this.addNetworkNode(node);
+    });
   }
 }

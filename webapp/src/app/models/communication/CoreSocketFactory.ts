@@ -3,6 +3,9 @@ import { JsonRpcEvent } from './RpcEvent';
 import { RpcMemorySocket } from './RpcMemorySocket';
 import { JsonRpcWebSocketClient } from './RpcSocket';
 
+/**
+ * Factory class for creating a socket instance
+ */
 export class CoreSocketFactory {
 
     static rpcInstance: IRpcSocket;

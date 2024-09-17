@@ -1,3 +1,6 @@
+/**
+ * Tokenizer class for splitting an expression into tokens.
+ */
 export class Tokenizer {
     private expression: string;
     private placeholderOpen: string = '__ESCAPED_OPEN__';

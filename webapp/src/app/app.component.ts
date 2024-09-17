@@ -29,10 +29,8 @@ openFile() {
 
 onFileSelected($event: Event) {
   const file: File = ($event.target as HTMLInputElement).files![0];
-  console.log("Selected file:", file);
   if (file) {
     this.readFile(file).then(contents => {
-      console.log("File contents:", contents);
       //EventStore.loadEvents(contents);
 
       const events = JSON.parse(contents) as JsonRpcEvent[];

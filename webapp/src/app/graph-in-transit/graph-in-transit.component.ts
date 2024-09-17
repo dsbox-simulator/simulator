@@ -11,6 +11,10 @@ import { ConfigurationStore } from '../configurationStore';
   templateUrl: './graph-in-transit.component.html',
   styleUrl: './graph-in-transit.component.scss'
 })
+
+/**
+ * GraphInTransitComponent is a component that displays the messages that are in transit.
+ */
 export class GraphInTransitComponent implements AfterViewInit {
   cy: cytoscape.Core | undefined;
   nodePositions: { [key: string]: { x: number, y: number } } = {};
@@ -24,10 +28,17 @@ export class GraphInTransitComponent implements AfterViewInit {
     this.initGraph();
   });
 
+  subscription2 = ConfigurationStore.configurationLoaded.subscribe(() => {
+    this.nodePositions = ConfigurationStore.nodePositions;
+    this.initGraph();
+  });
+
   saveNodePositions(): void {
     this.cy?.nodes().forEach(node => {
       this.nodePositions[node.id()] = node.position();
     });
+    ConfigurationStore.nodePositions = this.nodePositions;
+    ConfigurationStore.saveConfiguration();
   }
 
   getNextPowerOf2(num: number): number {
@@ -35,10 +46,6 @@ export class GraphInTransitComponent implements AfterViewInit {
   }
 
   initGraph() {
-    if (this.cy) {
-      this.saveNodePositions();
-    }
-
     const messages = EventStore.getNonDeliveredDsMessages();
 
     // Create a Set to store unique nodes
@@ -61,6 +68,7 @@ export class GraphInTransitComponent implements AfterViewInit {
     const angleStep = (2 * Math.PI) / totalNodes;
 
     const nodesElements = GraphStore.networkNodes.map((node, index) => {
+      
       if (this.nodePositions[node.id]) {
         return {
           data: { id: node.id, type: 'node' },
@@ -156,5 +164,8 @@ export class GraphInTransitComponent implements AfterViewInit {
 
     this.cy.add(nodesElements);
     this.cy.add(edgesElements);
+    this.cy.nodes().on('dragfree', (event) => {
+      this.saveNodePositions();
+    });
   }
 }

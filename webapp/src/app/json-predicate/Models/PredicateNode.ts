@@ -1,3 +1,7 @@
+/**
+ * This file contains the classes that represent the nodes of the predicate tree.
+ * Node is the base class for all nodes, and it has two abstract methods: evaluate and toString.
+ */
 export abstract class Node {
     protected lastEvaluationResult: boolean | null = null;
 
@@ -12,12 +16,18 @@ export abstract class Node {
         return this.lastEvaluationResult;
     }
 
-    // New method to collect expressions and their evaluation results
+    /**
+     * Method to collect all expressions and their results from the tree.
+     * @returns An array of objects containing the expression and the result of the evaluation.
+     */
     collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
         return [{ expression: this.toString(), result: this.lastEvaluationResult }];
     }
 }
 
+/**
+ * LambdaNode represents a lambda expression that can be evaluated with a context.
+ */
 export class LambdaNode extends Node {
     private expression: (context: any) => boolean;
     private originalExpression: string;
@@ -32,11 +42,9 @@ export class LambdaNode extends Node {
         for (let context of contexts) {
             try {
                 if (this.expression(context)) {
-                    console.log('Evaluating lambda node with context TRUE:', context, this.originalExpression);
                     this.lastEvaluationResult = true;
                     return true;
                 }
-                console.log('Evaluating lambda node with context FALSE:', context, this.originalExpression);
             } catch (e) {
                 console.log(e);
             }
@@ -51,11 +59,13 @@ export class LambdaNode extends Node {
 
     // Override to return only this node's expression and result
     override collectExpressionsWithResults(): { expression: string, result: boolean | null }[] {
-        console.log('Collecting expressions with results for node:', this.toString(), this.getLastEvaluationResult());
         return [{ expression: this.originalExpression, result: this.getLastEvaluationResult() }];
     }
 }
 
+/**
+ * OperatorNode represents a node that has two children and an operator.
+ */
 export class OperatorNode extends Node {
     private operator: string;
     private left: Node;
@@ -89,11 +99,13 @@ export class OperatorNode extends Node {
         return [
             ...this.left.collectExpressionsWithResults(),
             ...this.right.collectExpressionsWithResults(),
-           // { expression: this.toString(), result: this.getLastEvaluationResult() }
         ];
     }
 }
 
+/**
+ * NegationNode represents a node that has a single child and negates its evaluation.
+ */
 export class NegationNode extends Node {
     private operand: Node;
 
@@ -120,7 +132,11 @@ export class NegationNode extends Node {
     }
 }
 
-
+/**
+ * SequenceNode represents a node that has two children and links them.
+ * The left child is evaluated first, and the right child is evaluated only if the left child evaluates to true.
+ * The node evaluates to true if both children evaluate to true.
+ */
 export class SequenceNode extends Node {
     private left: Node;
     private right: Node;
@@ -142,7 +158,6 @@ export class SequenceNode extends Node {
             return false;
         } else {
             this.fullfilled = this.right.evaluate(contexts);
-            console.log('Evaluating sequence node', this.left, this.right, this.leftOccurred, this.fullfilled);
             return this.fullfilled;
         }
     }
@@ -156,7 +171,6 @@ export class SequenceNode extends Node {
         return [
             ...this.left.collectExpressionsWithResults(),
             ...this.right.collectExpressionsWithResults(),
-           // { expression: this.toString(), result: this.getLastEvaluationResult() }
         ];
     }
 }

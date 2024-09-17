@@ -9,6 +9,10 @@ import { CommonModule } from '@angular/common';
   templateUrl: './notification.component.html',
   styleUrl: './notification.component.scss'
 })
+
+/**
+ * NotificationComponent is a component that displays a message to the user for 3 seconds.
+ */
 export class NotificationComponent implements OnInit {
   message: string | null = null;
 
@@ -16,7 +20,6 @@ export class NotificationComponent implements OnInit {
 
   ngOnInit(): void {
     this.notificationService.notification$.subscribe(message => {
-      console.log('NotificationHTML:', message);
       this.message = message;
     });
   }

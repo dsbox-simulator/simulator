@@ -14,22 +14,44 @@ import { PredicateStore } from './Models/PredicateStore';
   templateUrl: './json-predicate.component.html',
   styleUrls: ['./json-predicate.component.scss']
 })
+
+/**
+ * JsonPredicateComponent is a component to enter an test Breakpoints
+ */
 export class JsonPredicateComponent {
-  jsonInput: string = '{' +
-    '"test":1,' +
-    '"test2":"value"' +
-    '}';
+  jsonInput: string = "{\n" +
+  "  \"data\": {\n" +
+  "    \"msg\": {\n" +
+  "      \"body\": {\n" +
+  "        \"lamport\": 24,\n" +
+  "        \"type\": \"store_ok\"\n" +
+  "      },\n" +
+  "      \"dest\": \"c1\",\n" +
+  "      \"src\": \"s1\"\n" +
+  "    },\n" +
+  "    \"type\": \"send_message\"\n" +
+  "  }\n" +
+  "}";
+
   predicates: { id: number, value: string }[] = [{ id: 0, value: '' }];
   linkedPredicates: LinkedPredicate[] = [];
   results: string[] = [];
   predicateIdCounter: number = 1;
 
+  /**
+   * Add a new Breakpoint
+   */
   addPredicate() {
     this.predicates.push({ id: this.predicateIdCounter++, value: '' });
     this.linkedPredicates.push(new LinkedPredicate('')); // Add corresponding LinkedPredicate
     PredicateStore.addEvent(new LinkedPredicate(''));
   }
 
+  /**
+   * Update a existing Breakpoint
+   * @param value 
+   * @param index 
+   */
   updatePredicate(value: string, index: number) {
     this.predicates[index].value = value;
     this.linkedPredicates[index] = new LinkedPredicate(value); // Update LinkedPredicate whenever the value changes
@@ -42,6 +64,10 @@ export class JsonPredicateComponent {
     PredicateStore.removeEvent(index);
   }
 
+  /**
+   * Evaluate Breakpoint against JsonInput
+   * @returns 
+   */
   checkPredicates() {
     let jsonObj;
 

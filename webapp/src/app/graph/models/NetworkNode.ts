@@ -1,3 +1,6 @@
+/**
+ * Represent a Process (vertical line) in the graph
+ */
 export class NetworkNode {
     id: string;
     label: string;

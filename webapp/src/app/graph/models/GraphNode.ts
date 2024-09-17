@@ -1,5 +1,8 @@
 import { NetworkNode } from "./NetworkNode";
 
+/**
+ * Represents a node in the graph
+ */
 export class GraphNode {
     id: string;
     label: string;

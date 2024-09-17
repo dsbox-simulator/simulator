@@ -1,6 +1,9 @@
 import { BehaviorSubject } from 'rxjs';
 import { LinkedPredicate } from './LinkedPredicate';
 
+/**
+ * A store for predicates that can be used to evaluate JSON messages.
+ */
 export class PredicateStore {
     // The main events array
     private static _events: LinkedPredicate[] = [];

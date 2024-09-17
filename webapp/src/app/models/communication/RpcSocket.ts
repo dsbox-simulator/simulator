@@ -2,6 +2,9 @@ import { EventStore } from "../EventStore";
 import { JsonRpcEvent } from "../communication/RpcEvent";
 import { IRpcSocket } from "./IRpcSocket";
 
+/**
+ * WebSocket client for JSON-RPC communication
+ */
 export class JsonRpcWebSocketClient implements IRpcSocket {
   private socket: WebSocket;
   private id: number;
@@ -36,6 +39,10 @@ export class JsonRpcWebSocketClient implements IRpcSocket {
       return JSON.parse(jsonRpcMessage) as JsonRpcEvent;
   }
 
+  /**
+   * 
+   * @returns Promise that resolves when the socket is open
+   */
   private waitForSocketOpen(): Promise<void> {
       return new Promise((resolve, reject) => {
           if (this.socket.readyState === WebSocket.OPEN) {
@@ -47,6 +54,12 @@ export class JsonRpcWebSocketClient implements IRpcSocket {
       });
   }
 
+  /**
+   * 
+   * @param method the method to call
+   * @param params the parameters to pass to the method
+   * @returns  a promise that resolves with the result of the method call
+   */
   call(method: string, params: any[] = []): Promise<any> {
       return this.waitForSocketOpen().then(() => {
           return new Promise((resolve, reject) => {

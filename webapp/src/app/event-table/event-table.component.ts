@@ -20,6 +20,10 @@ import { HighlightJsonPipe } from './json-highlight.pipe';
   templateUrl: './event-table.component.html',
   styleUrls: ['./event-table.component.scss']
 })
+
+/**
+ * EventTableComponent is a component that displays all events or events not yet delivered in a table.
+ */
 export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
 
   @Input() delivered: boolean = false;

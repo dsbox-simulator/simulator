@@ -5,12 +5,16 @@ import { JsonRpcEvent } from './communication/RpcEvent';
 import { DsLogMessage } from './DsLogMessage';
 import { LogMessage } from './communication/LogMessage';
 
+/**
+ * Stores all events that are received from the core
+ */
 export class EventStore {
   static events: JsonRpcEvent[] = [];
   static messages: DsMessage[] = [];
   static nodeSetups: DsNodeSetup[] = [];
   static logMessages: DsLogMessage[] = [];
 
+  // Subjects for other components to subscribe to
   static eventsUpdated = new Subject<JsonRpcEvent>();
   static messagesUpdated = new Subject<DsMessage>();
   static deliveredMessage = new Subject<DsMessage>();
@@ -19,11 +23,15 @@ export class EventStore {
 
   static addEvent(event: JsonRpcEvent) {
     EventStore.events.push(event);
-    //console.log("Event:", JSON.stringify(event));
     this.handleEvent(event);
     EventStore.eventsUpdated.next(event);
   }
 
+  /**
+   * Handle the event and add it to the correct list and notify the subscribers
+   * @param event JsonRpcEvent
+   * @returns 
+   */
   static handleEvent(event: JsonRpcEvent) {
     const  data  = event.params.data;   
    
@@ -36,7 +44,7 @@ export class EventStore {
         try {
           logmessage = JSON.parse(body ?? "") as LogMessage;
         } catch (e) {
-          console.log("Failed to parse JSON");
+          //ignore
         }
         
         if(logmessage && logmessage.marker != undefined) {
@@ -90,6 +98,10 @@ export class EventStore {
     return this.messages.filter(message => !message.delivered && message.target != "core");
   }
 
+  /**
+   * 
+   * @param json the json string to load
+   */
   static loadEvents(json: string) {
     const events = JSON.parse(json) as JsonRpcEvent[];
     events.forEach(event => {
@@ -97,6 +109,9 @@ export class EventStore {
     });
   }
   
+  /**
+   * Save the events to a file
+   */
   static saveEvents() {
     const json = JSON.stringify(this.events);
     const blob = new Blob([json], { type: 'application/json' });
