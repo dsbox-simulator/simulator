@@ -16,6 +16,10 @@ import { PredicateStore } from '../json-predicate/Models/PredicateStore';
   templateUrl: './graph-legend.component.html',
   styleUrls: ['./graph-legend.component.scss']
 })
+
+/**
+ * GraphLegendComponent is a component that displays Breakpoints and the Color for Message Types for the graph.
+ */
 export class GraphLegendComponent implements OnInit, OnDestroy {
   colorMap: { [key: string]: string } = TypeColorStore.colorMap;
   predicates: { predicate: LinkedPredicate, expressions: { expression: string, result: boolean | null }[] }[] = [];

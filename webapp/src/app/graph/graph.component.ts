@@ -54,6 +54,10 @@ export class GraphComponent implements AfterViewInit {
     this.recalculateNodePositions();
   }
 
+  /**
+   * After changing the order of the Network Nodes.
+   * This Method makes sure that all the Nodes adjust to the new order
+   */
   recalculateNodePositions() {
 
     this.networkNodes = GraphStore.networkNodes;

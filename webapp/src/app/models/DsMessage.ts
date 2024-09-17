@@ -3,6 +3,7 @@ import { JsonRpcEvent, MessageBody } from "./communication/RpcEvent";
 
 /**
  * Represents a message that is sent between nodes, stores all Events that are related to this message * 
+ * Extracts all important information from the send_message Event and the deliver_message Event
  */
 export class DsMessage {
     

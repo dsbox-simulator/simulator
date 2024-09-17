@@ -26,6 +26,7 @@ import { HighlightJsonPipe } from './json-highlight.pipe';
  */
 export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
 
+  //delivered = true means that the table will show only the events that have not been delivered yet
   @Input() delivered: boolean = false;
   public events: JsonRpcEvent[] = EventStore.events;
   private eventsSub!: Subscription;
@@ -62,16 +63,29 @@ export class EventTableComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  /**
+   * 
+   * @param event Delivers the chosen Message
+   */
   deliverEvent(event: JsonRpcEvent) {
     CoreSocketFactory.create().call('deliver', [event.params.timestamp.logical]);
   }
 
+  /**
+   * 
+   * @param event Drops the chosen Message
+   */
   dropEvent(event: JsonRpcEvent) {
     CoreSocketFactory.create().call('drop', [event.params.timestamp.logical]);
     EventStore.dropEvent(event);
     this.updateEvents();
   }
 
+  /**
+   * 
+   * @param timestamp the timestamp of the event
+   * Onclick toggles if JSON should be formatted or not
+   */
   toggleFormat(timestamp: number) {
     if (this.formatToggle[timestamp] === undefined) {
       this.formatToggle[timestamp] = true;

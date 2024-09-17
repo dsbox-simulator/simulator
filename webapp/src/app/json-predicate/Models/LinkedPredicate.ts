@@ -2,10 +2,10 @@ import { Parser } from './Parser';
 import { Tokenizer } from './Tokenizer';
 import { Node } from './PredicateNode';
 
+/**
+ * Creates and Stores the syntaxTree for the given expression
+ */
 export class LinkedPredicate {
-    //public predicateNode: Node[] = [];
-    //public currentState: number = 0; // Index of the current predicate group
-    //private states: number[] = []; // List of states indicating transitions
     public endState: boolean = false;
     public syntaxTree: Node;
      

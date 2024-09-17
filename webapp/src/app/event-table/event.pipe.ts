@@ -1,6 +1,9 @@
 import { Pipe, PipeTransform } from '@angular/core';
 import { JsonRpcEvent } from '../models/communication/RpcEvent';
 
+/**
+ * Filter tule for event-table
+ */
 @Pipe({ name: 'event', standalone: true})
 export class EventPipe implements PipeTransform {
   transform(values: JsonRpcEvent[], filter: string): JsonRpcEvent[] {

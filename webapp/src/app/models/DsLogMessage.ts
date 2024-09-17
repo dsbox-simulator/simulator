@@ -1,6 +1,10 @@
 import { LogMessage } from "./communication/LogMessage";
 import { JsonRpcEvent } from "./communication/RpcEvent";
 
+/**
+ * Represents a log message
+ * Extracts all important information from the log Event
+ */
 export class DsLogMessage{
     public message: JsonRpcEvent;
     public id: number;
