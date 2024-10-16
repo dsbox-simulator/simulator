@@ -5,3 +5,4 @@ webapp/dist
 protocol.json
 __pycache__
 node_modules/
+.dsbox_storage.json

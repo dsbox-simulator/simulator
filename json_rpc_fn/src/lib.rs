@@ -60,6 +60,7 @@ pub fn json_rpc(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) ->
     let token_stream = quote! {
         #item
 
+        #[doc(hidden)]
         mod #name {
             use super::*;
             use crate::webapp::json_rpc::response::{Error, INTERNAL_ERROR, INVALID_PARAMS};
