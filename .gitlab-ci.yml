@@ -60,5 +60,5 @@ build:windows:
   artifacts:
     when: on_success
     paths:
-      - target/x86_64-pc-windows-gnu/release/dsbox
+      - target/x86_64-pc-windows-gnu/release/dsbox.exe
     expire_in: 1 week
