@@ -15,8 +15,8 @@ build:webapp:
     - curl -o- curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
     - ". ~/.nvm/nvm.sh"
     - nvm --version
-    - nvm install latest
-    - nvm use latest
+    - nvm install 22.0.0
+    - nvm use 22.0.0
     # install angular cli for building the webapp
     - npm install -g @angular/cli
     - npm install
