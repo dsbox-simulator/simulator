@@ -3,6 +3,8 @@
 image: "rust:latest"
 
 before_script:
+  # check docker is working
+  - docker info
   # install musl so that we can build a statically linked libc (for greater portability)
   - apt-get update -yqq
   - apt-get install -yqq --no-install-recommends curl
@@ -15,18 +17,39 @@ before_script:
   - nvm use v22.0.0
   # install angular cli for building the webapp
   - npm install -g @angular/cli
-  # install the linux-musl target (see above)
+  # install the cross compiler tool
+  - cargo install cross
+  # install the used targets
+  - rustup target add x86_64-pc-windows-gnu
   - rustup target add x86_64-unknown-linux-musl
 
-variables:
-  CARGO_BUILD_TARGET: "x86_64-unknown-linux-musl"
-  RUSTFLAGS: "-C link-arg=-s"
+stages:
+  - build:webapp
+  - build:app
 
-build:
-    stage: build
-    script: ./build_release.sh
-    artifacts:
-      when: on_success
-      paths:
-        - target/x86_64-unknown-linux-musl/release/dsbox
-      expire_in: 1 week
+build:webapp:
+  stage: build:webapp
+  script:
+    - cd webapp
+    - npm install
+    - ng build --configuration production
+
+build:linux:
+  stage: build:app
+  variables:
+    RUSTFLAGS: "-C link-arg=-s"
+  script: cross build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
+  artifacts:
+    when: on_success
+    paths:
+      - target/x86_64-unknown-linux-musl/release/dsbox
+    expire_in: 1 week
+
+build:windows:
+  stage: build:app
+  script: script: cross build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp
+  artifacts:
+    when: on_success
+    paths:
+      - target/x86_64-pc-windows-gnu/release/dsbox
+    expire_in: 1 week
