@@ -51,7 +51,7 @@ build:windows:
     CARGO_BUILD_TARGET: x86_64-pc-windows-gnu
   script:
     # install the cross compiler tools
-    - sudo apt install -yqq binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64
+    - apt-get install -yqq binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64
     - rustup target add x86_64-pc-windows-gnu
     - cargo build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp
   needs:
