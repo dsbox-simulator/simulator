@@ -32,7 +32,6 @@ build:linux:
   script: 
     # install musl so that we can build a statically linked libc (for greater portability)
     - apt-get update -yqq
-    - apt-get install -yqq --no-install-recommends curl
     - apt-get install -yqq musl-dev musl-tools
     - rustup target add x86_64-unknown-linux-musl
     - RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
@@ -51,6 +50,7 @@ build:windows:
     CARGO_BUILD_TARGET: x86_64-pc-windows-gnu
   script:
     # install the cross compiler tools
+    - apt-get update -yqq
     - apt-get install -yqq binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64
     - rustup target add x86_64-pc-windows-gnu
     - cargo build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp
