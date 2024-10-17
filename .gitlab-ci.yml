@@ -7,6 +7,14 @@ stages:
   - build:webapp
   - build:app
 
+variables:
+    # the host where the docker instance is running
+    DOCKER_HOST: tcp://docker:2375/
+    # use for much faster builds
+    DOCKER_DRIVER: overlay2
+    # ensure cross knows it's running remotely
+    CROSS_REMOTE: 1
+
 setup:
   stage: setup
   script:
