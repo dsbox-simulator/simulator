@@ -29,16 +29,13 @@ build:webapp:
       
 build:linux:
   stage: build:app
-  variables:
-    CARGO_BUILD_TARGET: "x86_64-unknown-linux-musl"
-    RUSTFLAGS: "-C link-arg=-s"
   script: 
     # install musl so that we can build a statically linked libc (for greater portability)
     - apt-get update -yqq
     - apt-get install -yqq --no-install-recommends curl
     - apt-get install -yqq musl-dev musl-tools
     - rustup target add x86_64-unknown-linux-musl
-    - cargo build --package dsbox --release --features embedded_webapp
+    - RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
   needs:
     - job: build:webapp
       artifacts: true
@@ -51,18 +48,12 @@ build:linux:
 build:windows:
   stage: build:app
   variables:
-    # the host where the docker instance is running
-    DOCKER_HOST: tcp://docker:2375/
-    # use for much faster builds
-    DOCKER_DRIVER: overlay2
-    # ensure cross knows it's running remotely
-    CROSS_REMOTE: 1
+    CARGO_BUILD_TARGET: x86_64-pc-windows-gnu
   script:
-    # install the cross compiler tool
-    - cargo install cross
-    # install the used targets
+    # install the cross compiler tools
+    - sudo apt install -yqq binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64
     - rustup target add x86_64-pc-windows-gnu
-    - cross build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp
+    - cargo build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp
   needs:
     - job: build:webapp
       artifacts: true
