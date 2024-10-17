@@ -3,23 +3,9 @@
 image: "rust:latest"
 
 stages:
-  - setup
   - build:webapp
   - build:app
 
-setup:
-  stage: setup
-  script:
-    # install musl so that we can build a statically linked libc (for greater portability)
-    - apt-get update -yqq
-    - apt-get install -yqq --no-install-recommends curl
-    - apt-get install -yqq musl-dev musl-tools
-    
-    # install the cross compiler tool
-    - cargo install cross
-    # install the used targets
-    - rustup target add x86_64-pc-windows-gnu
-    - rustup target add x86_64-unknown-linux-musl
 
 build:webapp:
   stage: build:webapp
