@@ -11,8 +11,8 @@ jobs:
       - name: Checkout the tag
         uses: actions/checkout@v4
       - name: Setup node environment
+        working-directory: webapp
         run: |
-          cd webapp
           # Install Node Version Manager (NVM)
           curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
           . ~/.nvm/nvm.sh
@@ -22,7 +22,10 @@ jobs:
           npm install -g @angular/cli
           npm install
       - name: Build webapp
-        run: ng build --configuration production
+        working-directory: webapp
+        run: |
+          node -v
+          ng build --configuration production
       - name: Upload webapp artifact
         uses: actions/upload-artifact@v3
         with:
