@@ -27,7 +27,7 @@ jobs:
       - name: Upload webapp artifact
         uses: actions/upload-artifact@v3
         with:
-          name: webapp
+          name: dist
           path: webapp/dist
 
   build:linux:
@@ -37,7 +37,8 @@ jobs:
       - name: Download webapp artifact
         uses: actions/download-artifact@v3
         with:
-          path: webapp_artifact
+          name: dist
+          path: webapp
       - name: Ensure artifact downloaded
         run: ls -R webapp_artifact
       - name: Install rust
