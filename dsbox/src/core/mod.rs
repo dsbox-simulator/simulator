@@ -440,7 +440,7 @@ impl Core {
             if !launch.middleware_before.is_empty() || !launch.middleware_after.is_empty() {
                 Some("cannot specify middleware when launching a client".to_string())
             } else {
-                let node = self.nodes.push(self.nodes[0].alias(launch.name));
+                let node = self.nodes.add(self.nodes[0].alias(launch.name));
                 self.protocol.publish_event(Event::node_launched(Timestamp::now(), node.id, node.name.clone(), node.commandline(MiddlewareId(0)))).await;
                 None
             }
@@ -491,7 +491,7 @@ impl Core {
     /// launches a new process and creates the corresponding node
     async fn launch(&mut self, command: Option<&str>, is_client: bool, name: String) -> Result<&mut Node, CoreError> {
         let proc = self.launch_proc(command, is_client, name.clone()).await?;
-        let node = self.nodes.push(Node::new(name, is_client, proc));
+        let node = self.nodes.add(Node::new(name, is_client, proc));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
         Ok(node)

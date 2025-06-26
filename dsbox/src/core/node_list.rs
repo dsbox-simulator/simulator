@@ -27,21 +27,17 @@ impl NodeList {
         self.nodes.len()
     }
 
-    pub fn push(&mut self, mut node: Node) -> &mut Node {
+    pub fn add(&mut self, mut node: Node) -> &mut Node {
         node.id = NodeId(self.len());
         self.names.insert(node.name.clone(), self.len());
         self.nodes.push(node);
         self.nodes.last_mut().unwrap()
     }
 
-    pub fn pop(&mut self) -> Option<Node> {
-        let node = self.nodes.pop()?;
-        self.names.remove(&node.name);
-        Some(node)
-    }
     pub fn lookup(&self, name: &str) -> Option<&Node> {
         Some(&self.nodes[*self.names.get(name)?])
     }
+
     pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Node> {
         Some(&mut self.nodes[*self.names.get(name)?])
     }

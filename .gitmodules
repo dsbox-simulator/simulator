@@ -1,3 +1,3 @@
 [submodule "dsbox-nodes"]
 	path = nodes
-	url = git@bsgitlab.bs.informatik.uni-siegen.de:breitweiser/dsbox-nodes.git
+	url = git@git.bs.informatik.uni-siegen.de:breitweiser/DsBox-Nodes.git
