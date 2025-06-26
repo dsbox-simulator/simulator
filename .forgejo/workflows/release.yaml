@@ -15,7 +15,7 @@ jobs:
           cd webapp
           # Install Node Version Manager (NVM)
           curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-          ". ~/.nvm/nvm.sh"
+          . ~/.nvm/nvm.sh
           nvm install 22
           nvm use 22
           # install angular cli for building the webapp
