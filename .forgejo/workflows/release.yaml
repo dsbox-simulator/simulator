@@ -25,7 +25,7 @@ jobs:
         run: |
           ng build --configuration production
       - name: Upload webapp artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: webapp
           path: webapp/dist
@@ -46,7 +46,7 @@ jobs:
         run: |
           rustup target add x86_64-unknown-linux-musl
       - name: Download webapp artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           path: webapp/dist
       - name: Ensure artifact downloaded
@@ -54,7 +54,7 @@ jobs:
       - name: Build project
         run: RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
       - name: Upload dsbox executable artiface
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: dsbox-x86_64-linux-musl
           path: target/x86_64-unknown-linux-musl/release/dsbox
