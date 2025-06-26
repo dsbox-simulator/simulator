@@ -32,10 +32,10 @@ jobs:
 
   build:linux:
     runs-on: docker
-    container:
-      image: rust:latest
     needs: build:webapp
     steps:
+      - name: Install rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
       - name: Checkout the tag
         uses: actions/checkout@v4
       - name: Install musl packages
