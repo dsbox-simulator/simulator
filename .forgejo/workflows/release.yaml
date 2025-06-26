@@ -3,6 +3,32 @@ on:
     tags:
       - "*"
 jobs:
+#  build:webapp:
+#    runs-on: docker
+#    container:
+#      image: node:latest
+#    steps:
+#      - name: Checkout the tag
+#        uses: actions/checkout@v4
+#      - name: Setup node
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: 22
+#      - name: Install packages
+#        working-directory: webapp
+#        run: |
+#          node -v
+#          npm install -g @angular/cli
+#          npm install
+#      - name: Build webapp
+#        working-directory: webapp
+#        run: |
+#          ng build --configuration production
+#      - name: Upload webapp artifact
+#        uses: actions/upload-artifact@v3
+#        with:
+#          name: webapp
+#          path: webapp/dist
 
   build:linux:
     runs-on: docker
@@ -18,6 +44,7 @@ jobs:
           apt-get install -yqq musl-dev musl-tools
       - name: Install musl target
         run: |
+          . $HOME/.cargo/env
           rustup target add x86_64-unknown-linux-musl
       - name: Download webapp artifact
         uses: actions/download-artifact@v3
@@ -26,35 +53,11 @@ jobs:
       - name: Ensure artifact downloaded
         run: ls -al webapp/dist
       - name: Build project
-        run: RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
-      - name: Upload dsbox executable artiface
+        run: |
+          . $HOME/.cargo/env
+          RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
+      - name: Upload dsbox executable artifact
         uses: actions/upload-artifact@v3
         with:
           name: dsbox-x86_64-linux-musl
           path: target/x86_64-unknown-linux-musl/release/dsbox
-  build:webapp:
-    runs-on: docker
-    container:
-      image: node:latest
-    steps:
-      - name: Checkout the tag
-        uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install packages
-        working-directory: webapp
-        run: |
-          node -v
-          npm install -g @angular/cli
-          npm install
-      - name: Build webapp
-        working-directory: webapp
-        run: |
-          ng build --configuration production
-      - name: Upload webapp artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: webapp
-          path: webapp/dist
