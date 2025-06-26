@@ -4,7 +4,7 @@ on:
       - "*"
 jobs:
   build:webapp:
-    runs-on: debian
+    runs-on: docker:docker://nodejs:latest
     steps:
       - name: Checkout the tag
         uses: actions/checkout@v4
