@@ -11,13 +11,16 @@ jobs:
       - name: Checkout the tag
         uses: actions/checkout@v4
       - name: Setup node environment
-        working-directory: webapp
         run: |
           # Install Node Version Manager (NVM)
           curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
           . ~/.nvm/nvm.sh
           nvm install 22
           nvm use 22
+      - name: Install packages
+        working-directory: webapp
+        run: |
+          node -v
           # install angular cli for building the webapp
           npm install -g @angular/cli
           npm install
