@@ -6,6 +6,8 @@ jobs:
   build:webapp:
     runs-on: debian
     steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
       - name: Setup node environment
         run: |
           cd webapp
