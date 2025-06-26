@@ -3,32 +3,6 @@ on:
     tags:
       - "*"
 jobs:
-  build:webapp:
-    runs-on: docker
-    container:
-      image: node:latest
-    steps:
-      - name: Checkout the tag
-        uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install packages
-        working-directory: webapp
-        run: |
-          node -v
-          npm install -g @angular/cli
-          npm install
-      - name: Build webapp
-        working-directory: webapp
-        run: |
-          ng build --configuration production
-      - name: Upload webapp artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: webapp
-          path: webapp/dist
 
   build:linux:
     runs-on: docker
@@ -58,3 +32,29 @@ jobs:
         with:
           name: dsbox-x86_64-linux-musl
           path: target/x86_64-unknown-linux-musl/release/dsbox
+  build:webapp:
+    runs-on: docker
+    container:
+      image: node:latest
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install packages
+        working-directory: webapp
+        run: |
+          node -v
+          npm install -g @angular/cli
+          npm install
+      - name: Build webapp
+        working-directory: webapp
+        run: |
+          ng build --configuration production
+      - name: Upload webapp artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: webapp
+          path: webapp/dist
