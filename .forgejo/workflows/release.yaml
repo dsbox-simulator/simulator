@@ -19,6 +19,7 @@ jobs:
       - name: Install packages
         working-directory: webapp
         run: |
+          . ~/.nvm/nvm.sh
           nvm use 22
           # install angular cli for building the webapp
           npm install -g @angular/cli
@@ -26,6 +27,7 @@ jobs:
       - name: Build webapp
         working-directory: webapp
         run: |
+          . ~/.nvm/nvm.sh
           nvm use 22
           ng build --configuration production
       - name: Upload webapp artifact
