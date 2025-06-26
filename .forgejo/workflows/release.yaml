@@ -27,7 +27,7 @@ jobs:
       - name: Upload webapp artifact
         uses: actions/upload-artifact@v3
         with:
-          name: webapp-dist
+          name: webapp
           path: webapp/dist
 
   build:linux:
@@ -37,10 +37,9 @@ jobs:
       - name: Download webapp artifact
         uses: actions/download-artifact@v3
         with:
-          name: webapp-dist
-          path: webapp
+          name: webapp
       - name: Ensure artifact downloaded
-        run: ls -R webapp
+        run: ls -R webapp-angular
       - name: Install rust
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - name: Checkout the tag
@@ -56,7 +55,7 @@ jobs:
       - name: Build project
         run: |
           . $HOME/.cargo/env
-          DSBOX_WEBAPP_DIR="webapp/webapp-dist/webapp-angular/browser" RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
+          DSBOX_WEBAPP_DIR="webapp-angular/browser" RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
       - name: Upload dsbox executable artifact
         uses: actions/upload-artifact@v3
         with:
