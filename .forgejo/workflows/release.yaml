@@ -34,6 +34,12 @@ jobs:
     runs-on: docker
     needs: build:webapp
     steps:
+      - name: Download webapp artifact
+        uses: actions/download-artifact@v3
+        with:
+          path: webapp_artifact
+      - name: Ensure artifact downloaded
+        run: ls -R webapp_artifact
       - name: Install rust
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - name: Checkout the tag
@@ -46,14 +52,10 @@ jobs:
         run: |
           . $HOME/.cargo/env
           rustup target add x86_64-unknown-linux-musl
-      - name: Download webapp artifact
-        uses: actions/download-artifact@v3
-      - name: Ensure artifact downloaded
-        run: ls -al webapp/dist
       - name: Build project
         run: |
           . $HOME/.cargo/env
-          RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
+          DSBOX_WEBAPP_DIR="webapp_artifact/webapp-angular/browser" RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
       - name: Upload dsbox executable artifact
         uses: actions/upload-artifact@v3
         with:
