@@ -48,8 +48,6 @@ jobs:
           rustup target add x86_64-unknown-linux-musl
       - name: Download webapp artifact
         uses: actions/download-artifact@v3
-        with:
-          path: webapp/dist
       - name: Ensure artifact downloaded
         run: ls -al webapp/dist
       - name: Build project
