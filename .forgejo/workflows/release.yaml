@@ -3,61 +3,74 @@ on:
     tags:
       - "*"
 jobs:
-  build:webapp:
+  build-and-release:
     runs-on: docker
-    container:
-      image: node:latest
     steps:
       - name: Checkout the tag
         uses: actions/checkout@v4
+      - name: Install rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - name: Install rust targets
+        run: |
+          . $HOME/.cargo/env
+          rustup target add x86_64-unknown-linux-musl
+          rustup target add aarch64-unknown-linux-musl
+          rustup target add x86_64-pc-windows-gnu
+      - name: Download musl packages
+        run: |
+          curl https://musl.cc/x86_64-linux-musl-native.tgz -o /tmp/x86_64-linux-musl-native.tgz
+          curl https://musl.cc/aarch64-linux-musl-cross.tgz -o /tmp/aarch64-linux-musl-cross.tgz
+          curl https://musl.cc/x86_64-w64-mingw32-cross.tgz -o /tmp/x86_64-w64-mingw32-cross.tgz
+          tar -xvf /tmp/x86_64-linux-musl-native.tgz -C /tmp
+          tar -xvf /tmp/aarch64-linux-musl-cross.tgz -C /tmp
+          tar -xvf /tmp/x86_64-w64-mingw32-cross.tgz -C /tmp
       - name: Setup node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install packages
+      - name: Install webapp packages
         working-directory: webapp
         run: |
-          node -v
           npm install -g @angular/cli
           npm install
       - name: Build webapp
         working-directory: webapp
         run: |
           ng build --configuration production
-      - name: Upload webapp artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: webapp
-          path: webapp/dist
-
-  build:linux:
-    runs-on: docker
-    needs: build:webapp
-    steps:
-      - name: Download webapp artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: webapp
-      - name: Ensure artifact downloaded
-        run: ls -R webapp-angular
-      - name: Install rust
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - name: Checkout the tag
-        uses: actions/checkout@v4
-      - name: Install musl packages
-        run: |
-          apt-get update -yqq
-          apt-get install -yqq musl-dev musl-tools
-      - name: Install musl target
+      - name: Build DsBox x86_64 Linux
         run: |
           . $HOME/.cargo/env
-          rustup target add x86_64-unknown-linux-musl
-      - name: Build project
+          PATH=$PATH:/tmp/x86_64-linux-musl-native/bin/ \
+          CC=x86_64-linux-musl-gcc \
+          RUSTFLAGS="-C link-arg=-s" \
+          cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp \
+            --config target.x86_64-unknown-linux-musl.linker=\"x86_64-linux-musl-cc\"
+      - name: Build DsBox aarch64 Linux
         run: |
           . $HOME/.cargo/env
-          DSBOX_WEBAPP_DIR="webapp-angular/browser" RUSTFLAGS="-C link-arg=-s" cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp
-      - name: Upload dsbox executable artifact
-        uses: actions/upload-artifact@v3
+          PATH=$PATH:/tmp/aarch64-linux-musl-cross/bin/ \
+          CC=aarch64-linux-musl-gcc \
+          RUSTFLAGS="-C link-arg=-s" \
+          cargo build --target aarch64-unknown-linux-musl --package dsbox --release --features embedded_webapp \
+            --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-cc\"
+      - name: Build DsBox x86_64 Windows
+        run: |
+          . $HOME/.cargo/env
+          PATH=$PATH:/tmp/x86_64-w64-mingw32-cross/bin/ \
+          CC=x86_64-w64-mingw32-gcc \
+          RUSTFLAGS="-C link-arg=-s" \
+          cargo build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp \
+            --config target.x86_64-pc-windows-gnu.linker=\"x86_64-w64-mingw32-cc\"
+      - name: Prepare release files
+        run: |
+          mkdir -p /tmp/release/x86_64-linux/
+          mkdir -p /tmp/release/aarc64-linux/
+          mkdir -p /tmp/release/x86_64-windows/
+          cp target/x86_64-unknown-linux-musl/release/dsbox /tmp/release/x86_64-linux/dsbox
+          cp target/aarch64-unknown-linux-musl/release/dsbox /tmp/release/aarc64-linux/dsbox
+          cp target/x86_64-pc-windows-gnu/release/dsbox.exe /tmp/release/x86_64-windows/dsbox.exe
+      - name: Upload release
+        uses: actions/forgejo-release@v2.6.0
         with:
-          name: dsbox-x86_64-linux-musl
-          path: target/x86_64-unknown-linux-musl/release/dsbox
+          direction: upload
+          release-dir: /tmp/release
