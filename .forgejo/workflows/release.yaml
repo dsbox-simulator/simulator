@@ -21,9 +21,9 @@ jobs:
           curl https://musl.cc/x86_64-linux-musl-native.tgz -o /tmp/x86_64-linux-musl-native.tgz
           curl https://musl.cc/aarch64-linux-musl-cross.tgz -o /tmp/aarch64-linux-musl-cross.tgz
           curl https://musl.cc/x86_64-w64-mingw32-cross.tgz -o /tmp/x86_64-w64-mingw32-cross.tgz
-          tar -xvf /tmp/x86_64-linux-musl-native.tgz -C /tmp
-          tar -xvf /tmp/aarch64-linux-musl-cross.tgz -C /tmp
-          tar -xvf /tmp/x86_64-w64-mingw32-cross.tgz -C /tmp
+          tar -xf /tmp/x86_64-linux-musl-native.tgz -C /tmp
+          tar -xf /tmp/aarch64-linux-musl-cross.tgz -C /tmp
+          tar -xf /tmp/x86_64-w64-mingw32-cross.tgz -C /tmp
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -63,12 +63,10 @@ jobs:
             --config target.x86_64-pc-windows-gnu.linker=\"x86_64-w64-mingw32-cc\"
       - name: Prepare release files
         run: |
-          mkdir -p /tmp/release/x86_64-linux/
-          mkdir -p /tmp/release/aarc64-linux/
-          mkdir -p /tmp/release/x86_64-windows/
-          cp target/x86_64-unknown-linux-musl/release/dsbox /tmp/release/x86_64-linux/dsbox
-          cp target/aarch64-unknown-linux-musl/release/dsbox /tmp/release/aarc64-linux/dsbox
-          cp target/x86_64-pc-windows-gnu/release/dsbox.exe /tmp/release/x86_64-windows/dsbox.exe
+          mkdir /tmp/release
+          tar -zcf /tmp/release/x86_64-linux.tar.gz target/x86_64-unknown-linux-musl/release/dsbox
+          tar -zcf /tmp/release/aarc64-linux.tar.gz target/aarch64-unknown-linux-musl/release/dsbox 
+          tar -zcf /tmp/release/x86_64-windows.tar.gz target/x86_64-pc-windows-gnu/release/dsbox.exe
       - name: Upload release
         uses: actions/forgejo-release@v2.6.0
         with:
