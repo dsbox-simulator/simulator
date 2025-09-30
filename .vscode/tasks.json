@@ -8,7 +8,7 @@
             "args": [
                 "run",
                 "--",
-                "\"python3 nodes/python/echo_client.py\"",
+                "\"python3 nodes/python/echo_test.py\"",
                 "--servers",
                 "\"python3 nodes/python/echo_server.py\"",
                 "-i"

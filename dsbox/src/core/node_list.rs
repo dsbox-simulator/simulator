@@ -55,7 +55,7 @@ impl NodeList {
         self.nodes.iter_mut()
     }
 
-    pub fn drain(&mut self, range: impl RangeBounds<usize>) -> Drain {
+    pub fn drain(&mut self, range: impl RangeBounds<usize>) -> Drain<'_> {
         Drain {
             names: &mut self.names,
             inner: self.nodes.drain(range),

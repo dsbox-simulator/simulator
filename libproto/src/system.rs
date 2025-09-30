@@ -1,12 +1,12 @@
-//! System messages, that the core uses to communicate with its clients.
+//! System messages, that the core uses to communicate with tests.
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::Message;
 use crate::Payload;
 
-/// Sent from the client process to the core when it wants to reset the simulation
-/// all nodes will be shut down and then a [`ResetFinished`] message will be sent to the client
+/// Sent from the test process to the core when it wants to reset the simulation
+/// all nodes will be shut down and then a [`ResetFinished`] message will be sent to the test
 #[derive(Default, Payload, Serialize, Deserialize)]
 pub struct Reset {}
 
@@ -14,14 +14,14 @@ pub struct Reset {}
 #[derive(Payload, Serialize, Deserialize)]
 pub struct ResetFinished {}
 
-/// Sent from the client process to the core when it wants to launch a new server.
+/// Sent from the test process to the core when it wants to launch a new server.
 /// The `middleware_before` and `middleware_after` fields
 /// are commands to be launched as the "middleware-stack" for the server
 #[derive(Payload, Serialize, Deserialize)]
 pub struct Launch {
     pub name: String,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
-    pub as_client: bool,
+    pub as_test: bool,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub middleware_before: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -36,7 +36,7 @@ pub struct LaunchFinished {
     pub error: Option<String>,
 }
 
-/// Sent from a client node to the core to start a monitoring session. This can be used by client
+/// Sent from a test node to the core to start a monitoring session. This can be used by test
 /// nodes to monitor message exchange between nodes whose names match the given regexes.
 #[derive(Payload, Serialize, Deserialize)]
 pub struct BeginMonitor {
@@ -44,7 +44,7 @@ pub struct BeginMonitor {
     pub dst_match: String,
 }
 
-/// Sent from the core to a client node that started a monitor session, whenever a message is sent
+/// Sent from the core to a test node that started a monitor session, whenever a message is sent
 /// or delivered from or to a matching node.
 #[derive(Payload, Serialize, Deserialize)]
 pub struct MonitorEvent {

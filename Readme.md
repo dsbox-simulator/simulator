@@ -32,25 +32,25 @@ and can be updated/pulled using:
 git submodule update --init --recursive
 ```
 
-the `echo_client.py` and `echo_server.py` nodes are simple echo/reply nodes. To run the echo test use
+the `echo_test.py` and `echo_server.py` nodes are simple echo/reply nodes. To run the echo test use
 (assumes the nodes were built in debug mode)
 
 ```shell
-cargo run -- "python nodes/python/echo_client.py" --servers "python nodes/python/echo_server.py"
+cargo run -- -t "python nodes/python/echo_test.py" "python nodes/python/echo_server.py"
 ```
 
 the `netsim_test` simply sends messages to itself and records their delay. To run the test use
 
 ```shell
-cargo run --release -- "nodes/lua/netsim_test.lua" --servers "/dev/null"
+cargo run --release -- -t "nodes/lua/netsim_test.lua" "/dev/null"
 ```
 
-(for `--servers` any path may be given, since no server is launched anyway)
+(for the server implementation any path may be given, since no server is launched anyway, but here we use `"/dev/null"`)
 
 to run `dsbox` in interactive mode using the webapp add the `-i` flag:
 
 ```shell
-cargo run -- "python nodes/python/echo_client.py" --servers "python nodes/python/echo_server.py" -i
+cargo run -- -it "python nodes/python/echo_test.py" "python nodes/python/echo_server.py"
 ```
 
 this will start a webserver on port 8080 ([http://localhost:8080]()). In debug mode, the webserver serves the files out
@@ -59,6 +59,6 @@ running. In release mode however, the webapp is embedded into the binary, so tha
 
 For more information on Nodes and how to implement them, see `nodes/Readme.md`
 
-cargo run -- "webapp/raft-alg/client.lua" --servers "nwebapp/raft-alg/server.lua" -i
+cargo run -- -it "webapp/raft-alg/test.lua" "nwebapp/raft-alg/server.lua"
 
-cargo run -- "nodes/lua/primary-based-remote-write/client.lua" --servers "nodes/lua/primary-based-remote-write/server.lua" -i
+cargo run -- -it "nodes/lua/primary-based-remote-write/test.lua" "nodes/lua/primary-based-remote-write/server.lua"

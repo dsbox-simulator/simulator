@@ -10,11 +10,20 @@ use libproto::Message;
 
 use crate::process::{ProcessCommand, ProcessEvent};
 
-pub async fn process_io_helper<I, O, E, C>(event_sender: Sender<ProcessEvent>, mut command_receiver: UnboundedReceiver<ProcessCommand>, stdin: I, stdout: O, stderr: E, mut child: C, finished: oneshot::Sender<()>)
-    where I: AsyncWrite + Unpin,
-          O: AsyncRead + Unpin,
-          E: AsyncRead + Unpin,
-          C: Future<Output=i32> {
+pub async fn process_io_helper<I, O, E, C>(
+    event_sender: Sender<ProcessEvent>,
+    mut command_receiver: UnboundedReceiver<ProcessCommand>,
+    stdin: I,
+    stdout: O,
+    stderr: E,
+    child: C,
+    finished: oneshot::Sender<()>,
+) where
+    I: AsyncWrite + Unpin,
+    O: AsyncRead + Unpin,
+    E: AsyncRead + Unpin,
+    C: Future<Output = i32>,
+{
     let mut stdout_closed = false;
     let mut stderr_closed = false;
     let mut finished = Some(finished);
@@ -49,14 +58,8 @@ pub async fn process_io_helper<I, O, E, C>(event_sender: Sender<ProcessEvent>, m
                 let Some(stdin) = stdin.as_mut() else { continue; };
                 match command {
                     ProcessCommand::Deliver(message) => {
-                        if stdin.write_all(message.to_json().as_bytes()).await.is_err() {
-                            todo!("react to error appropriately")
-                        }
-                        if stdin.write_all(b"\n").await.is_err() {
-                            todo!("react to error appropriately")
-                        }
-                        if stdin.flush().await.is_err() {
-                            todo!("react to error appropriately")
+                        if let Err(error) = write_message(message, stdin).await {
+                            log::error!("failed to deliver message to process: {error}");
                         }
                     }
                 }
@@ -64,7 +67,18 @@ pub async fn process_io_helper<I, O, E, C>(event_sender: Sender<ProcessEvent>, m
             exit_code = &mut child, if finished.is_some() => {
                 event_sender.send(ProcessEvent::Exited(exit_code)).await.ok();
                 finished.take().unwrap().send(()).ok();
+                stdin.take();
             },
         }
     }
+}
+
+async fn write_message(
+    message: Message,
+    mut to: impl AsyncWriteExt + Unpin,
+) -> std::io::Result<()> {
+    to.write_all(message.to_json().as_bytes()).await?;
+    to.write_all(b"\n").await?;
+    to.flush().await?;
+    Ok(())
 }

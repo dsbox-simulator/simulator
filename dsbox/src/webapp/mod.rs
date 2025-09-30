@@ -75,7 +75,7 @@ impl Webapp {
                     rx.await.ok();
                 });
                 match server.await {
-                    Ok(()) => log::info!("web sever shutdown successful"),
+                    Ok(()) => log::info!("web server shutdown successful"),
                     Err(e) => log::warn!("web server shutdown error: {e}"),
                 }
                 let storage = storage.read().unwrap();

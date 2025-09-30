@@ -1,6 +1,6 @@
-//! Monitor sessions are like "wiretaps" that a client may use to inspect network traffic
+//! Monitor sessions are like "wiretaps" that a test may use to inspect network traffic
 //!
-//! A client can send a [`BeginMonitor`](libproto::system::BeginMonitor) [`Message`] to the core to start a new session.
+//! A test can send a [`BeginMonitor`](libproto::system::BeginMonitor) [`Message`] to the core to start a new session.
 //! Each monitor session filters all [`Message`] by their source and destination node names and if they match a given regex, the
 //! node that started the session is notified upon sending and delivering of [`Message`] (via a [`MonitorEvent`](libproto::system::MonitorEvent) message).
 

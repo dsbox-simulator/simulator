@@ -19,7 +19,7 @@ pub enum CoreError {
         /// the specific error that prevented dispatching.
         kind: DispatchErrorKind,
     },
-    /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-client node.
+    /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-test node.
     IllegalCoreMessage { source: String, message: Message },
     /// A core [`Message`] could not be handled, because it's type is unknown.
     UnknownCoreMessage { source: String, ty: String },
@@ -40,7 +40,7 @@ pub enum CoreError {
 
 /// Gives a reason why a [`Message`] could not be dispatched
 pub enum DispatchErrorKind {
-    /// The source name of a [`Message`] does not match the processes associated node name (or names, in case of the client process).
+    /// The source name of a [`Message`] does not match the processes associated node name (or names, in case of the test process).
     SourceNameMismatch,
     /// The destination of a [`Message`] could not be resolved (the node name does not exist).
     DestinationUnknown,
@@ -53,7 +53,7 @@ impl Display for CoreError {
                 write!(f, "node `{name}` - dispatch error: {kind}; message: {}", message.to_json())
             }
             CoreError::IllegalCoreMessage { source, message } => {
-                write!(f, "non-client process `{source}` tried to send core message: {}", message.to_json())
+                write!(f, "non-test process `{source}` tried to send core message: {}", message.to_json())
             }
             CoreError::UnknownCoreMessage { source, ty } => {
                 write!(f, "unknown system message from `{source}`: {ty}")

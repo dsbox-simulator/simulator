@@ -20,17 +20,17 @@ pub struct MiddlewareId(pub usize);
 pub struct Node {
     pub id: NodeId,
     pub name: String,
-    pub is_client: bool,
+    pub is_test: bool,
     process_stack: Vec<Rc<RefCell<Process>>>,
     primary_index: usize,
 }
 
 impl Node {
-    pub fn new(name: String, is_client: bool, process: Process) -> Self {
+    pub fn new(name: String, is_test: bool, process: Process) -> Self {
         Self {
             id: NodeId(0),
             name,
-            is_client,
+            is_test,
             process_stack: vec![Rc::new(RefCell::new(process))],
             primary_index: 0,
         }
@@ -44,7 +44,7 @@ impl Node {
         Self {
             id: NodeId(0),
             name,
-            is_client: self.is_client,
+            is_test: self.is_test,
             process_stack: Vec::clone(&self.process_stack),
             primary_index: self.primary_index,
         }

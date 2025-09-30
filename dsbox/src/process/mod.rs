@@ -70,7 +70,7 @@ impl Launcher {
     /// otherwise a native process is started.
     ///
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
-    pub async fn launch(&mut self, command: &str, for_client: bool, name: String) -> Result<Process, Error> {
+    pub async fn launch(&mut self, command: &str, for_test: bool, name: String) -> Result<Process, Error> {
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
         let Some(mut args) = shlex::split(command) else {
@@ -82,7 +82,7 @@ impl Launcher {
         let (join_handle, finished) = if ext == Some(OsStr::new("wasm")) {
             self.launch_wasm(executable, &args, command_receiver, event_sender).await?
         } else if ext == Some(OsStr::new("lua")) {
-            self.launch_lua(executable, &args, for_client, command_receiver, event_sender, name).await?
+            self.launch_lua(executable, &args, for_test, command_receiver, event_sender, name).await?
         } else {
             native::launch(executable, &args, command_receiver, event_sender)?
         };
@@ -108,12 +108,12 @@ impl Launcher {
     }
 
     #[cfg(feature = "lua")]
-    async fn launch_lua(&mut self, path: &Path, args: &[String], for_client: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>, name: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    async fn launch_lua(&mut self, path: &Path, args: &[String], for_test: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>, name: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         if self.lua_launcher.is_none() {
             self.lua_launcher = Some(LuaLauncher::new().await)
         }
         self.lua_launcher.as_mut().unwrap()
-            .launch(path, args.to_vec(), self.allow_lua_unsafe && for_client, command_receiver, event_sender, name)
+            .launch(path, args.to_vec(), self.allow_lua_unsafe && for_test, command_receiver, event_sender, name)
     }
     #[cfg(not(feature = "lua"))]
     async fn launch_lua(&mut self, _: &Path, _: &[String], _: bool, _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>, _: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
