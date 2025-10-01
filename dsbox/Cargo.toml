@@ -24,21 +24,21 @@ tokio = { version = "1.37.0", features = ["full"] }
 regex = "1.10.4"
 chrono = { version = "0.4", features = ["serde"] }
 
-axum = { version = "0.7.5", features = ["ws"], optional = true }
-tower-http = { version = "0.5.2", features = ["trace"], optional = true }
-phf = { version = "0.11.2", default-features = false, optional = true }
+axum = { version = "0.8.6", features = ["ws"], optional = true }
+tower-http = { version = "0.6.6", features = ["trace"], optional = true }
+phf = { version = "0.13.1", default-features = false, optional = true }
 flate2 = { version = "1.0.28", optional = true }
 mime_guess = { version = "2.0.4", optional = true }
 
-mlua = { version = "0.9.7", features = ["lua54", "send", "async", "serialize", "vendored"], optional = true }
+mlua = { version = "0.11.4", features = ["lua54", "async", "serialize", "vendored"], optional = true }
 
-wasmtime = { version = "20", optional = true }
-wasmtime-wasi = { version = "20", optional = true }
-wasi-common = { version = "20", features = ["tokio"], optional = true }
-wiggle = { version = "20", optional = true }
+wasmtime = { version = "37.0.1", optional = true }
+wasmtime-wasi = { version = "37.0.1", optional = true }
+wasi-common = { version = "37.0.1", features = ["tokio"], optional = true }
+wiggle = { version = "37.0.1", optional = true }
 
 [build-dependencies]
-phf_codegen = { version = "0.11.2", optional = true }
+phf_codegen = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
 mime_guess = { version = "2.0.4", optional = true }
 

@@ -259,7 +259,7 @@ struct LuaAppData {
 impl LuaAppData {
     /// attempts to deserialize the given Value as a [`libproto::Message`] using `mlua`s `serde` support
     /// and sends it to the core
-    async fn lua_send(lua: &Lua, message: Value<'_>) -> mlua::Result<bool> {
+    async fn lua_send(lua: Lua, message: Value) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let message = match lua.from_value(message.clone()) {
             Ok(message) => message,
@@ -283,7 +283,7 @@ impl LuaAppData {
 
     /// waits for a single message to be received by the core
     /// If no more messages are available `nil` is returned.
-    async fn lua_recv<'lua>(lua: &'lua Lua, _: ()) -> mlua::Result<Option<Value<'lua>>> {
+    async fn lua_recv(lua: Lua, _: ()) -> mlua::Result<Option<Value>> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let Some(command) = app_data.recv_command().await else {
             return Ok(None);
@@ -292,8 +292,8 @@ impl LuaAppData {
             ProcessCommand::Deliver(message) => {
                 let value = lua.to_value(&message)?;
                 if let Some(message) = value.as_table() {
-                    let message_class: Table = get_dsbox(lua, "Message")?;
-                    message_set_metatable(lua, message, &message_class)?;
+                    let message_class: Table = get_dsbox(&lua, "Message")?;
+                    message_set_metatable(&lua, message, &message_class)?;
                 }
                 Ok(Some(value))
             }
@@ -302,11 +302,11 @@ impl LuaAppData {
 
     /// returns an iterator that iterates over all received messages until there are no more
     /// messages to be received (i.e. when the simulation shuts down)
-    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value<'_>> {
+    fn lua_recv_iter(lua: &Lua, _: ()) -> mlua::Result<Value> {
         get_dsbox(lua, "recv")
     }
 
-    async fn lua_print(lua: &Lua, items: MultiValue<'_>) -> mlua::Result<bool> {
+    async fn lua_print(lua: Lua, items: MultiValue) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let mut message = String::new();
         let mut first = true;
@@ -318,8 +318,8 @@ impl LuaAppData {
             }
             message.push_str(
                 &lua.globals()
-                    .get::<&str, Function>("tostring")?
-                    .call::<Value, String>(item)?,
+                    .get::<Function>("tostring")?
+                    .call::<String>(item)?,
             );
         }
         Ok(app_data
@@ -329,8 +329,8 @@ impl LuaAppData {
     }
 
     async fn lua_log(
-        lua: &Lua,
-        (message, label, color, _rest): (String, Option<String>, Option<String>, MultiValue<'_>),
+        lua: Lua,
+        (message, label, color, _rest): (String, Option<String>, Option<String>, MultiValue),
     ) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let marker = if let Some(label) = label {
@@ -367,16 +367,10 @@ impl LuaAppData {
     }
 }
 
-fn message_new<'lua>(
-    lua: &'lua Lua,
-    (message_class, src, dst, r#type, rest): (
-        Table<'lua>,
-        Value<'lua>,
-        Value<'lua>,
-        Value<'lua>,
-        MultiValue<'lua>,
-    ),
-) -> mlua::Result<Table<'lua>> {
+fn message_new(
+    lua: &Lua,
+    (message_class, src, dst, r#type, rest): (Table, Value, Value, Value, MultiValue),
+) -> mlua::Result<Table> {
     let new_message = lua.create_table()?;
     new_message.set("src", src)?;
     new_message.set("dest", dst)?;
@@ -393,15 +387,15 @@ fn message_set_metatable(lua: &Lua, message: &Table, message_class: &Table) -> m
     let tostring: Function = get_dsbox(lua, "to_json")?;
     metatable.set("__tostring", tostring)?;
     metatable.set("__index", message_class)?;
-    message.set_metatable(Some(metatable));
+    message.set_metatable(Some(metatable))?;
     Ok(())
 }
 
-fn message_create_reply<'lua>(
-    lua: &'lua Lua,
-    (message, r#type, rest): (Table<'lua>, Value<'lua>, MultiValue<'lua>),
-) -> mlua::Result<Table<'lua>> {
-    let message_class = if let Some(metatable) = message.get_metatable() {
+fn message_create_reply(
+    lua: &Lua,
+    (message, r#type, rest): (Table, Value, MultiValue),
+) -> mlua::Result<Table> {
+    let message_class = if let Some(metatable) = message.metatable() {
         metatable.get("__index")?
     } else {
         lua.create_table()?
@@ -418,29 +412,30 @@ fn message_create_reply<'lua>(
         ),
     )?;
     let new_body: Table = new_message.get("body")?;
-    new_body.set("in_reply_to", body.get::<&str, Value>("msg_id")?)?;
+    new_body.set("in_reply_to", body.get::<Value>("msg_id")?)?;
     merge_into_table(&new_body, rest)?;
     Ok(new_message)
 }
 
-async fn message_reply<'lua>(
-    lua: &'lua Lua,
-    (message, r#type, rest): (Table<'lua>, Value<'lua>, MultiValue<'lua>),
+async fn message_reply(
+    lua: Lua,
+    (message, r#type, rest): (Table, Value, MultiValue),
 ) -> mlua::Result<bool> {
-    let message = message_create_reply(lua, (message, r#type, rest))?;
+    let message = message_create_reply(&lua, (message, r#type, rest))?;
     message_send(lua, (message, MultiValue::new())).await
 }
 
-async fn message_send<'lua>(
-    lua: &'lua Lua,
-    (mut message, mut rest): (Table<'lua>, MultiValue<'lua>),
+async fn message_send(
+    lua: Lua,
+    (mut message, mut rest): (Table, MultiValue),
 ) -> mlua::Result<bool> {
-    let message_class: Table = get_dsbox(lua, "Message")?;
+    let message_class: Table = get_dsbox(&lua, "Message")?;
     if message == message_class {
-        rest.push_front(message_class.into_lua(lua)?);
-        message = message_new(lua, FromLuaMulti::from_lua_multi(rest, lua)?)?;
+        rest.push_front(message_class.into_lua(&lua)?);
+        message = message_new(&lua, FromLuaMulti::from_lua_multi(rest, &lua)?)?;
     }
-    LuaAppData::lua_send(lua, message.into_lua(lua)?).await
+    let message = message.into_lua(&lua)?;
+    LuaAppData::lua_send(lua, message).await
 }
 
 fn lua_to_json(lua: &Lua, value: Value) -> mlua::Result<String> {
@@ -458,16 +453,16 @@ fn merge_into_table(table: &Table, multi: MultiValue) -> mlua::Result<()> {
     Ok(())
 }
 
-fn lua_array<'lua>(lua: &'lua Lua, table: Table<'lua>) -> mlua::Result<Table<'lua>> {
-    table.set_metatable(Some(lua.array_metatable()));
+fn lua_array(lua: &Lua, table: Table) -> mlua::Result<Table> {
+    table.set_metatable(Some(lua.array_metatable()))?;
     Ok(table)
 }
 
-fn get_dsbox<'lua, K: IntoLua<'lua>, V: FromLua<'lua>>(lua: &'lua Lua, key: K) -> mlua::Result<V> {
+fn get_dsbox<K: IntoLua, V: FromLua>(lua: &Lua, key: K) -> mlua::Result<V> {
     lua.globals()
-        .get::<&str, Table>("package")?
-        .get::<&str, Table>("loaded")?
-        .get::<&str, Table>("dsbox")?
+        .get::<Table>("package")?
+        .get::<Table>("loaded")?
+        .get::<Table>("dsbox")?
         .get(key)
 }
 

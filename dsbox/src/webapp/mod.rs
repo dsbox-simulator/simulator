@@ -8,19 +8,19 @@
 //!
 //! [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 
+use axum::extract::ws::{Message, WebSocket};
+use axum::extract::{Path, State, WebSocketUpgrade};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind, Read};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
-use axum::extract::{Path, State, WebSocketUpgrade};
-use axum::extract::ws::{Message, WebSocket};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
-use axum::Router;
-use axum::routing::get;
-use serde_json::Value;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -31,10 +31,10 @@ use crate::core::remote_control::RemoteCommand;
 use crate::protocol::ProtocolSubscriber;
 use crate::webapp::app::App;
 
+mod app;
 mod files;
 #[allow(unused)]
 mod json_rpc;
-mod app;
 
 /// A handle to the running webapp, mainly used to shut it down before exiting the program
 pub struct Webapp {
@@ -51,9 +51,14 @@ struct WebappState {
 
 impl Webapp {
     /// Starts the webapp in a separate [`tokio::task`], binding it to the address and port given in the [`Args`].
-    pub fn run(args: &Args, remote_control: Sender<RemoteCommand>, event_subscriber: ProtocolSubscriber) -> Self {
+    pub fn run(
+        args: &Args,
+        remote_control: Sender<RemoteCommand>,
+        event_subscriber: ProtocolSubscriber,
+    ) -> Self {
         let (tx, rx) = oneshot::channel();
-        let listen_address = SocketAddr::new(IpAddr::from_str(&args.listen_address).unwrap(), args.port);
+        let listen_address =
+            SocketAddr::new(IpAddr::from_str(&args.listen_address).unwrap(), args.port);
         Self {
             handle: tokio::spawn(async move {
                 let storage = Self::load_storage().unwrap_or_else(|e| {
@@ -62,13 +67,16 @@ impl Webapp {
                 });
                 let storage = Arc::new(RwLock::new(storage));
                 // build our application with a route
-                let router = Self::build_router()
-                    .with_state(WebappState { app: App::new(remote_control, storage.clone()), event_subscriber });
+                let router = Self::build_router().with_state(WebappState {
+                    app: App::new(remote_control, storage.clone()),
+                    event_subscriber,
+                });
 
                 // run our app with hyper
                 // `axum::Server` is a re-export of `hyper::Server`
                 log::info!("listening on http://{listen_address}");
-                let listener = tokio::net::TcpListener::bind(listen_address).await
+                let listener = tokio::net::TcpListener::bind(listen_address)
+                    .await
                     .expect("failed to bind tcp listener");
                 let server = axum::serve(listener, router);
                 let server = server.with_graceful_shutdown(async move {
@@ -97,23 +105,19 @@ impl Webapp {
     fn build_router() -> Router<WebappState> {
         Router::new()
             .route("/", get(serve_static))
-            .route("/*path", get(serve_static))
+            .route("/{*path}", get(serve_static))
             .route("/socket", get(socket))
-            .layer(TraceLayer::new_for_http()
-                .on_request(())
-                .on_response(()))
+            .layer(TraceLayer::new_for_http().on_request(()).on_response(()))
     }
 
     const STORAGE_FILE: &'static str = ".dsbox_storage.json";
     fn load_storage() -> std::io::Result<HashMap<String, Value>> {
-        let file = match File::options()
-            .read(true).open(Self::STORAGE_FILE) {
+        let file = match File::options().read(true).open(Self::STORAGE_FILE) {
             Ok(file) => file,
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(HashMap::new()),
             Err(e) => return Err(e),
         };
-        serde_json::from_reader(&mut BufReader::new(file))
-            .map_err(Into::into)
+        serde_json::from_reader(&mut BufReader::new(file)).map_err(Into::into)
     }
 
     fn save_storage(storage: &HashMap<String, Value>) -> std::io::Result<()> {
@@ -121,16 +125,23 @@ impl Webapp {
             .write(true)
             .create(true)
             .open(Self::STORAGE_FILE)?;
-        serde_json::to_writer(&mut BufWriter::new(file), storage)
-            .map_err(Into::into)
+        serde_json::to_writer(&mut BufWriter::new(file), storage).map_err(Into::into)
     }
 }
 
 /// Request handler that is called for all static file requests. If `path` is `None` it serves `index.html`
 /// otherwise it looks for the specified file and serves that, or returns a 404 if it is not found.
-async fn serve_static(path: Option<Path<String>>, headers: HeaderMap) -> Result<Response, (StatusCode, String)> {
-    let path = if let Some(Path(path)) = path { path } else { String::from("index.html") };
-    let can_decompress = headers.get("Accept-Encoding")
+async fn serve_static(
+    path: Option<Path<String>>,
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
+    let path = if let Some(Path(path)) = path {
+        path
+    } else {
+        String::from("index.html")
+    };
+    let can_decompress = headers
+        .get("Accept-Encoding")
         .map(|h| h.to_str().unwrap().contains("gzip"))
         .unwrap_or(false);
     let file = match files::lookup(&path).await {
@@ -144,7 +155,9 @@ async fn serve_static(path: Option<Path<String>>, headers: HeaderMap) -> Result<
             file.data.into_response()
         } else if can_decompress {
             let mut response = file.data.into_response();
-            response.headers_mut().insert("Content-Encoding", HeaderValue::from_static("gzip"));
+            response
+                .headers_mut()
+                .insert("Content-Encoding", HeaderValue::from_static("gzip"));
             response
         } else {
             let mut reader = flate2::read::GzDecoder::<&[u8]>::new(file.data.as_ref());
@@ -152,7 +165,10 @@ async fn serve_static(path: Option<Path<String>>, headers: HeaderMap) -> Result<
             reader.read_to_end(&mut decoded).unwrap();
             decoded.into_response()
         };
-        response.headers_mut().insert("Content-Type", HeaderValue::from_str(file.mime_type.as_ref()).unwrap());
+        response.headers_mut().insert(
+            "Content-Type",
+            HeaderValue::from_str(file.mime_type.as_ref()).unwrap(),
+        );
         Ok(response)
     } else {
         Err((StatusCode::NOT_FOUND, format!("`{path}` not found")))
@@ -184,7 +200,7 @@ async fn socket_handler(State(mut state): State<WebappState>, mut socket: WebSoc
             command = socket.recv() => {
                 match command {
                     Some(Ok(Message::Close(_))) => break,
-                    Some(Ok(Message::Text(message))) => if !state.app.handle_msg(message, &mut socket).await
+                    Some(Ok(Message::Text(message))) => if !state.app.handle_msg(String::from_utf8_lossy(message.as_bytes()), &mut socket).await
                         .expect("failed to handle message") { break; },
                     Some(Ok(_)) => panic!("unknown message type"),
                     Some(Err(e)) => {

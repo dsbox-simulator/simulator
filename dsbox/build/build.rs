@@ -53,19 +53,13 @@ fn embed_files(root: PathBuf) {
             std::path::MAIN_SEPARATOR
         );
         let path_key = format!("{}", path.strip_prefix(&root).unwrap().display());
-        map.entry(
-            path_key,
-            &format!(
-                "EmbeddedFile {{\
-            data: {include_bytes},\
-            mime_type: {:?},\
-            compressed: true,\
-        }}",
-                mime_guess::from_path(&path)
-                    .first_or_text_plain()
-                    .essence_str()
-            ),
+        let entry = format!(
+            "EmbeddedFile {{ data: {include_bytes}, mime_type: {:?}, compressed: true }}",
+            mime_guess::from_path(&path)
+                .first_or_text_plain()
+                .essence_str()
         );
+        map.entry(path_key, entry);
         file_counter += 1;
     }
 

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
 use axum::Error;
-use axum::extract::ws::{Message, WebSocket};
 use serde_json::Value;
 use tokio::sync::mpsc::Sender;
 
@@ -10,8 +10,8 @@ use json_rpc_fn::json_rpc;
 
 use crate::core::event::Event;
 use crate::core::remote_control::RemoteCommand;
-use crate::webapp::json_rpc::JsonRpcDispatcher;
 use crate::webapp::json_rpc::request::Request;
+use crate::webapp::json_rpc::JsonRpcDispatcher;
 
 #[derive(Clone)]
 pub struct App {
@@ -26,7 +26,10 @@ struct Context {
 }
 
 impl App {
-    pub fn new(remote_control: Sender<RemoteCommand>, storage: Arc<RwLock<HashMap<String, Value>>>) -> Self {
+    pub fn new(
+        remote_control: Sender<RemoteCommand>,
+        storage: Arc<RwLock<HashMap<String, Value>>>,
+    ) -> Self {
         let mut dispatcher = JsonRpcDispatcher::new();
         break_::register(&mut dispatcher);
         step::register(&mut dispatcher);
@@ -45,23 +48,42 @@ impl App {
         }
     }
 
-    pub async fn handle_event(&mut self, event: Event, socket: &mut WebSocket) -> Result<(), Error> {
+    pub async fn handle_event(
+        &mut self,
+        event: Event,
+        socket: &mut WebSocket,
+    ) -> Result<(), Error> {
         let request = Request::notification("event".to_string(), event)
             .expect("failed to serialize jsonrpc request");
-        socket.send(Message::Text(serde_json::to_string(&request)
-            .expect("failed to serialize jsonrpc request"))).await
+        socket
+            .send(Message::Text(Utf8Bytes::from(
+                serde_json::to_string(&request).expect("failed to serialize jsonrpc request"),
+            )))
+            .await
     }
 
-    pub async fn handle_msg(&mut self, msg: String, socket: &mut WebSocket) -> Result<bool, Error> {
+    pub async fn handle_msg(
+        &mut self,
+        msg: impl AsRef<str>,
+        socket: &mut WebSocket,
+    ) -> Result<bool, Error> {
         let mut response = Vec::new();
-        if let Err(e) = self.dispatcher.dispatch(&mut self.context, msg.as_bytes(), &mut response).await {
+        let msg = msg.as_ref();
+        if let Err(e) = self
+            .dispatcher
+            .dispatch(&mut self.context, msg.as_bytes(), &mut response)
+            .await
+        {
             log::warn!("Error dispatching jsonrpc request: {e}");
             Ok(false)
         } else {
             if !response.is_empty() {
-                let response_string = String::from_utf8(response).expect("expected rpc response to be a string");
-                socket.send(Message::Text(response_string))
-                    .await.expect("");
+                let response_string =
+                    String::from_utf8(response).expect("expected rpc response to be a string");
+                socket
+                    .send(Message::Text(Utf8Bytes::from(response_string)))
+                    .await
+                    .expect("");
             }
             Ok(true)
         }
@@ -75,7 +97,11 @@ async fn break_(context: &mut Context) {
 
 #[json_rpc(1)]
 async fn resume(context: &mut Context) {
-    context.remote_control.send(RemoteCommand::Resume).await.ok();
+    context
+        .remote_control
+        .send(RemoteCommand::Resume)
+        .await
+        .ok();
 }
 
 #[json_rpc(1)]
@@ -85,12 +111,20 @@ async fn step(context: &mut Context) {
 
 #[json_rpc(1)]
 async fn deliver(context: &mut Context, sent_timestamp: usize) {
-    context.remote_control.send(RemoteCommand::Deliver(sent_timestamp)).await.ok();
+    context
+        .remote_control
+        .send(RemoteCommand::Deliver(sent_timestamp))
+        .await
+        .ok();
 }
 
 #[json_rpc(1)]
 async fn drop(context: &mut Context, sent_timestamp: usize) {
-    context.remote_control.send(RemoteCommand::Drop(sent_timestamp)).await.ok();
+    context
+        .remote_control
+        .send(RemoteCommand::Drop(sent_timestamp))
+        .await
+        .ok();
 }
 
 #[json_rpc(1)]
