@@ -1,0 +1,84 @@
+@import "bootstrap/dist/css/bootstrap.min.css";
+@import "bootstrap-icons/font/bootstrap-icons.min.css";
+
+#main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.toolbar {
+
+}
+
+.content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.lamport-diagram {
+    max-height: 50%;
+    overflow-y: scroll;
+}
+
+.messages-logs {
+    display: flex;
+    flex-grow: 1;
+}
+
+.tool-pane {
+    display: flex;
+    flex-direction: column;
+    flex-basis: 0;
+    flex-grow: 1;
+}
+
+.tool-pane:not(:first-child) {
+    border-left: 1px solid var(--bs-border-color);
+}
+
+.tool-pane-header {
+    width: 100%;
+    min-height: 3em;
+    border-style: solid;
+    border-color: var(--bs-border-color);
+    border-width: 1px 0 1px 0;
+    padding: 0.5em;
+    background: var(--bs-secondary-bg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tool-pane-content {
+    flex-basis: 0;
+    flex-grow: 1;
+}
+
+.lamport-label {
+    display: inline-block;
+    padding: 0.5em;
+    border-radius: 4px;
+    position: absolute;
+    font-size: 0.6em;
+    text-align: center;
+    vertical-align: middle;
+    bottom: 5px;
+    background-color: var(--label-color);
+}
+
+.lamport-label:before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    margin-left: -5px;
+    bottom: -10px;
+    border: solid 5px transparent;
+    border-top-color: var(--label-color);
+    z-index: 1;
+}
+
+.labelBlack {
+    --label-color: #000;
+}
