@@ -16,27 +16,24 @@ fn main() {
     let webapp_root = match env::var("DSBOX_WEBAPP_DIR") {
         Ok(webapp_root) => PathBuf::from(webapp_root),
         Err(VarError::NotPresent | VarError::NotUnicode(_)) => {
-            let mut webapp_root = workspace_dir;
-            webapp_root.push("webapp");
-            webapp_root.push("dist");
-            webapp_root.push("webapp-angular");
-            webapp_root.push("browser");
-            webapp_root
+            PathBuf::from("webapp/dist/webapp-angular/browser")
         }
     };
     if cfg!(feature = "embedded_webapp") {
-        embed_files(webapp_root);
+        embed_files(workspace_dir, webapp_root);
     } else {
         fetch_local_files(webapp_root);
     }
 }
 
 #[cfg(feature = "embedded_webapp")]
-fn embed_files(root: PathBuf) {
+fn embed_files(workspace_dir: PathBuf, mut root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_files.rs");
     let mut output_file = BufWriter::new(File::create(&dest_path).unwrap());
-
+    if root.is_relative() {
+        root = workspace_dir.join(root);
+    }
     let mut map = phf_codegen::Map::new();
     let mut file_counter = 0;
     for path in files::collect_files(&root).unwrap() {
@@ -72,7 +69,7 @@ fn embed_files(root: PathBuf) {
 }
 
 #[cfg(not(feature = "embedded_webapp"))]
-fn embed_files(_: PathBuf) {}
+fn embed_files(_: PathBuf, _: PathBuf) {}
 
 fn fetch_local_files(root: PathBuf) {
     let out_dir = env::var("OUT_DIR").unwrap();

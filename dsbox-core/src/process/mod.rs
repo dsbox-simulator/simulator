@@ -9,7 +9,6 @@ use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::task::JoinHandle;
 
-use crate::cli::Args;
 pub use crate::process::command::ProcessCommand;
 pub use crate::process::event::ProcessEvent;
 #[cfg(feature = "lua")]
@@ -21,11 +20,11 @@ mod native;
 #[cfg(feature = "wasm")]
 mod wasm;
 
+mod command;
+mod event;
+mod io_helper;
 #[cfg(feature = "lua")]
 mod lua;
-mod event;
-mod command;
-mod io_helper;
 
 /// Used to launch new processes. No state is necessary for native processes or lua scripts,
 /// but for Webassembly it is useful to have some persistent state between launching processes.
@@ -51,12 +50,12 @@ pub struct Process {
 
 impl Launcher {
     /// Creates a new [`Launcher`] ready to launch processes.
-    pub fn new(#[allow(unused)]args: &Args) -> Self {
+    pub fn new(#[allow(unused)] allow_lua_unsafe: bool) -> Self {
         Self {
             #[cfg(feature = "wasm")]
             wasm_launcher: None,
             #[cfg(feature = "lua")]
-            allow_lua_unsafe: args.lua_unsafe,
+            allow_lua_unsafe,
             #[cfg(feature = "lua")]
             lua_launcher: None,
         }
@@ -70,19 +69,36 @@ impl Launcher {
     /// otherwise a native process is started.
     ///
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
-    pub async fn launch(&mut self, command: &str, for_test: bool, name: String) -> Result<Process, Error> {
+    pub async fn launch(
+        &mut self,
+        command: &str,
+        for_test: bool,
+        name: String,
+    ) -> Result<Process, Error> {
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
         let Some(mut args) = shlex::split(command) else {
-            return Err(Error::new(ErrorKind::InvalidInput, format!("failed to parse command string: {command:?}")));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("failed to parse command string: {command:?}"),
+            ));
         };
         let path = args.remove(0);
         let executable = Path::new(&path);
         let ext = executable.extension();
         let (join_handle, finished) = if ext == Some(OsStr::new("wasm")) {
-            self.launch_wasm(executable, &args, command_receiver, event_sender).await?
+            self.launch_wasm(executable, &args, command_receiver, event_sender)
+                .await?
         } else if ext == Some(OsStr::new("lua")) {
-            self.launch_lua(executable, &args, for_test, command_receiver, event_sender, name).await?
+            self.launch_lua(
+                executable,
+                &args,
+                for_test,
+                command_receiver,
+                event_sender,
+                name,
+            )
+            .await?
         } else {
             native::launch(executable, &args, command_receiver, event_sender)?
         };
@@ -98,25 +114,61 @@ impl Launcher {
     }
 
     #[cfg(feature = "wasm")]
-    async fn launch_wasm(&mut self, path: &Path, args: &[String], command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
-        self.wasm_launcher.get_or_insert_with(WasmLauncher::new)
-            .launch(path, args, command_receiver, event_sender).await
+    async fn launch_wasm(
+        &mut self,
+        path: &Path,
+        args: &[String],
+        command_receiver: UnboundedReceiver<ProcessCommand>,
+        event_sender: Sender<ProcessEvent>,
+    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+        self.wasm_launcher
+            .get_or_insert_with(WasmLauncher::new)
+            .launch(path, args, command_receiver, event_sender)
+            .await
     }
     #[cfg(not(feature = "wasm"))]
-    async fn launch_wasm(&mut self, _: &Path, _: &[String], _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    async fn launch_wasm(
+        &mut self,
+        _: &Path,
+        _: &[String],
+        _: UnboundedReceiver<ProcessCommand>,
+        _: Sender<ProcessEvent>,
+    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without wasm support")
     }
 
     #[cfg(feature = "lua")]
-    async fn launch_lua(&mut self, path: &Path, args: &[String], for_test: bool, command_receiver: UnboundedReceiver<ProcessCommand>, event_sender: Sender<ProcessEvent>, name: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    async fn launch_lua(
+        &mut self,
+        path: &Path,
+        args: &[String],
+        for_test: bool,
+        command_receiver: UnboundedReceiver<ProcessCommand>,
+        event_sender: Sender<ProcessEvent>,
+        name: String,
+    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         if self.lua_launcher.is_none() {
             self.lua_launcher = Some(LuaLauncher::new().await)
         }
-        self.lua_launcher.as_mut().unwrap()
-            .launch(path, args.to_vec(), self.allow_lua_unsafe && for_test, command_receiver, event_sender, name)
+        self.lua_launcher.as_mut().unwrap().launch(
+            path,
+            args.to_vec(),
+            self.allow_lua_unsafe && for_test,
+            command_receiver,
+            event_sender,
+            name,
+        )
     }
     #[cfg(not(feature = "lua"))]
-    async fn launch_lua(&mut self, _: &Path, _: &[String], _: bool, _: UnboundedReceiver<ProcessCommand>, _: Sender<ProcessEvent>, _: String) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    async fn launch_lua(
+        &mut self,
+        _: &Path,
+        _: &[String],
+        _: bool,
+        _: UnboundedReceiver<ProcessCommand>,
+        _: Sender<ProcessEvent>,
+        _: String,
+    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without lua support")
     }
 }
@@ -126,7 +178,9 @@ impl Process {
     pub fn send(&self, value: ProcessCommand) -> bool {
         if let Some(sender) = &self.sender {
             sender.send(value).is_ok()
-        } else { false }
+        } else {
+            false
+        }
     }
 
     pub async fn recv(&mut self) -> Option<ProcessEvent> {
@@ -151,7 +205,9 @@ impl Process {
 
     /// Returns `true` if the process has stopped running and all messages have been received
     pub fn has_finished(&mut self) -> bool {
-        if !self.receiver.is_empty() { return false; }
+        if !self.receiver.is_empty() {
+            return false;
+        }
         match self.finished.try_recv() {
             Err(TryRecvError::Empty) => false,
             _ => true,
@@ -164,4 +220,3 @@ impl Process {
         shlex::try_join(parts).unwrap()
     }
 }
-

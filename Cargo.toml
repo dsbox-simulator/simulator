@@ -4,7 +4,7 @@ members = [
     "dsbox",
     "libproto",
     "payload_derive",
-    "json_rpc_fn",
+    "json_rpc_fn", "dsbox-core",
 ]
 
 resolver = "3"

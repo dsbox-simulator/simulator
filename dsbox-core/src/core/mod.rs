@@ -32,7 +32,6 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
-use crate::cli::Args;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -113,15 +112,20 @@ const TEST_NODE_NAME: &'static str = "test";
 impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and test executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
-    pub async fn new(args: &Args) -> Result<Self, CoreError> {
+    pub async fn new(
+        test_command: impl AsRef<str>,
+        server_command: String,
+        interactive: bool,
+        allow_lua_unsafe: bool,
+    ) -> Result<Self, CoreError> {
         let (remote_sender, remote_receiver) = tokio::sync::mpsc::channel(1);
 
         let mut core = Self {
             nodes: NodeList::new(),
-            launcher: Launcher::new(args),
-            server_command: args.server_command.join(" "),
-            interactive: args.interactive,
-            state: if args.interactive {
+            launcher: Launcher::new(allow_lua_unsafe),
+            server_command,
+            interactive,
+            state: if interactive {
                 CoreState::Paused
             } else {
                 CoreState::Running
@@ -135,10 +139,21 @@ impl Core {
             launch_queue: VecDeque::new(),
             reset: false,
         };
+
+        // public an initial "reset" event, so that the webapp can reset its state when "dsbox"
+        // is re-started
+        core.protocol
+            .publish_event(Event::reset(Timestamp::now()))
+            .await;
+
         assert_eq!(
-            core.launch(Some(&args.test_command), true, TEST_NODE_NAME.to_string())
-                .await?
-                .id,
+            core.launch(
+                Some(test_command.as_ref()),
+                true,
+                TEST_NODE_NAME.to_string()
+            )
+            .await?
+            .id,
             NodeId(0),
             "expected test process to have id 0"
         );
@@ -445,7 +460,9 @@ impl Core {
             LogMessage::TYPE => {
                 let message = message.payload::<LogMessage>().unwrap();
                 let Some((source_id, middleware_id)) = source else {
-                    panic!("tried to send log message without a source (i.e. the core sent it to the core?)");
+                    panic!(
+                        "tried to send log message without a source (i.e. the core sent it to the core?)"
+                    );
                 };
                 self.log(timestamp, source_id, middleware_id, message).await
             }
@@ -477,7 +494,9 @@ impl Core {
                 ) {
                     Ok(session) => session,
                     Err(err) => {
-                        log::warn!("failed to start monitor session, source or destination expression invalid: {err}");
+                        log::warn!(
+                            "failed to start monitor session, source or destination expression invalid: {err}"
+                        );
                         return Ok(());
                     }
                 };

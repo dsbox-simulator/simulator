@@ -687,23 +687,34 @@ name = "dsbox"
 version = "0.1.0"
 dependencies = [
  "axum",
- "chrono",
  "clap",
+ "dsbox-core",
  "env_logger",
  "flate2",
  "json_rpc_fn",
- "libproto",
  "log",
  "mime_guess",
- "mlua",
  "phf",
  "phf_codegen",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+]
+
+[[package]]
+name = "dsbox-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "libproto",
+ "log",
+ "mlua",
  "regex",
  "serde",
  "serde_json",
  "shlex",
  "tokio",
- "tower-http",
  "wasi-common",
  "wasmtime",
  "wasmtime-wasi",

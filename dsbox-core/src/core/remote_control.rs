@@ -1,10 +1,11 @@
 //! Commands used to control the execution of the simulation
 
-use crate::core::{Core, CoreState};
 use crate::core::error::CoreError;
+use crate::core::event::Event;
+use crate::core::{Core, CoreState};
+use crate::timestamp::Timestamp;
 
 /// A command for the [`Core`] to control its execution
-#[cfg_attr(not(feature = "webapp"), allow(unused))]
 pub enum RemoteCommand {
     /// Pauses the delivery of [`Message`](libproto::Message)s in the [`Core`].
     Break,
@@ -25,8 +26,10 @@ impl Core {
             RemoteCommand::Break => self.set_state(CoreState::Paused),
             RemoteCommand::Step => self.set_state(CoreState::Stepping),
             RemoteCommand::Resume => self.set_state(CoreState::Running),
-            RemoteCommand::Deliver(sent_timestamp) => self.deliver_by_timestamp(sent_timestamp).await?,
-            RemoteCommand::Drop(sent_timestamp) => self.drop_by_timestamp(sent_timestamp),
+            RemoteCommand::Deliver(sent_timestamp) => {
+                self.deliver_by_timestamp(sent_timestamp).await?
+            }
+            RemoteCommand::Drop(sent_timestamp) => self.drop_by_timestamp(sent_timestamp).await,
         }
         Ok(())
     }
@@ -35,8 +38,11 @@ impl Core {
         self.state = state;
     }
 
-    fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
+    async fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
         self.network.remove_one(sent_timestamp);
+        self.protocol
+            .publish_event(Event::drop_message(Timestamp::now(), sent_timestamp))
+            .await;
     }
 
     async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {

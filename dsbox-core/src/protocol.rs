@@ -9,7 +9,7 @@ use crate::core::event::Event;
 /// A protocol of all [`Event`]s that happened during execution so far.
 /// Is used to as a publish/subscribe broadcast channel, that holds a list of all previous
 /// events, so that new subscribers can receive those after the fact.
-pub struct Protocol {
+pub(crate) struct Protocol {
     /// Reference to shared state between the [`Protocol`] and its [`ProtocolSubscriber`]s.
     inner: Arc<SharedProtocolHolder>,
 }
@@ -33,7 +33,12 @@ pub struct ProtocolSubscriber {
 impl Protocol {
     /// Creates a new empty [`Protocol`]
     pub fn new() -> Self {
-        Self { inner: Arc::new(SharedProtocolHolder { events: RwLock::new(Vec::new()), new_events: Notify::new() }) }
+        Self {
+            inner: Arc::new(SharedProtocolHolder {
+                events: RwLock::new(Vec::new()),
+                new_events: Notify::new(),
+            }),
+        }
     }
 
     /// Publishes an [`Event`] for all [`ProtocolSubscriber`]s to receive. [`Event`]s are buffered
@@ -66,7 +71,6 @@ impl ProtocolSubscriber {
 
     /// Creates a new [`ProtocolSubscriber`] that will receive [`Event`]s published through the same [`Protocol`],
     /// but will also (re-)receive all past [`Event`]s.
-    #[cfg_attr(not(feature = "webapp"), allow(unused))]
     pub fn resubscribe(&self) -> Self {
         Self {
             inner: self.inner.clone(),

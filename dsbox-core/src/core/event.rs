@@ -12,9 +12,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use libproto::Message;
-use libproto::services::LogMessage;
 use crate::core::node::NodeId;
+use libproto::services::LogMessage;
+use libproto::Message;
 
 use crate::timestamp::Timestamp;
 
@@ -40,18 +40,24 @@ pub enum EventData {
     SendMessage {
         /// the [`Message`] that was sent. The sender of this message was validated at this point
         /// but the receiver is only validated when the [`Message`] is delivered
-        msg: Message
+        msg: Message,
     },
     /// Emitted when a [`Message`] is delivered
     DeliverMessage {
         /// the logical timestamp when the [`Message`] was sent. Since these are unique,
         /// this sufficient to identify the specific [`Message`] that was delivered
-        sent_timestamp: usize
+        sent_timestamp: usize,
+    },
+    /// Emitted when a [`Message`] is dropped (i.e. by the webapp)
+    DropMessage {
+        /// the logical timestamp when the [`Message`] was sent. Since these are unique,
+        /// this sufficient to identify the specific [`Message`] that was dropped
+        sent_timestamp: usize,
     },
     /// Emitted after a process exited
     NodeDisconnected {
         /// the id of the process that exited. See [`NodeId`]
-        id: NodeId
+        id: NodeId,
     },
     /// Emitted after a process is started
     NodeLaunched {
@@ -74,17 +80,13 @@ pub enum EventData {
 impl Event {
     /// creates a new [`Event`] with the given timestamp and data
     fn new(timestamp: Timestamp, data: EventData) -> Self {
-        Self {
-            timestamp,
-            data,
-        }
+        Self { timestamp, data }
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Reset`]
     pub fn reset(timestamp: Timestamp) -> Self {
         Self::new(timestamp, EventData::Reset)
     }
-
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::SendMessage`]
     pub fn send_message(timestamp: Timestamp, msg: Message) -> Self {
@@ -96,9 +98,26 @@ impl Event {
         Self::new(timestamp, EventData::DeliverMessage { sent_timestamp })
     }
 
+    /// creates a new [`Event`] with the given timestamp and [`EventData::DropMessage`]
+    pub fn drop_message(timestamp: Timestamp, sent_timestamp: usize) -> Self {
+        Self::new(timestamp, EventData::DropMessage { sent_timestamp })
+    }
+
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_launched(timestamp: Timestamp, id: NodeId, name: String, commandline: String) -> Self {
-        Self::new(timestamp, EventData::NodeLaunched { id, name, commandline })
+    pub fn node_launched(
+        timestamp: Timestamp,
+        id: NodeId,
+        name: String,
+        commandline: String,
+    ) -> Self {
+        Self::new(
+            timestamp,
+            EventData::NodeLaunched {
+                id,
+                name,
+                commandline,
+            },
+        )
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
