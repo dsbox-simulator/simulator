@@ -1,3 +1,5 @@
+use crate::core::node::{MiddlewareId, Node, NodeId};
+use crate::process::ProcessEvent;
 use std::collections::HashMap;
 use std::future::Future;
 use std::iter::FusedIterator;
@@ -7,12 +9,14 @@ use std::slice::{Iter, IterMut, SliceIndex};
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
 
-use crate::core::node::{MiddlewareId, Node, NodeId};
-use crate::process::ProcessEvent;
-
 pub struct NodeList {
-    nodes: Vec<Node>,
+    nodes: Vec<NodeRef>,
     names: HashMap<String, usize>,
+}
+
+pub enum NodeRef {
+    Node(Node),
+    Alias { name: String, id: usize },
 }
 
 impl NodeList {
@@ -30,28 +34,52 @@ impl NodeList {
     pub fn add(&mut self, mut node: Node) -> &mut Node {
         node.id = NodeId(self.len());
         self.names.insert(node.name.clone(), self.len());
-        self.nodes.push(node);
-        self.nodes.last_mut().unwrap()
+        self.nodes.push(NodeRef::Node(node));
+        self.nodes.last_mut().unwrap().as_node_mut().unwrap()
     }
 
-    pub fn lookup(&self, name: &str) -> Option<&Node> {
+    pub fn add_alias(&mut self, for_id: NodeId, name: String) -> (NodeId, &mut Node) {
+        let alias_id = NodeId(self.len());
+        self.names.insert(name.clone(), self.len());
+        self.nodes.push(NodeRef::Alias {name, id: for_id.0});
+        (alias_id, self.resolve_alias_mut(for_id))
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<&NodeRef> {
         Some(&self.nodes[*self.names.get(name)?])
     }
 
-    pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Node> {
+    pub fn lookup_mut(&mut self, name: &str) -> Option<&mut NodeRef> {
         Some(&mut self.nodes[*self.names.get(name)?])
     }
 
-    pub fn is_alias_of(&self, node: &Node, name: &str) -> bool {
-        let Some(id) = self.names.get(name) else { return false; };
-        self.nodes[*id].is_same_process(node)
+    pub fn lookup_and_resolve(&self, name: &str) -> Option<&Node> {
+        Some(self.resolve_alias(NodeId(*self.names.get(name)?)))
     }
 
-    pub fn iter(&self) -> Iter<'_, Node> {
+    pub fn lookup_and_resolve_mut(&mut self, name: &str) -> Option<&mut Node> {
+        Some(self.resolve_alias_mut(NodeId(*self.names.get(name)?)))
+    }
+
+    /// returns `true` if `node` and the node with the given `name` reference the same actual node
+    /// resolving any aliases for `node` and `name`
+    pub fn alias_same_node(&self, node: &NodeRef, name: &str) -> bool {
+        let left = match node {
+            NodeRef::Node(node) => node,
+            NodeRef::Alias { id, .. } => self.resolve_alias(NodeId(*id)),
+        };
+        let Some(id) = self.names.get(name) else {
+            return false;
+        };
+        let right = self.resolve_alias(NodeId(*id));
+        std::ptr::eq(left, right)
+    }
+
+    pub fn iter(&self) -> Iter<'_, NodeRef> {
         self.nodes.iter()
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<'_, Node> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, NodeRef> {
         self.nodes.iter_mut()
     }
 
@@ -62,15 +90,78 @@ impl NodeList {
         }
     }
 
-    pub fn recv_any<'a>(&'a self) -> impl Future<Output=Option<(ProcessEvent, NodeId, MiddlewareId)>> + Unpin + 'a {
+    pub fn recv_any<'a>(
+        &'a mut self,
+    ) -> impl Future<Output = Option<(ProcessEvent, NodeId, MiddlewareId)>> + Unpin + 'a {
         RecvAny {
-            nodes: &self.nodes,
+            nodes: &mut self.nodes,
+        }
+    }
+
+    pub fn resolve_alias(&self, id: NodeId) -> &Node {
+        let mut index = id.0;
+        loop {
+            match &self.nodes[index] {
+                NodeRef::Node(node) => return node,
+                NodeRef::Alias { id, .. } => index = *id,
+            }
+        }
+    }
+
+    pub fn resolve_alias_mut(&mut self, id: NodeId) -> &mut Node {
+        // TODO: this deserves a cleaner implementation
+        let mut index = id.0;
+        loop {
+            let node = &self.nodes[index];
+            match node {
+                NodeRef::Node(_) => break,
+                NodeRef::Alias { id, .. } => index = *id,
+            }
+        }
+        self.nodes[index].as_node_mut().unwrap()
+    }
+}
+
+impl NodeRef {
+    pub fn is_node(&self) -> bool {
+        matches!(self, Self::Node(_))
+    }
+
+    pub fn is_alias(&self) -> bool {
+        matches!(self, Self::Alias { .. })
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            NodeRef::Node(node) => &node.name,
+            NodeRef::Alias { name, .. } => name,
+        }
+    }
+
+    pub fn into_node(self) -> Option<Node> {
+        match self {
+            NodeRef::Node(node) => Some(node),
+            NodeRef::Alias { .. } => None,
+        }
+    }
+    pub fn as_node(&self) -> Option<&Node> {
+        match self {
+            NodeRef::Node(node) => Some(node),
+            NodeRef::Alias { .. } => None,
+        }
+    }
+    pub fn as_node_mut(&mut self) -> Option<&mut Node> {
+        match self {
+            NodeRef::Node(node) => Some(node),
+            NodeRef::Alias { .. } => None,
         }
     }
 }
 
 impl<I> Index<I> for NodeList
-    where I: SliceIndex<[Node]> {
+where
+    I: SliceIndex<[NodeRef]>,
+{
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -79,14 +170,16 @@ impl<I> Index<I> for NodeList
 }
 
 impl<I> IndexMut<I> for NodeList
-    where I: SliceIndex<[Node]> {
+where
+    I: SliceIndex<[NodeRef]>,
+{
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         self.nodes.index_mut(index)
     }
 }
 
 impl Index<NodeId> for NodeList {
-    type Output = Node;
+    type Output = NodeRef;
 
     fn index(&self, index: NodeId) -> &Self::Output {
         &self.nodes[index.0]
@@ -100,8 +193,8 @@ impl IndexMut<NodeId> for NodeList {
 }
 
 impl IntoIterator for NodeList {
-    type Item = Node;
-    type IntoIter = IntoIter<Node>;
+    type Item = NodeRef;
+    type IntoIter = IntoIter<NodeRef>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.nodes.into_iter()
@@ -109,8 +202,8 @@ impl IntoIterator for NodeList {
 }
 
 impl<'a> IntoIterator for &'a NodeList {
-    type Item = &'a Node;
-    type IntoIter = Iter<'a, Node>;
+    type Item = &'a NodeRef;
+    type IntoIter = Iter<'a, NodeRef>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.nodes.iter()
@@ -118,8 +211,8 @@ impl<'a> IntoIterator for &'a NodeList {
 }
 
 impl<'a> IntoIterator for &'a mut NodeList {
-    type Item = &'a mut Node;
-    type IntoIter = IterMut<'a, Node>;
+    type Item = &'a mut NodeRef;
+    type IntoIter = IterMut<'a, NodeRef>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.nodes.iter_mut()
@@ -128,16 +221,23 @@ impl<'a> IntoIterator for &'a mut NodeList {
 
 pub struct Drain<'a> {
     names: &'a mut HashMap<String, usize>,
-    inner: std::vec::Drain<'a, Node>,
+    inner: std::vec::Drain<'a, NodeRef>,
 }
 
 impl<'a> Iterator for Drain<'a> {
-    type Item = Node;
+    type Item = NodeRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.inner.next()?;
-        self.names.remove(&next.name);
-        Some(next)
+        match self.inner.next()? {
+            NodeRef::Node(node) => {
+                self.names.remove(&node.name);
+                Some(NodeRef::Node(node))
+            }
+            NodeRef::Alias { name, id } => {
+                self.names.remove(&name);
+                Some(NodeRef::Alias { name, id })
+            }
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -147,9 +247,16 @@ impl<'a> Iterator for Drain<'a> {
 
 impl<'a> DoubleEndedIterator for Drain<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        let next = self.inner.next_back()?;
-        self.names.remove(&next.name);
-        Some(next)
+        match self.inner.next_back()? {
+            NodeRef::Node(node) => {
+                self.names.remove(&node.name);
+                Some(NodeRef::Node(node))
+            }
+            NodeRef::Alias { name, id } => {
+                self.names.remove(&name);
+                Some(NodeRef::Alias { name, id })
+            }
+        }
     }
 }
 
@@ -158,22 +265,28 @@ impl<'a> ExactSizeIterator for Drain<'a> {}
 impl<'a> FusedIterator for Drain<'a> {}
 
 pub struct RecvAny<'a> {
-    nodes: &'a [Node],
+    nodes: &'a mut [NodeRef],
 }
 
 impl<'a> Future for RecvAny<'a> {
     type Output = Option<(ProcessEvent, NodeId, MiddlewareId)>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut num_closed = 0;
-        for node in self.nodes.iter() {
+        let num_open = self.nodes.iter().filter(|n| n.is_node()).count();
+        for node in self.nodes.iter_mut() {
+            let NodeRef::Node(node) = node else {
+                continue;
+            };
             match node.poll_recv_any(cx) {
-                Poll::Ready(Some((event, middleware_idx))) => return Poll::Ready(Some((event, node.id, middleware_idx))),
+                Poll::Ready(Some((event, middleware_idx))) => {
+                    return Poll::Ready(Some((event, node.id, middleware_idx)));
+                }
                 Poll::Ready(None) => num_closed += 1,
                 _ => {}
             }
         }
-        if num_closed < self.nodes.len() {
+        if num_closed < num_open {
             Poll::Pending
         } else {
             Poll::Ready(None)

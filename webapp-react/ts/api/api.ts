@@ -66,16 +66,20 @@ export default class Api {
         this.emitter.on("event:log", e => listener(e.detail as Event<Log>));
     }
 
+    public restart() {
+        this.rpc.notify("restart", {});
+    }
+
+    public break() {
+        this.rpc.notify("break", {});
+    }
+
     public step() {
         this.rpc.notify("step", {});
     }
 
     public resume() {
         this.rpc.notify("resume", {});
-    }
-
-    public break() {
-        this.rpc.notify("break", {});
     }
 
     public deliver(sentTimestamp: number) {

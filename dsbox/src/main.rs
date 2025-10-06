@@ -9,7 +9,6 @@ use dsbox_core::protocol::ProtocolSubscriber;
 use log::LevelFilter;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
-use dsbox_core::core::remote_control::RemoteCommand;
 
 mod cli;
 #[cfg(feature = "webapp")]
@@ -42,42 +41,32 @@ async fn main() {
 
 /// Starts a new [`Core`], initialized with the given [`Args`].
 /// If necessary, also starts the [`Webapp`](webapp::Webapp).
-/// TODO: configure capturing and writing of a protocol to a file via the cli
 async fn run(args: Args) -> Result<(), CoreError> {
-    let core = Core::new(
-        &args.test_command,
-        args.server_command.join(" "),
-        args.interactive,
-        args.lua_unsafe,
-    )
-    .await?;
-
-    let webapp = if args.interactive {
-        Some(run_webapp(
-            &args,
-            core.remote_control(),
-            core.subscribe_events(),
-        ))
+    if args.interactive {
+        run_webapp(&args).await;
+        Ok(())
     } else {
-        None
-    };
+        let core = Core::new(
+            &args.test_command,
+            args.server_command.join(" "),
+            args.interactive,
+            args.lua_unsafe,
+        )
+        .await?;
 
-    let recorder = if let Some(filename) = args.save_protocol {
-        Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)
-    } else {
-        None
-    };
+        let recorder = if let Some(filename) = args.save_protocol {
+            Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)
+        } else {
+            None
+        };
 
-    let result = core.run().await;
+        let result = core.run().await;
 
-    if let Some(webapp) = webapp {
-        shutdown_webapp(webapp).await;
+        if let Some(shutdown) = recorder {
+            shutdown.send(()).await.ok();
+        }
+        result
     }
-
-    if let Some(shutdown) = recorder {
-        shutdown.send(()).await.ok();
-    }
-    result
 }
 
 async fn spawn_protocol_recorder(
@@ -112,25 +101,11 @@ async fn spawn_protocol_recorder(
 }
 
 #[cfg(feature = "webapp")]
-fn run_webapp(
-    args: &Args,
-    remote_control: Sender<RemoteCommand>,
-    event_subscriber: ProtocolSubscriber,
-) -> webapp::Webapp {
-    webapp::Webapp::run(args, remote_control, event_subscriber)
+async fn run_webapp(args: &Args) {
+    webapp::run(args).await
 }
 
 #[cfg(not(feature = "webapp"))]
-fn run_webapp(_: &Args, _: Sender<RemoteCommand>, _: ProtocolSubscriber) -> () {
-    panic!("this version of dsbox was built without webapp support")
-}
-
-#[cfg(feature = "webapp")]
-async fn shutdown_webapp(webapp: webapp::Webapp) {
-    webapp.shutdown().await;
-}
-
-#[cfg(not(feature = "webapp"))]
-async fn shutdown_webapp(_: ()) {
+async fn run_webapp(_: &Args) {
     panic!("this version of dsbox was built without webapp support")
 }

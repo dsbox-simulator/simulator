@@ -4,14 +4,34 @@
 //! (implemented as a [`usize`] counter) and a physical timestamp (implemented using [`chrono`])
 
 use std::fmt::{Display, Formatter};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
+/// A source of timestamps, with a strictly increasing logical clock
+pub struct TimestampSource {
+    logical_now: usize,
+}
+
+impl TimestampSource {
+    pub fn new() -> Self {
+        Self { logical_now: 0 }
+    }
+
+    /// Creates a new [`Timestamp`] with a new and unique logical timestamp for this [`TimestampSource`] with the physical local system time.
+    pub fn now(&mut self) -> Timestamp {
+        let ts = Timestamp {
+            logical: self.logical_now,
+            physical: Local::now(),
+        };
+        self.logical_now += 1;
+        ts
+    }
+}
+
 /// A logical and physical timestamp.
 ///
-/// Logical timestamps is always strictly increasing for each [`Timestamp`] created (with [`Timestamp::now`]),
+/// Logical timestamps is always strictly increasing for each [`Timestamp`] created (with [`TimestampSource::now`]),
 /// whereas physical timestamps adhere to whatever [`chrono`] specifies.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Timestamp {
@@ -19,19 +39,6 @@ pub struct Timestamp {
     pub logical: usize,
     /// the physical timestamp, time-zone aware and created with [`Local::now`].
     pub physical: DateTime<Local>,
-}
-
-/// the counter used to generate logical timestamps
-static LOGICAL_CLOCK: AtomicUsize = AtomicUsize::new(0);
-
-impl Timestamp {
-    /// Creates a new [`Timestamp`] with a new and unique logical timestamp with the physical local system time.
-    pub fn now() -> Self {
-        Self {
-            logical: LOGICAL_CLOCK.fetch_add(1, Ordering::SeqCst),
-            physical: Local::now(),
-        }
-    }
 }
 
 impl PartialEq<Self> for Timestamp {

@@ -22,7 +22,8 @@ export default function App({wsPath}: { wsPath: string }) {
 
     return <div id="main">
         <div className="toolbar">
-            <Toolbar onStep={() => store.step()}
+            <Toolbar onRestart={() => store.restart()}
+                     onStep={() => store.step()}
                      onResume={() => store.resume()}
                      onBreak={() => store.break()}
                      connected={connected}/>
@@ -51,7 +52,9 @@ export default function App({wsPath}: { wsPath: string }) {
                     </div>
                 </div>
                 <div className="tool-pane">
-                    <div className="tool-pane-header"><i className="bi bi-terminal"></i> Logs</div>
+                    <div className="tool-pane-header">
+                        <div><i className="bi bi-terminal"></i> Logs</div>
+                    </div>
                     <div className="tool-pane-content overflow-y-scroll">
                         <LogView nodes={nodes} logs={logs} testNodeName={testNodeName}/>
                     </div>

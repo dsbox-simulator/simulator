@@ -2,8 +2,7 @@
 
 use crate::core::error::CoreError;
 use crate::core::event::Event;
-use crate::core::{Core, CoreState};
-use crate::timestamp::Timestamp;
+use crate::core::{Core, CoreReset, CoreState};
 
 /// A command for the [`Core`] to control its execution
 pub enum RemoteCommand {
@@ -17,6 +16,8 @@ pub enum RemoteCommand {
     Deliver(usize),
     /// drops a message form the network with the given sent timestamp
     Drop(usize),
+    /// instructs the core to shut down
+    Shutdown,
 }
 
 impl Core {
@@ -30,6 +31,10 @@ impl Core {
                 self.deliver_by_timestamp(sent_timestamp).await?
             }
             RemoteCommand::Drop(sent_timestamp) => self.drop_by_timestamp(sent_timestamp).await,
+            RemoteCommand::Shutdown => {
+                self.begin_shutdown(0..)?;
+                self.reset_flag = Some(CoreReset::Shutdown);
+            }
         }
         Ok(())
     }
@@ -41,7 +46,7 @@ impl Core {
     async fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
         self.network.remove_one(sent_timestamp);
         self.protocol
-            .publish_event(Event::drop_message(Timestamp::now(), sent_timestamp))
+            .publish_event(Event::drop_message(self.timestamp_source.now(), sent_timestamp))
             .await;
     }
 

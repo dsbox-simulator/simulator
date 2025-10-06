@@ -35,7 +35,7 @@ impl Network {
     /// inserts a new [`Message`] into the network, with the given timestamp,
     /// # Panics
     /// Panics if a [`Message`] with the same timestamp is already in the network.
-    /// If timestamps are created using [`Timestamp::now`] for each [`Message`], then this should never happen
+    /// If timestamps are created using [`TimestampSource::now`] for each [`Message`], then this should never happen
     pub fn insert(&mut self, timestamp: Timestamp, message: Message) {
         match self.message_by_timestamp(timestamp.logical) {
             Ok(_) => panic!("tried to insert message into network with same timestamp twice"),

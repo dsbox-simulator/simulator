@@ -2,7 +2,7 @@
 
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 pub struct Args {
     /// path to the executable or wasm-file of the server implementation, including arguments
     /// e.g. `python my_solution.py`
@@ -28,7 +28,8 @@ pub struct Args {
     #[clap(short, long, default_value_t = 8080)]
     pub port: u16,
 
-    /// after the program finished, write all events (as JSON-lines) to the specified file
+    /// after the program finished, write all events (as JSON-lines) to the specified file.
+    /// Does not work in interactive mode
     #[clap(long)]
     pub save_protocol: Option<String>,
 

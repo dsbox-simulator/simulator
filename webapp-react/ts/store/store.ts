@@ -131,6 +131,10 @@ export default class Store {
         return this.useStore("messages_changed", () => this.messages);
     }
 
+    public restart() {
+        this.api.restart();
+    }
+
     public step() {
         this.api.step();
     }

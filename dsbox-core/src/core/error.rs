@@ -9,6 +9,7 @@ use libproto::Message;
 use crate::core::node::MiddlewareId;
 
 /// An error that occurred during execution
+#[derive(Debug)]
 pub enum CoreError {
     /// A [`Message`] could not be dispatched (either sent into the network, or delivered). The reason is given by [`DispatchErrorKind`].
     DispatchError {
@@ -39,6 +40,7 @@ pub enum CoreError {
 }
 
 /// Gives a reason why a [`Message`] could not be dispatched
+#[derive(Debug)]
 pub enum DispatchErrorKind {
     /// The source name of a [`Message`] does not match the processes associated node name (or names, in case of the test process).
     SourceNameMismatch,

@@ -9,7 +9,6 @@ build = "build/build.rs"
 clap = { version = "4.5.4", features = ["derive"] }
 
 dsbox-core = { path = "../dsbox-core" }
-json_rpc_fn = { path = "../json_rpc_fn" }
 
 serde = "1"
 serde_json = "1"

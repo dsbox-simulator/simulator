@@ -691,7 +691,6 @@ dependencies = [
  "dsbox-core",
  "env_logger",
  "flate2",
- "json_rpc_fn",
  "log",
  "mime_guess",
  "phf",
@@ -1373,15 +1372,6 @@ checksum = "ec48937a97411dcb524a265206ccd4c90bb711fca92b2792c407f268825b9305"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "json_rpc_fn"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
