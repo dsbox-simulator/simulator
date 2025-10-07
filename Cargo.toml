@@ -13,7 +13,6 @@ resolver = "3"
 default-members = ["dsbox"]
 
 [profile.release]
-strip = true
 opt-level = 3
 lto = true
 codegen-units = 1
