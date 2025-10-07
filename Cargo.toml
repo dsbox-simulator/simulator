@@ -2,6 +2,7 @@
 
 members = [
     "dsbox-core",
+    "dsbox-tauri",
     "dsbox",
     "libproto",
     "payload_derive",

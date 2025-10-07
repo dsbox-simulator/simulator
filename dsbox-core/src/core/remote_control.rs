@@ -16,6 +16,12 @@ pub enum RemoteCommand {
     Deliver(usize),
     /// drops a message form the network with the given sent timestamp
     Drop(usize),
+    /// restart the core entirely from the beginning, potentially giving new
+    /// test and launch commands.
+    Restart {
+        test_command: Option<String>,
+        server_command: Option<String>,
+    },
     /// instructs the core to shut down
     Shutdown,
 }
@@ -31,6 +37,18 @@ impl Core {
                 self.deliver_by_timestamp(sent_timestamp).await?
             }
             RemoteCommand::Drop(sent_timestamp) => self.drop_by_timestamp(sent_timestamp).await,
+            RemoteCommand::Restart {
+                test_command,
+                server_command,
+            } => {
+                if let Some(test_command) = test_command {
+                    self.test_command = Some(test_command);
+                }
+                if let Some(server_command) = server_command {
+                    self.server_command = server_command;
+                }
+                self.restart(true).await?;
+            }
             RemoteCommand::Shutdown => {
                 self.begin_shutdown(0..)?;
                 self.reset_flag = Some(CoreReset::Shutdown);
@@ -45,9 +63,12 @@ impl Core {
 
     async fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
         self.network.remove_one(sent_timestamp);
-        self.protocol
-            .publish_event(Event::drop_message(self.timestamp_source.now(), sent_timestamp))
-            .await;
+        self.event_sender
+            .send(Event::drop_message(
+                self.timestamp_source.now(),
+                sent_timestamp,
+            ))
+            .await.ok();
     }
 
     async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {

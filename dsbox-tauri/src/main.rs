@@ -1,7 +1,7 @@
-#![warn(missing_docs)]
-#![doc = include_str!("../../Readme.md")]
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use crate::cli::Args;
+use app_lib::cli;
 use async_channel::Receiver;
 use clap::Parser;
 use dsbox_core::core::error::CoreError;
@@ -10,52 +10,42 @@ use dsbox_core::core::Core;
 use log::LevelFilter;
 use tokio::task::JoinHandle;
 
-mod cli;
-#[cfg(feature = "webapp")]
-mod webapp;
+fn main() {
+    let args = cli::Cli::parse();
+    if let Some(cli::Mode::Cli(cli_args)) = args.mode {
+        run_cli(cli_args, args.lua_unsafe);
+    } else {
+        app_lib::run(args);
+    }
+}
 
-/// Main entry point for the application. Configures logging and runs the program.
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
     let mut logger = env_logger::builder();
     logger.filter_level(LevelFilter::Warn);
 
     if cfg!(debug_assertions) {
-        logger
-            .filter_module("dsbox", LevelFilter::Trace)
-            .filter_module("tower_http", LevelFilter::Debug)
-            .filter_module("axum", LevelFilter::Debug);
+        logger.filter_module("dsbox", LevelFilter::Trace);
     } else {
         logger.filter_module("dsbox", LevelFilter::Info);
     }
     logger.parse_default_env();
     logger.init();
 
-    let args = Args::parse();
-    if let Err(e) = run(args).await {
-        log::error!("{e}")
-    }
-
-    log::logger().flush();
-}
-
-/// Starts a new [`Core`], initialized with the given [`Args`].
-/// If necessary, also starts the [`Webapp`](webapp::Webapp).
-async fn run(args: Args) -> Result<(), CoreError> {
-    if args.interactive {
-        run_webapp(&args).await;
-        Ok(())
-    } else {
-        run_cli(args).await
+    if let Err(e) = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(run_dsbox(args, allow_lua_unsafe))
+    {
+        log::error!("{e}");
     }
 }
 
-async fn run_cli(args: Args) -> Result<(), CoreError> {
+async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) -> Result<(), CoreError> {
     let core = Core::new(
         Some(args.test_command),
         args.server_command.join(" "),
         false,
-        args.lua_unsafe,
+        allow_lua_unsafe,
     );
 
     let recorder = if let Some(filename) = args.save_protocol {
@@ -102,14 +92,4 @@ async fn spawn_protocol_recorder(
                 .expect("failed to write to protocol file");
         }
     })
-}
-
-#[cfg(feature = "webapp")]
-async fn run_webapp(args: &Args) {
-    webapp::run(args).await
-}
-
-#[cfg(not(feature = "webapp"))]
-async fn run_webapp(_: &Args) {
-    panic!("this version of dsbox was built without webapp support")
 }

@@ -16,7 +16,7 @@ fn main() {
     let webapp_root = match env::var("DSBOX_WEBAPP_DIR") {
         Ok(webapp_root) => PathBuf::from(webapp_root),
         Err(VarError::NotPresent | VarError::NotUnicode(_)) => {
-            PathBuf::from("webapp/dist/webapp-angular/browser")
+            PathBuf::from("webapp/dist")
         }
     };
     if cfg!(feature = "embedded_webapp") {

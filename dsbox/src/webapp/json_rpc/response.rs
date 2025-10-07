@@ -67,13 +67,3 @@ pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;
 pub const INVALID_PARAMS: i64 = -32602;
 pub const INTERNAL_ERROR: i64 = -32603;
-
-impl Error {
-    pub fn custom<T: Serialize>(message: String, data: Option<T>) -> Self {
-        Self {
-            code: (-32000).into(),
-            message,
-            data: data.map(|d| serde_json::to_value(d).unwrap()),
-        }
-    }
-}

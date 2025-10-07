@@ -11,46 +11,50 @@ use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
-use dsbox_core::protocol::ProtocolSubscriber;
+
+use async_channel::{Receiver, Sender};
+use serde::Serialize;
 use serde_json::Value;
 use std::future::poll_fn;
-use tokio::sync::mpsc::Sender;
-use tokio::task::{JoinError, JoinHandle};
+use std::time::Duration;
+use tokio::task::JoinHandle;
 
 pub struct App {
-    args: Args,
     remote: Sender<RemoteCommand>,
-    subscriber: ProtocolSubscriber,
+    subscriber: Receiver<Event>,
     core_handle: Option<JoinHandle<Result<(), CoreError>>>,
+    commands: Commands,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Commands {
+    test_command: Option<String>,
+    server_command: String,
 }
 
 impl App {
-    pub async fn new(
-        args: Args,
-        test_command: Option<String>,
-        server_command: Option<String>,
-    ) -> Result<Self, CoreError> {
+    pub async fn new(args: Args) -> Result<Self, CoreError> {
+        let test_command = args.test_command;
+        let server_command = args.server_command.join(" ");
         let core = Core::new(
-            test_command.as_ref().unwrap_or(&args.test_command),
-            server_command.unwrap_or_else(|| args.server_command.join(" ")),
+            Some(test_command.clone()),
+            server_command.clone(),
             true,
             args.lua_unsafe,
-        )
-        .await?;
+        );
         let subscriber = core.subscribe_events();
         let remote = core.remote_control();
         let core_handle = tokio::task::spawn(async move { core.run().await });
         Ok(Self {
-            args,
             remote,
             subscriber,
             core_handle: Some(core_handle),
+            commands: Commands {
+                test_command: Some(test_command),
+                server_command,
+            },
         })
-    }
-
-    async fn force_restart(&mut self) -> Result<(), CoreError> {
-        *self = Self::new(self.args.clone(), None, None).await?;
-        Ok(())
     }
 
     async fn handle_event(
@@ -66,6 +70,7 @@ impl App {
             )))
             .await
     }
+
     async fn handle_socket_message(
         &mut self,
         message: Option<Result<Message, axum::Error>>,
@@ -114,10 +119,13 @@ impl App {
             };
         }
         match method {
-            "restart" => dispatch!(restart()),
+            "restart" => {
+                dispatch!(restart(test_command: Option<String>, server_command: Option<String>))
+            }
             "break" => dispatch!(break_()),
             "resume" => dispatch!(resume()),
             "step" => dispatch!(step()),
+            "current_commands" => dispatch!(current_commands()),
             "deliver" => dispatch!(deliver(sent_timestamp: usize)),
             "drop" => dispatch!(drop(sent_timestamp: usize)),
             "store" => dispatch!(store(key: String, value: Value)),
@@ -127,45 +135,53 @@ impl App {
         }
     }
 
-    async fn handle_core_shutdown(
-        &mut self,
-        result: Result<Result<(), CoreError>, JoinError>,
-    ) -> Result<(), CoreError> {
-        match result {
-            Ok(Ok(())) => {}
-            Err(join_error) => log::warn!("core shut down with an error: {join_error}"),
-            Ok(Err(core_error)) => log::warn!("core shut down with an error: {core_error}"),
-        }
-        self.force_restart().await
-    }
-
     pub async fn run(mut self, mut socket: WebSocket) {
         loop {
             tokio::select! {
                 event = self.subscriber.recv() => {
+                    let Ok(event) = event else { break; };
                     if let Err(e) = self.handle_event(event, &mut socket).await {
                         log::warn!("websocket error when sending event message: {e}");
                         break;
                     }
                 }
                 result = poll_fn(poll_optional_join_handle(&mut self.core_handle)) => {
-                    if let Err(e) = self.handle_core_shutdown(result).await {
-                        log::warn!("error handling core shutdown: {e}");
-                        break;
+                    match result {
+                        Ok(Ok(())) => {}
+                        Err(join_error) => log::warn!("core shut down with an error: {join_error}"),
+                        Ok(Err(core_error)) => log::warn!("core shut down with an error: {core_error}"),
                     }
+                    break;
                 }
                 message = socket.recv() => if !self.handle_socket_message(message, &mut socket).await {
                     break;
                 },
             }
         }
+        self.remote.send(RemoteCommand::Shutdown).await.ok();
+        tokio::time::timeout(Duration::from_secs(1), self.core_handle.unwrap())
+            .await
+            .ok();
     }
 
-    async fn restart(&mut self) -> Result<(), response::Error> {
-        // TODO: allow webapp to override test_command and server_command
-        self.force_restart()
+    async fn restart(
+        &mut self,
+        test_command: Option<String>,
+        server_command: Option<String>,
+    ) -> Result<(), response::Error> {
+        if let Some(test_command) = &test_command {
+            self.commands.test_command = Some(test_command.clone());
+        }
+        if let Some(server_command) = &server_command {
+            self.commands.server_command = server_command.clone();
+        }
+        self.remote
+            .send(RemoteCommand::Restart {
+                test_command,
+                server_command,
+            })
             .await
-            .map_err(|e| response::Error::custom(e.to_string(), None::<()>))?;
+            .ok();
         Ok(())
     }
 
@@ -182,6 +198,10 @@ impl App {
     async fn step(&mut self) -> Result<(), response::Error> {
         self.remote.send(RemoteCommand::Step).await.ok();
         Ok(())
+    }
+
+    async fn current_commands(&mut self) -> Result<Commands, response::Error> {
+        Ok(self.commands.clone())
     }
 
     async fn deliver(&mut self, sent_timestamp: usize) -> Result<(), response::Error> {

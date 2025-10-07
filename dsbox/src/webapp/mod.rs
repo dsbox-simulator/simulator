@@ -145,7 +145,7 @@ async fn socket(state: State<Args>, ws: WebSocketUpgrade) -> Response {
 ///
 /// [ws]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
 async fn socket_handler(State(args): State<Args>, socket: WebSocket) {
-    let app = App::new(args.clone(), None, None)
+    let app = App::new(args.clone())
         .await
         .expect("failed to start core");
     app.run(socket).await;

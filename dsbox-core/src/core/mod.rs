@@ -17,9 +17,10 @@
 //! It also clears all existing server and test node names, as well as all running [`MonitorSession`]s.
 
 use std::collections::VecDeque;
+use std::ops::RangeBounds;
 use std::slice::SliceIndex;
 
-use tokio::sync::mpsc::{Receiver, Sender};
+use async_channel::{Receiver, Sender};
 use tokio::time::{Duration, Instant};
 
 use libproto::init::Init;
@@ -43,7 +44,6 @@ use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
-use crate::protocol::{Protocol, ProtocolSubscriber};
 use crate::timestamp::{Timestamp, TimestampSource};
 
 pub mod error;
@@ -67,6 +67,8 @@ pub struct Core {
     nodes: NodeList,
     /// launches new processes
     launcher: Launcher,
+    /// Command string from which the test process was launched
+    test_command: Option<String>,
     /// Command string from which server processes are launched.
     server_command: String,
     /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
@@ -77,8 +79,10 @@ pub struct Core {
     remote_receiver: Receiver<RemoteCommand>,
     /// is cloned and given to whoever wants to remote control this [`Core`].
     remote_sender: Sender<RemoteCommand>,
-    /// used for recording all [`Event`]s and publishing them to potential subscribers (like the web app)
-    protocol: Protocol,
+    /// [`Event`]s are sent into this channel,
+    event_sender: Sender<Event>,
+    /// is cloned and given to whoever wants to subscribe to events from this [`Core`]
+    event_receiver: Receiver<Event>,
     /// list of all active [`MonitorSession`]s
     monitor_sessions: Vec<MonitorSession>,
     /// the [`Network`] contains all [`Message`]s that are sent, but not yet delivered
@@ -114,6 +118,16 @@ enum CoreReset {
     Reset,
 }
 
+/// when launching a node, this is a convenient way to specify which command string should be used
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum LaunchCommand<'a> {
+    /// launch a new test process
+    Test,
+    /// launch a new server process
+    Server,
+    /// launch a custom command (e.g. for middleware)
+    Custom(&'a str),
+}
 /// The "node name" of the [`Core`]. It is used by tests to send core messages (i.e. [`Launch`])
 pub const CORE_NAME: &'static str = "core";
 
@@ -123,18 +137,19 @@ const TEST_NODE_NAME: &'static str = "test";
 impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and test executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
-    pub async fn new(
-        test_command: impl AsRef<str>,
+    pub fn new(
+        test_command: Option<String>,
         server_command: String,
         interactive: bool,
         allow_lua_unsafe: bool,
-    ) -> Result<Self, CoreError> {
-        let (remote_sender, remote_receiver) = tokio::sync::mpsc::channel(1);
-
-        let mut core = Self {
+    ) -> Self {
+        let (remote_sender, remote_receiver) = async_channel::bounded(1);
+        let (event_sender, event_receiver) = async_channel::unbounded();
+        Self {
             timestamp_source: TimestampSource::new(),
             nodes: NodeList::new(),
             launcher: Launcher::new(allow_lua_unsafe),
+            test_command,
             server_command,
             interactive,
             state: if interactive {
@@ -144,32 +159,50 @@ impl Core {
             },
             remote_sender,
             remote_receiver,
-            protocol: Protocol::new(),
+            event_sender,
+            event_receiver,
             monitor_sessions: Vec::new(),
             network: Network::new(),
             timer_manager: TimerManager::new(),
             launch_queue: VecDeque::new(),
             reset_flag: None,
-        };
+        }
+    }
 
-        // public an initial "reset" event, so that the webapp can reset its state when "dsbox"
-        // is re-started
-        core.protocol
-            .publish_event(Event::reset(core.timestamp_source.now()))
-            .await;
+    async fn restart(&mut self, re_init: bool) -> Result<(), CoreError> {
+        if re_init {
+            self.terminate_now(..).await;
+            self.timestamp_source = TimestampSource::new();
+            self.nodes = NodeList::new();
+            self.state = if self.interactive {
+                CoreState::Paused
+            } else {
+                CoreState::Running
+            };
+            self.monitor_sessions = Vec::new();
+            self.network = Network::new();
+            self.timer_manager = TimerManager::new();
+            self.launch_queue = VecDeque::new();
+            self.reset_flag = None;
+        }
 
-        assert_eq!(
-            core.launch(
-                Some(test_command.as_ref()),
-                true,
-                TEST_NODE_NAME.to_string()
-            )
-            .await?
-            .id,
-            NodeId(0),
-            "expected test process to have id 0"
-        );
-        Ok(core)
+        if self.test_command.is_some() {
+            // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
+            // is re-started
+            self.event_sender
+                .send(Event::reset(self.timestamp_source.now()))
+                .await
+                .ok();
+
+            assert_eq!(
+                self.launch(LaunchCommand::Test, true, TEST_NODE_NAME.to_string())
+                    .await?
+                    .id,
+                NodeId(0),
+                "expected test process to have id 0"
+            );
+        }
+        Ok(())
     }
 
     /// Returns a new [`Sender`] for sending [`RemoteCommand`]s to the [`Core`]
@@ -178,13 +211,15 @@ impl Core {
     }
 
     /// Returns a new [`ProtocolSubscriber`] for listening to events from the [`Core`]
-    pub fn subscribe_events(&self) -> ProtocolSubscriber {
-        self.protocol.subscribe()
+    pub fn subscribe_events(&self) -> Receiver<Event> {
+        self.event_receiver.clone()
     }
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
     pub async fn run(mut self) -> Result<(), CoreError> {
+        // launch test node/publish initial reset event
+        self.restart(false).await?;
         let mut deadline = None;
         loop {
             let mut num_running = 0;
@@ -198,7 +233,9 @@ impl Core {
                     num_servers += 1;
                 }
             }
-            if num_running == 0 {
+
+            if !self.interactive && num_running == 0 {
+                // in cli mode, finish automatically when all nodes have shut down
                 break;
             }
 
@@ -213,15 +250,12 @@ impl Core {
                 } else if num_servers == 0 || Instant::now() > deadline.unwrap() {
                     deadline = None;
                     let shutdown = self.reset_flag.take().unwrap() == CoreReset::Shutdown;
-                    self.reset(shutdown).await?
+                    self.reset(shutdown).await?;
+                    if shutdown {
+                        break;
+                    };
                 }
             }
-        }
-        let deadline = Instant::now() + Duration::from_secs(1);
-        for node_ref in self.nodes.drain(..).filter_map(NodeRef::into_node) {
-            tokio::time::timeout_at(deadline, node_ref.terminate())
-                .await
-                .ok();
         }
         Ok(())
     }
@@ -332,9 +366,10 @@ impl Core {
                 });
             }
         }
-        self.protocol
-            .publish_event(Event::send_message(timestamp, message.clone()))
-            .await;
+        self.event_sender
+            .send(Event::send_message(timestamp, message.clone()))
+            .await
+            .ok();
 
         if message.dst == CORE_NAME {
             return self.handle_core_message(source, timestamp, message).await;
@@ -377,9 +412,10 @@ impl Core {
         let timestamp = self.timestamp_source.now();
         self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
             .await;
-        self.protocol
-            .publish_event(Event::deliver_message(timestamp, sent_timestamp.logical))
-            .await;
+        self.event_sender
+            .send(Event::deliver_message(timestamp, sent_timestamp.logical))
+            .await
+            .ok();
         self.nodes
             .resolve_alias_mut(destination_id)
             .send(ProcessCommand::Deliver(message));
@@ -579,6 +615,22 @@ impl Core {
         Ok(())
     }
 
+    /// begin shutdown of nodes in given `range` and wait a grace period of 1 second before returning
+    async fn terminate_now<R>(&mut self, range: R)
+    where
+        R: RangeBounds<usize>,
+    {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let shutdowns = self
+            .nodes
+            .drain(range)
+            .filter_map(NodeRef::into_node)
+            .map(|node| node.terminate());
+        tokio::time::timeout_at(deadline, futures::future::join_all(shutdowns))
+            .await
+            .ok();
+    }
+
     /// launches a single new server
     async fn launch_single(&mut self, launch: Launch) -> Result<(), CoreError> {
         let error = if launch.as_test {
@@ -586,14 +638,15 @@ impl Core {
                 Some("cannot specify middleware when launching a test node".to_string())
             } else {
                 let (alias_id, node) = self.nodes.add_alias(NodeId(0), launch.name.clone());
-                self.protocol
-                    .publish_event(Event::node_launched(
+                self.event_sender
+                    .send(Event::node_launched(
                         self.timestamp_source.now(),
                         alias_id,
                         launch.name.clone(),
                         node.commandline(MiddlewareId(0)),
                     ))
-                    .await;
+                    .await
+                    .ok();
                 None
             }
         } else {
@@ -607,14 +660,15 @@ impl Core {
             let id = node.id;
             let name = node.name.clone();
             let commandline = node.commandline(MiddlewareId(launch.middleware_before.len()));
-            self.protocol
-                .publish_event(Event::node_launched(
+            self.event_sender
+                .send(Event::node_launched(
                     self.timestamp_source.now(),
                     id,
                     name,
                     commandline,
                 ))
-                .await;
+                .await
+                .ok();
             None
         };
         let ts = self.timestamp_source.now();
@@ -630,9 +684,9 @@ impl Core {
     /// Resets the [`Core`] and sets up a new test run
     async fn reset(&mut self, shutdown: bool) -> Result<(), CoreError> {
         if shutdown {
-            self.nodes.drain(0..);
+            self.terminate_now(0..).await;
         } else {
-            self.nodes.drain(1..);
+            self.terminate_now(1..).await;
         }
 
         self.monitor_sessions.clear();
@@ -649,9 +703,10 @@ impl Core {
             // reset the timestamps to restart at 0
             self.timestamp_source = TimestampSource::new();
 
-            self.protocol
-                .publish_event(Event::reset(self.timestamp_source.now()))
-                .await;
+            self.event_sender
+                .send(Event::reset(self.timestamp_source.now()))
+                .await
+                .ok();
         }
         Ok(())
     }
@@ -663,11 +718,13 @@ impl Core {
         middleware_before: &[String],
         middleware_after: &[String],
     ) -> Result<&mut Node, CoreError> {
-        let node = self.launch(None, false, name.clone()).await?;
+        let node = self
+            .launch(LaunchCommand::Server, false, name.clone())
+            .await?;
         let node_id = node.id;
         for middleware in middleware_before.iter().rev() {
             let middleware = self
-                .launch_proc(Some(middleware), false, name.clone())
+                .launch_proc(LaunchCommand::Custom(middleware), false, name.clone())
                 .await?;
             self.nodes
                 .resolve_alias_mut(node_id)
@@ -675,7 +732,7 @@ impl Core {
         }
         for middleware in middleware_after {
             let middleware = self
-                .launch_proc(Some(middleware), false, name.clone())
+                .launch_proc(LaunchCommand::Custom(middleware), false, name.clone())
                 .await?;
             self.nodes
                 .resolve_alias_mut(node_id)
@@ -694,7 +751,7 @@ impl Core {
     /// launches a new process and creates the corresponding node
     async fn launch(
         &mut self,
-        command: Option<&str>,
+        command: LaunchCommand<'_>,
         is_test: bool,
         name: String,
     ) -> Result<&mut Node, CoreError> {
@@ -707,11 +764,15 @@ impl Core {
 
     async fn launch_proc(
         &mut self,
-        command: Option<&str>,
+        command: LaunchCommand<'_>,
         is_test: bool,
         name: String,
     ) -> Result<Process, CoreError> {
-        let command = command.unwrap_or(&self.server_command);
+        let command = match command {
+            LaunchCommand::Test => self.test_command.as_ref().unwrap(),
+            LaunchCommand::Server => &self.server_command,
+            LaunchCommand::Custom(command) => command,
+        };
         self.launcher
             .launch(command, is_test, name)
             .await
@@ -751,9 +812,10 @@ impl Core {
                 message.text
             );
         }
-        self.protocol
-            .publish_event(Event::log(timestamp, source_id, message))
-            .await;
+        self.event_sender
+            .send(Event::log(timestamp, source_id, message))
+            .await
+            .ok();
         Ok(())
     }
 
@@ -765,9 +827,10 @@ impl Core {
         middleware_id: MiddlewareId,
         exit_code: i32,
     ) -> Result<(), CoreError> {
-        self.protocol
-            .publish_event(Event::node_disconnected(timestamp, source_id))
-            .await;
+        self.event_sender
+            .send(Event::node_disconnected(timestamp, source_id))
+            .await
+            .ok();
         let node = self.nodes.resolve_alias(source_id);
         log::info!(
             "[{}] command `{}` exited with code {exit_code}",
