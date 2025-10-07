@@ -1305,19 +1305,17 @@ name = "dsbox"
 version = "0.1.0"
 dependencies = [
  "async-channel",
- "axum",
  "clap",
  "dsbox-core",
  "env_logger",
- "flate2",
  "log",
- "mime_guess",
- "phf 0.13.1",
- "phf_codegen 0.13.1",
  "serde",
  "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
  "tokio",
- "tower-http",
 ]
 
 [[package]]
@@ -1333,7 +1331,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "shlex",
  "tokio",
  "wasi-common",
  "wasmtime",
@@ -1342,21 +1339,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsbox-tauri"
+name = "dsbox-web"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "axum",
  "clap",
  "dsbox-core",
  "env_logger",
+ "flate2",
  "log",
+ "mime_guess",
+ "phf 0.13.1",
+ "phf_codegen 0.13.1",
  "serde",
  "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
  "tokio",
+ "tower-http",
 ]
 
 [[package]]

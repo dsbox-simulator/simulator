@@ -52,8 +52,8 @@ async fn run(args: Args) -> Result<(), CoreError> {
 
 async fn run_cli(args: Args) -> Result<(), CoreError> {
     let core = Core::new(
-        Some(args.test_command),
-        args.server_command.join(" "),
+        Core::split_command(&args.test_command),
+        Core::make_command(args.server_command),
         false,
         args.lua_unsafe,
     );

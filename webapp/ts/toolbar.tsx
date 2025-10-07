@@ -1,7 +1,31 @@
 import React from "react"
 import Tooltip from "./tooltip";
-import {Commands} from "./api/types";
+import {Command, Commands, displayCommand, splitCommand} from "./api/types";
 import {open} from "@tauri-apps/plugin-dialog";
+
+const INTERPRETERS_BY_EXTENSION: { [extension: string]: string } = {
+    ".py": "python",
+    ".js": "node",
+    ".pl": "perl",
+    ".rb": "ruby",
+};
+
+function commandFrom(commandStr: string, split: boolean): Command {
+    let command: Command;
+    if (split) {
+        command = splitCommand(commandStr);
+    } else {
+        command = {program: commandStr, args: []};
+    }
+
+    for (const extension of Object.keys(INTERPRETERS_BY_EXTENSION)) {
+        if (command.program.endsWith(extension)) {
+            command.args.splice(0, 0, command.program);
+            command.program = INTERPRETERS_BY_EXTENSION[extension]!;
+        }
+    }
+    return command;
+}
 
 export default function Toolbar({onRestart, onStep, onResume, onBreak, commands, onSetCommands, inTauri, connected}: {
     onRestart: () => void;
@@ -13,6 +37,22 @@ export default function Toolbar({onRestart, onStep, onResume, onBreak, commands,
     inTauri: boolean,
     connected: boolean
 }) {
+    const setCommands = ({testCommand, serverCommand}: {
+        testCommand?: string,
+        serverCommand?: string
+    }, split: boolean) => {
+        onSetCommands({
+            testCommand: testCommand !== undefined ? commandFrom(testCommand, split) : (commands?.testCommand || {
+                program: "",
+                args: []
+            }),
+            serverCommand: serverCommand !== undefined ? commandFrom(serverCommand, split) : (commands?.serverCommand || {
+                program: "",
+                args: []
+            })
+        })
+    }
+
     return <div className="d-flex align-items-baseline bg-body-tertiary border-bottom p-3 gap-3">
         <div>
             <Tooltip tooltip={connected ? "connected" : "disconnected"}>
@@ -45,19 +85,13 @@ export default function Toolbar({onRestart, onStep, onResume, onBreak, commands,
                         directory: false,
                         defaultPath: ".",
                     }).then(file => {
-                        if (file !== null) {
-                            onSetCommands({
-                                testCommand: file,
-                                serverCommand: commands?.serverCommand || ""
-                            });
-                        }
+                        if (file !== null) setCommands({testCommand: file}, false);
                     })}>Browse</button>
                 }
-                <input type="text" className="form-control" value={commands?.testCommand || ""}
-                       onChange={e => onSetCommands({
-                           testCommand: e.target.value,
-                           serverCommand: commands?.serverCommand || ""
-                       })} id="testCommand" disabled={!inTauri}/>
+                <input type="text" className="form-control"
+                       value={displayCommand(commands?.testCommand || {program: "", args: []})}
+                       onChange={e => setCommands({testCommand: e.target.value}, true)}
+                       id="testCommand" disabled={!inTauri}/>
             </div>
         </div>
         <div className="d-flex gap-2 align-items-baseline flex-grow-1">
@@ -69,19 +103,13 @@ export default function Toolbar({onRestart, onStep, onResume, onBreak, commands,
                         directory: false,
                         defaultPath: ".",
                     }).then(file => {
-                        if (file !== null) {
-                            onSetCommands({
-                                testCommand: commands?.testCommand || null,
-                                serverCommand: file
-                            });
-                        }
+                        if (file !== null) setCommands({serverCommand: file}, false);
                     })}>Browse</button>
                 }
-                <input type="text" className="form-control" value={commands?.serverCommand || ""}
-                       onChange={e => onSetCommands({
-                           serverCommand: e.target.value,
-                           testCommand: commands?.testCommand || null
-                       })} id="serverCommand" disabled={!inTauri}/>
+                <input type="text" className="form-control"
+                       value={displayCommand(commands?.serverCommand || {program: "", args: []})}
+                       onChange={e => setCommands({serverCommand: e.target.value}, true)}
+                       id="serverCommand" disabled={!inTauri}/>
             </div>
         </div>
     </div>

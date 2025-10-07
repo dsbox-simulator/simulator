@@ -1,6 +1,7 @@
 import EventEmitter from "../eventEmitter";
 import WebSocketRpc from "../rpc/rpc";
 import {
+    Command,
     Commands,
     DeliverMessage,
     DropMessage,
@@ -69,7 +70,7 @@ export default class WebsocketApi implements Api {
         this.emitter.on("event:log", e => listener(e.detail as Event<Log>));
     }
 
-    public restart(testCommand?: string, serverCommand?: string) {
+    public restart(testCommand?: Command, serverCommand?: Command) {
         this.rpc.notify("restart", {test_command: testCommand, server_command: serverCommand});
     }
 

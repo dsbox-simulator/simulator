@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::future::poll_fn;
 use std::time::Duration;
 use tokio::task::JoinHandle;
+use dsbox_core::Command;
 
 pub struct App {
     remote: Sender<RemoteCommand>,
@@ -29,16 +30,16 @@ pub struct App {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Commands {
-    test_command: Option<String>,
-    server_command: String,
+    test_command: Command,
+    server_command: Command,
 }
 
 impl App {
     pub async fn new(args: Args) -> Result<Self, CoreError> {
-        let test_command = args.test_command;
-        let server_command = args.server_command.join(" ");
+        let test_command = Core::split_command(&args.test_command);
+        let server_command = Core::make_command(args.server_command.iter().cloned());
         let core = Core::new(
-            Some(test_command.clone()),
+            test_command.clone(),
             server_command.clone(),
             true,
             args.lua_unsafe,
@@ -51,7 +52,7 @@ impl App {
             subscriber,
             core_handle: Some(core_handle),
             commands: Commands {
-                test_command: Some(test_command),
+                test_command,
                 server_command,
             },
         })
@@ -120,7 +121,7 @@ impl App {
         }
         match method {
             "restart" => {
-                dispatch!(restart(test_command: Option<String>, server_command: Option<String>))
+                dispatch!(restart(test_command: Option<Command>, server_command: Option<Command>))
             }
             "break" => dispatch!(break_()),
             "resume" => dispatch!(resume()),
@@ -166,11 +167,11 @@ impl App {
 
     async fn restart(
         &mut self,
-        test_command: Option<String>,
-        server_command: Option<String>,
+        test_command: Option<Command>,
+        server_command: Option<Command>,
     ) -> Result<(), response::Error> {
         if let Some(test_command) = &test_command {
-            self.commands.test_command = Some(test_command.clone());
+            self.commands.test_command = test_command.clone();
         }
         if let Some(server_command) = &server_command {
             self.commands.server_command = server_command.clone();

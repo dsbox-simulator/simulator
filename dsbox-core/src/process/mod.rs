@@ -1,9 +1,8 @@
 //! Transparent handling of processes, both native, compiled to Webassembly and in the form of a lua script.
 
 use std::ffi::OsStr;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::path::Path;
-
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
@@ -44,8 +43,7 @@ pub struct Process {
     receiver: Receiver<ProcessEvent>,
     join_handle: JoinHandle<()>,
     finished: oneshot::Receiver<()>,
-    pub path: String,
-    pub args: Vec<String>,
+    pub command: crate::Command,
 }
 
 impl Launcher {
@@ -71,28 +69,21 @@ impl Launcher {
     /// Returns a handel to the launched process, or an error if launching failed (i.e. the file does not exist, or is not executable, etc.).
     pub async fn launch(
         &mut self,
-        command: &str,
+        command: crate::Command,
         for_test: bool,
         name: String,
     ) -> Result<Process, Error> {
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
-        let Some(mut args) = shlex::split(command) else {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!("failed to parse command string: {command:?}"),
-            ));
-        };
-        let path = args.remove(0);
-        let executable = Path::new(&path);
+        let executable = Path::new(&command.program);
         let ext = executable.extension();
         let (join_handle, finished) = if ext == Some(OsStr::new("wasm")) {
-            self.launch_wasm(executable, &args, command_receiver, event_sender)
+            self.launch_wasm(executable, &command.args, command_receiver, event_sender)
                 .await?
         } else if ext == Some(OsStr::new("lua")) {
             self.launch_lua(
                 executable,
-                &args,
+                &command.args,
                 for_test,
                 command_receiver,
                 event_sender,
@@ -100,7 +91,7 @@ impl Launcher {
             )
             .await?
         } else {
-            native::launch(executable, &args, command_receiver, event_sender)?
+            native::launch(executable, &command.args, command_receiver, event_sender)?
         };
 
         Ok(Process {
@@ -108,8 +99,7 @@ impl Launcher {
             receiver: event_receiver,
             join_handle,
             finished,
-            path,
-            args,
+            command,
         })
     }
 
@@ -216,7 +206,6 @@ impl Process {
 
     /// returns the full commandline (path + args) that was used to launch the process
     pub fn commandline(&self) -> String {
-        let parts = std::iter::once(self.path.as_str()).chain(self.args.iter().map(|s| s.as_str()));
-        shlex::try_join(parts).unwrap()
+        self.command.to_string()
     }
 }

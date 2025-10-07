@@ -1,7 +1,13 @@
 export interface Commands {
-    testCommand: string|null;
-    serverCommand: string;
+    testCommand: Command;
+    serverCommand: Command;
 }
+
+export interface Command {
+    program: string,
+    args: string[]
+}
+
 export interface Timestamp {
     logical: number;
     physical: string;
@@ -120,3 +126,12 @@ export type LogMarkerColor =
     "BrightMagenta" |
     "BrightCyan" |
     "BrightWhite"
+
+export function splitCommand(command: string): Command {
+    const [program, ...args] = command.split(" ");
+    return {program: program || "", args};
+}
+
+export function displayCommand(command: Command): string {
+    return `${command.program} ${command.args.join(" ")}`;
+}

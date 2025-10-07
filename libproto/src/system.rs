@@ -1,4 +1,5 @@
 //! System messages, that the core uses to communicate with tests.
+
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
@@ -23,11 +24,17 @@ pub struct Launch {
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub as_test: bool,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub middleware_before: Vec<String>,
+    pub middleware_before: Vec<Command>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub middleware_after: Vec<String>,
+    pub middleware_after: Vec<Command>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Command {
+    pub program: String,
+    pub args: Vec<String>,
+}
 
 /// Reply to a [`Launch`] message from the core, after the server successfully launched.
 #[derive(Payload, Serialize, Deserialize)]
@@ -64,8 +71,13 @@ pub enum MonitorEventKind {
     Delivered,
 }
 
-
 /// Sent from any node to the core in interactive mode to stop delivery of messages (to be resumed
 /// by the user in the webapp)
 #[derive(Payload, Serialize, Deserialize)]
 pub struct Break {}
+
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.program, self.args.join(" "))
+    }
+}

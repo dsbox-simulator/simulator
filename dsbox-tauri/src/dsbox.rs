@@ -3,6 +3,7 @@ use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
+use dsbox_core::Command;
 use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::Channel;
@@ -18,14 +19,14 @@ pub struct DsboxState {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Commands {
-    pub test_command: Option<String>,
-    pub server_command: String,
+    pub test_command: Command,
+    pub server_command: Command,
 }
 
 impl DsboxState {
     pub fn new(args: crate::cli::Cli) -> Self {
-        let test_command = args.test_command;
-        let server_command = args.server_command.map(|c| c.join(" ")).unwrap_or_default();
+        let test_command = Core::split_command(args.test_command.unwrap_or_default());
+        let server_command = Core::make_command(args.server_command.unwrap_or_default());
         let core = Core::new(
             test_command.clone(),
             server_command.clone(),
@@ -58,8 +59,8 @@ pub async fn subscribe_events(
 #[tauri::command]
 pub async fn restart(
     state: tauri::State<'_, DsboxState>,
-    test_command: Option<String>,
-    server_command: Option<String>,
+    test_command: Option<Command>,
+    server_command: Option<Command>,
 ) -> tauri::Result<()> {
     state
         .remote

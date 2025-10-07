@@ -1,6 +1,7 @@
 import {Channel, invoke} from '@tauri-apps/api/core';
 import EventEmitter from "../eventEmitter";
 import {
+    Command,
     Commands,
     DeliverMessage,
     DropMessage,
@@ -68,7 +69,7 @@ export default class TauriApi implements Api {
         this.emitter.on("event:log", e => listener(e.detail as Event<Log>));
     }
 
-    public restart(testCommand?: string, serverCommand?: string) {
+    public restart(testCommand?: Command, serverCommand?: Command) {
         invoke("restart", {testCommand, serverCommand})
             .then(() => {
             });

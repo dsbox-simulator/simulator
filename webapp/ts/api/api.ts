@@ -1,4 +1,5 @@
 import {
+    Command,
     Commands,
     DeliverMessage,
     DropMessage,
@@ -31,7 +32,7 @@ export default interface Api {
 
     onLog(listener: (event: Event<Log>) => void): void;
 
-    restart(testCommand?: string, serverCommand?: string): void;
+    restart(testCommand?: Command, serverCommand?: Command): void;
 
     break(): void;
 

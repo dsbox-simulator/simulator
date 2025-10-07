@@ -1,6 +1,0 @@
-{
-    "css.styleSheets": [
-      "webapp/node_modules/bootstrap/dist/css/bootstrap.css",
-      "webapp/src/**/*.scss"
-    ]
-  }

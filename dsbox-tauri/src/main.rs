@@ -42,8 +42,8 @@ fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
 
 async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) -> Result<(), CoreError> {
     let core = Core::new(
-        Some(args.test_command),
-        args.server_command.join(" "),
+        Core::split_command(args.test_command),
+        Core::make_command(args.server_command),
         false,
         allow_lua_unsafe,
     );

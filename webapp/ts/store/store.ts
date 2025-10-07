@@ -1,7 +1,7 @@
 import WebSocketApi from "../api/websocketApi";
 import {useSyncExternalStore} from "react";
 import EventEmitter from "../eventEmitter";
-import {Commands, LogMessage, Message, Timestamp} from "../api/types";
+import {Command, Commands, LogMessage, Message, Timestamp} from "../api/types";
 import debounce from "../debounce";
 import TauriApi from "../api/tauriApi";
 import Api from "../api/api";
@@ -142,7 +142,7 @@ export default class Store {
         return await this.api.currentCommands();
     }
 
-    public restart(testCommand?: string, serverCommand?: string) {
+    public restart(testCommand?: Command, serverCommand?: Command) {
         this.api.restart(testCommand, serverCommand);
     }
 

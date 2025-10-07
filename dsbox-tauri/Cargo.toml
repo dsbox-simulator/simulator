@@ -1,5 +1,5 @@
 [package]
-name = "dsbox-tauri"
+name = "dsbox"
 version = "0.1.0"
 description = "Tauri frontend for `dsbox`"
 authors = ["you"]

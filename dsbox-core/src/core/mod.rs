@@ -33,6 +33,7 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
+use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -68,9 +69,9 @@ pub struct Core {
     /// launches new processes
     launcher: Launcher,
     /// Command string from which the test process was launched
-    test_command: Option<String>,
+    test_command: Command,
     /// Command string from which server processes are launched.
-    server_command: String,
+    server_command: Command,
     /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
     interactive: bool,
     /// The current execution state (i.e. running/stepping/paused...)
@@ -119,14 +120,14 @@ enum CoreReset {
 }
 
 /// when launching a node, this is a convenient way to specify which command string should be used
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone)]
 enum LaunchCommand<'a> {
     /// launch a new test process
     Test,
     /// launch a new server process
     Server,
     /// launch a custom command (e.g. for middleware)
-    Custom(&'a str),
+    Custom(&'a Command),
 }
 /// The "node name" of the [`Core`]. It is used by tests to send core messages (i.e. [`Launch`])
 pub const CORE_NAME: &'static str = "core";
@@ -138,8 +139,8 @@ impl Core {
     /// Creates a new [`Core`] from the given cli arguments (which include the server and test executables among other things).
     /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
     pub fn new(
-        test_command: Option<String>,
-        server_command: String,
+        test_command: Command,
+        server_command: Command,
         interactive: bool,
         allow_lua_unsafe: bool,
     ) -> Self {
@@ -186,7 +187,7 @@ impl Core {
             self.reset_flag = None;
         }
 
-        if self.test_command.is_some() {
+        if self.test_command.program != "" {
             // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
             // is re-started
             self.event_sender
@@ -715,8 +716,8 @@ impl Core {
     async fn launch_node_with_middleware(
         &mut self,
         name: String,
-        middleware_before: &[String],
-        middleware_after: &[String],
+        middleware_before: &[Command],
+        middleware_after: &[Command],
     ) -> Result<&mut Node, CoreError> {
         let node = self
             .launch(LaunchCommand::Server, false, name.clone())
@@ -769,12 +770,12 @@ impl Core {
         name: String,
     ) -> Result<Process, CoreError> {
         let command = match command {
-            LaunchCommand::Test => self.test_command.as_ref().unwrap(),
+            LaunchCommand::Test => &self.test_command,
             LaunchCommand::Server => &self.server_command,
             LaunchCommand::Custom(command) => command,
         };
         self.launcher
-            .launch(command, is_test, name)
+            .launch(command.clone(), is_test, name)
             .await
             .map_err(|e| CoreError::LaunchFailed {
                 command: command.to_string(),
@@ -838,5 +839,23 @@ impl Core {
             node.commandline(middleware_id)
         );
         Ok(())
+    }
+}
+
+impl Core {
+    /// split a string into the program and args
+    /// for now, it just splits the string using the space character,
+    /// taking the first element as the program and the remaining elements as the args
+    pub fn split_command(command: impl AsRef<str>) -> Command {
+        Self::make_command(command.as_ref().split(" ").map(|s| s.to_string()))
+    }
+
+    /// make a command from an interator of strings. The first element becomes the program,
+    /// the remaining elements become the args
+    pub fn make_command(command: impl IntoIterator<Item = String>) -> Command {
+        let mut command = command.into_iter();
+        let program = command.next().unwrap_or_default();
+        let args = command.collect::<Vec<_>>();
+        Command { program, args }
     }
 }

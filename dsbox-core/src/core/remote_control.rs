@@ -3,6 +3,7 @@
 use crate::core::error::CoreError;
 use crate::core::event::Event;
 use crate::core::{Core, CoreReset, CoreState};
+use crate::Command;
 
 /// A command for the [`Core`] to control its execution
 pub enum RemoteCommand {
@@ -19,8 +20,8 @@ pub enum RemoteCommand {
     /// restart the core entirely from the beginning, potentially giving new
     /// test and launch commands.
     Restart {
-        test_command: Option<String>,
-        server_command: Option<String>,
+        test_command: Option<Command>,
+        server_command: Option<Command>,
     },
     /// instructs the core to shut down
     Shutdown,
@@ -42,7 +43,7 @@ impl Core {
                 server_command,
             } => {
                 if let Some(test_command) = test_command {
-                    self.test_command = Some(test_command);
+                    self.test_command = test_command;
                 }
                 if let Some(server_command) = server_command {
                     self.server_command = server_command;
@@ -68,7 +69,8 @@ impl Core {
                 self.timestamp_source.now(),
                 sent_timestamp,
             ))
-            .await.ok();
+            .await
+            .ok();
     }
 
     async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {
