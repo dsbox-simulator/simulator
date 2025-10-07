@@ -10,20 +10,16 @@ jobs:
         uses: actions/checkout@v4
       - name: Install rust
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - name: Install rust targets
+      - name: Install apt dependencies
+        run : |
+          apt update -y
+          apt install clang lld llvm libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev -y
+      - name: Install rust targets and tools
         run: |
           . $HOME/.cargo/env
-          rustup target add x86_64-unknown-linux-musl
-          rustup target add aarch64-unknown-linux-musl
-          rustup target add x86_64-pc-windows-gnu
-      - name: Download musl packages
-        run: |
-          curl https://musl.cc/x86_64-linux-musl-native.tgz -o /tmp/x86_64-linux-musl-native.tgz
-          curl https://musl.cc/aarch64-linux-musl-cross.tgz -o /tmp/aarch64-linux-musl-cross.tgz
-          curl https://musl.cc/x86_64-w64-mingw32-cross.tgz -o /tmp/x86_64-w64-mingw32-cross.tgz
-          tar -xf /tmp/x86_64-linux-musl-native.tgz -C /tmp
-          tar -xf /tmp/aarch64-linux-musl-cross.tgz -C /tmp
-          tar -xf /tmp/x86_64-w64-mingw32-cross.tgz -C /tmp
+          rustup target add x86_64-pc-windows-msvc
+          cargo install cargo-xwin
+          cargo install tauri-cli --git https://github.com/tauri-apps/tauri
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -31,42 +27,25 @@ jobs:
       - name: Install webapp packages
         working-directory: webapp
         run: |
-          npm install -g @angular/cli
           npm install
       - name: Build webapp
         working-directory: webapp
         run: |
-          ng build --configuration production
-      - name: Build DsBox x86_64 Linux
+          npm run build-prod
+      - name: Build DsBox Linux
         run: |
           . $HOME/.cargo/env
-          PATH=$PATH:/tmp/x86_64-linux-musl-native/bin/ \
-          CC=x86_64-linux-musl-gcc \
-          RUSTFLAGS="-C link-arg=-s" \
-          cargo build --target x86_64-unknown-linux-musl --package dsbox --release --features embedded_webapp \
-            --config target.x86_64-unknown-linux-musl.linker=\"x86_64-linux-musl-cc\"
-      - name: Build DsBox aarch64 Linux
+          cargo tauri build --bundles appimage
+      - name: Build DsBox Windows
         run: |
           . $HOME/.cargo/env
-          PATH=$PATH:/tmp/aarch64-linux-musl-cross/bin/ \
-          CC=aarch64-linux-musl-gcc \
-          RUSTFLAGS="-C link-arg=-s" \
-          cargo build --target aarch64-unknown-linux-musl --package dsbox --release --features embedded_webapp \
-            --config target.aarch64-unknown-linux-musl.linker=\"aarch64-linux-musl-cc\"
-      - name: Build DsBox x86_64 Windows
-        run: |
-          . $HOME/.cargo/env
-          PATH=$PATH:/tmp/x86_64-w64-mingw32-cross/bin/ \
-          CC=x86_64-w64-mingw32-gcc \
-          RUSTFLAGS="-C link-arg=-s" \
-          cargo build --target x86_64-pc-windows-gnu --package dsbox --release --features embedded_webapp \
-            --config target.x86_64-pc-windows-gnu.linker=\"x86_64-w64-mingw32-cc\"
+          cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
       - name: Prepare release files
         run: |
           mkdir /tmp/release
-          tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/x86_64-unknown-linux-musl/release/ dsbox
-          tar -zcf /tmp/release/aarc64-linux.tar.gz -C target/aarch64-unknown-linux-musl/release/ dsbox 
-          tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-gnu/release/ dsbox.exe
+          tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/release/ dsbox
+          cp target/release/bundle/appimage/DsBox_0.1.0_amd64.AppImage /tmp/release
+          tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-msvc/release/ dsbox.exe
       - name: Upload release
         uses: actions/forgejo-release@v2.6.0
         with:
