@@ -8,7 +8,7 @@
   "main": "src/main.ts",
   "scripts": {
     "build": "node build.js",
-    "build-prod": "NODE_ENV=production node build.js",
+    "build-prod": "cross-env NODE_ENV=production node build.js",
     "watch": "npm-watch build",
     "watch-prod": "npm-watch build-prod",
     "generate-client": "node generate-client.mjs"
@@ -44,7 +44,8 @@
     "esbuild": "0.25.10",
     "htmlnano": "^2.1.5",
     "npm-watch": "^0.13.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "cross-env": "^10.1.0"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
