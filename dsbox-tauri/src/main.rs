@@ -32,6 +32,7 @@ fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
     logger.init();
 
     if let Err(e) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
         .build()
         .unwrap()
         .block_on(run_dsbox(args, allow_lua_unsafe))

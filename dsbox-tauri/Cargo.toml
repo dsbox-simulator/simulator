@@ -33,4 +33,4 @@ tauri-plugin-dialog = "2"
 [features]
 lua = ["dsbox-core/lua"]
 wasm = ["dsbox-core/wasm"]
-default = ["lua", "wasm"]
+default = ["lua"]

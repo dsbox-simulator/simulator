@@ -35,19 +35,42 @@ jobs:
       - name: Build DsBox Linux
         run: |
           . $HOME/.cargo/env
-          cargo tauri build --bundles appimage
+          cargo tauri build --features wasm --bundles deb,rpm
       - name: Build DsBox Windows
         run: |
           . $HOME/.cargo/env
-          cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
+          cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --features wasm --no-bundle
       - name: Prepare release files
         run: |
           mkdir /tmp/release
           tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/release/ dsbox
-          cp target/release/bundle/appimage/DsBox_0.1.0_amd64.AppImage /tmp/release
+          cp target/release/bundle/deb/DsBox_0.1.0_amd64.deb /tmp/release
+          cp target/release/bundle/rpm/DsBox-0.1.0-1.x86_64.rpm /tmp/release
           tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-msvc/release/ dsbox.exe
       - name: Upload release
         uses: actions/forgejo-release@v2.6.0
         with:
+          release-notes: |
+            For fedora (rpm) based distributions, download `DsBox-0.1.0-1.x86_64.rpm` and install with 
+            ```sh
+            sudo dnf install ./DsBox-0.1.0-1.x86_64.rpm
+            ```
+            
+            For debian/ubuntu (deb) based distributions download `DsBox_0.1.0_amd64.deb` and install with
+            ```sh
+            sudo apt-get update
+            sudo apt-get install ./DsBox-0.1.0-1.x86_64.rpm
+            ```
+            
+            For windows, download `x86_64-windows.tar.gz` and extract `dsbox.exe`
+            
+            To verify the simulator is installed run 
+            ```sh
+            dsbox --help
+            ```
+            or (on windows)
+            ```
+            <path>\<to>\dsbox.exe --help
+            ```
           direction: upload
           release-dir: /tmp/release

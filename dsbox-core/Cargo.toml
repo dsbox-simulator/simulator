@@ -24,4 +24,4 @@ wiggle = { version = "37.0.1", optional = true }
 [features]
 lua = ["dep:mlua"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasi-common", "dep:wiggle"]
-default = ["lua", "wasm"]
+default = ["lua"]
