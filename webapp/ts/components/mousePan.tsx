@@ -12,25 +12,32 @@ export default function MousePan({children}: { children: JSX.Element }) {
             x: 0,
             y: 0,
         }
-        element.addEventListener("mousedown", e => {
+        const startDrag = (e:MouseEvent) => {
             element.style.setProperty("cursor", "grabbing");
+            element.style.setProperty("pointer-events", "none");
             state.dragging = true;
             state.x = e.clientX;
             state.y = e.clientY;
             state.left = element.scrollLeft;
             state.top = element.scrollTop;
-        });
-        element.addEventListener("mouseup", _ => {
+        }
+        const stopDrag = (e:MouseEvent) => {
             element.style.setProperty("cursor", "grab");
+            element.style.removeProperty("pointer-events");
             state.dragging = false;
-        });
-        element.addEventListener("mousemove", e => {
+        }
+
+        const drag = (e: MouseEvent) => {
             if (!state.dragging) return;
             const deltaX = e.clientX - state.x;
             const deltaY = e.clientY - state.y;
             element.scrollLeft = state.left - deltaX;
             element.scrollTop = state.top - deltaY;
-        });
+        }
+        element.addEventListener("mousedown", startDrag);
+        document.addEventListener("mouseup", stopDrag);
+        document.addEventListener("mouseleave", stopDrag);
+        element.addEventListener("mousemove", drag);
         if (existingRef) existingRef(element);
     };
 

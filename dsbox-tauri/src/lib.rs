@@ -6,6 +6,7 @@ mod util;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(args: cli::Cli) {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
