@@ -19,7 +19,6 @@
 
 .lamport-diagram {
     max-height: 50%;
-    overflow-y: scroll;
 }
 
 .messages-logs {
@@ -81,4 +80,12 @@
 
 .labelBlack {
     --label-color: #000;
+}
+
+.lamport-comm {
+    stroke: rgba(0, 0, 0, 0%);
+}
+
+.lamport-comm:hover {
+    stroke: rgba(0, 0, 0, 25%);
 }

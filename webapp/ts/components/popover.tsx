@@ -3,6 +3,7 @@ import * as bootstrap from "bootstrap";
 import {createPortal} from "react-dom";
 
 export default function Popover({children, tooltip}: { children: JSX.Element, tooltip: React.ReactNode }) {
+    const existingRef = children.props['ref'];
     const contentElement = useMemo(() => document.createElement("div"), []);
     const ppref = useRef<bootstrap.Popover | null>(null);
     const enableTooltip = (element: HTMLElement | null) => {
@@ -15,6 +16,7 @@ export default function Popover({children, tooltip}: { children: JSX.Element, to
             content: contentElement,
             trigger: "click hover",
         });
+        if (existingRef) existingRef(element);
     };
     return <>
         {React.cloneElement(children, {ref: enableTooltip})}

@@ -25,19 +25,21 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
     const [commands, setCommands] = useState<Commands | null>(null);
     const setCommandsSave = (commands: Commands): void => {
         setCommands(commands);
-        storeRef.current!.store("last_commands", commands);
+        store.store("last_commands", commands);
     };
 
     useEffect(() => {
-        storeRef.current!.currentCommands().then(commands => {
+        (async() => {
+            let store = storeRef.current!;
+            let commands = await store.currentCommands()
             if (commands.testCommand.program === "") {
-                storeRef.current!.load("last_commands")
-                    .then(commands => setCommands(commands));
+                let {testCommand, serverCommand} = await store.load("last_commands");
+                setCommands({testCommand, serverCommand});
+                store.restart(testCommand, serverCommand);
             } else {
-                setCommandsSave(commands)
+                setCommandsSave(commands);
             }
-        })
-
+        })();
     }, []);
 
     return <div id="main">
