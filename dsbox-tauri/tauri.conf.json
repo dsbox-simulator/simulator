@@ -6,7 +6,9 @@
   "build": {
     "frontendDist": "../webapp/dist",
     "beforeBuildCommand": "npm --prefix ../webapp run build-prod",
-    "beforeDevCommand": "npm --prefix ../webapp run build"
+    "beforeDevCommand": "npm --prefix ../webapp run serve",
+    "devUrl": "http://localhost:8000",
+    "additionalWatchFolders": ["../webapp"]
   },
   "app": {
     "windows": [

@@ -29,6 +29,8 @@ async-channel = "2.5.0"
 dsbox-core = { path = "../dsbox-core" }
 clap = { version = "4.5.48", features = ["derive"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
+which = "8.0.0"
 
 [features]
 lua = ["dsbox-core/lua"]

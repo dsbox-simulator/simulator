@@ -1,10 +1,13 @@
 import React, {useEffect, useRef, useState} from "react";
-import LamportDiagram from "./lamportDiagram";
+import LamportDiagram from "./components/lamportDiagram";
 import Store from "./store/store";
-import Toolbar from "./toolbar";
-import MessageView from "./messageView";
-import LogView from "./logView";
+import Toolbar from "./components/toolbar";
+import MessageView from "./components/messageView";
+import LogView from "./components/logView";
 import {Commands} from "./api/types";
+
+// @ts-ignore
+import icon from "../res/icon.png";
 
 export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolean }) {
     const storeRef = useRef<Store | null>(null);
@@ -20,19 +23,39 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
     const testNodeName = "test";
     const [showOnlyUndelivered, setShowOnlyUndelivered] = useState(true);
     const [commands, setCommands] = useState<Commands | null>(null);
+    const setCommandsSave = (commands: Commands): void => {
+        setCommands(commands);
+        storeRef.current!.store("last_commands", commands);
+    };
+
     useEffect(() => {
-        storeRef.current!.currentCommands().then(commands => setCommands(commands))
+        storeRef.current!.currentCommands().then(commands => {
+            if (commands.testCommand.program === "") {
+                storeRef.current!.load("last_commands")
+                    .then(commands => setCommands(commands));
+            } else {
+                setCommandsSave(commands)
+            }
+        })
+
     }, []);
 
     return <div id="main">
         <div className="toolbar">
             <Toolbar
-                onRestart={() => store.restart(commands?.testCommand || undefined, commands?.serverCommand)}
+                icon={icon}
+                onRestart={(overrideCommands?: Commands) => {
+                    let useCommands = commands;
+                    if (overrideCommands !== undefined) {
+                        setCommandsSave(overrideCommands);
+                        useCommands = overrideCommands;
+                    }
+                    store.restart(useCommands?.testCommand || undefined, useCommands?.serverCommand)
+                }}
                 onStep={() => store.step()}
                 onResume={() => store.resume()}
                 onBreak={() => store.break()}
                 commands={commands}
-                onSetCommands={setCommands}
                 inTauri={inTauri}
                 connected={connected}/>
         </div>

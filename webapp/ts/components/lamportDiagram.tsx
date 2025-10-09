@@ -2,8 +2,8 @@ import React, {useMemo, useState} from "react";
 import {Circle, Point, Segment, Shape} from "@flatten-js/core";
 import Popover from "./popover";
 import {Json} from "./json";
-import {LogInfo, MessageInfo, NodeInfo} from "./store/store";
-import {cssColor} from "./colors";
+import {LogInfo, MessageInfo, NodeInfo} from "../store/store";
+import {cssColor} from "../colors";
 
 interface Event {
     node: number

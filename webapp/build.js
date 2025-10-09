@@ -1,21 +1,46 @@
 import * as esbuild from 'esbuild';
 import htmlPlugin from '@chialab/esbuild-plugin-html';
+import {program} from "commander";
 
-const inProduction = process.env.NODE_ENV === "production";
+program
+    .option("--release")
+    .option("--watch")
+    .option("--serve")
+    .option("--port <number>", undefined, 8000);
+program.parse();
+const opts = program.opts();
 
-await esbuild.build({
+
+const options = {
     entryPoints: ["index.html"],
     outdir: "dist",
     bundle: true,
-    minify: inProduction,
-    treeShaking: inProduction,
+    minify: opts.release,
+    treeShaking: opts.release,
     format: "esm",
-    sourcemap: !inProduction ? 'linked' : false,
+    sourcemap: !opts.release ? 'linked' : false,
     tsconfig: 'tsconfig.json',
-    define: {DEV: inProduction ? 'false' : 'true'},
+    define: {DEV: opts.release ? 'false' : 'true'},
     plugins: [htmlPlugin()],
     loader: {
         ".woff": "file",
         ".woff2": "file",
+        ".png": "file",
     }
-});
+};
+
+if (!opts.watch && !opts.serve) {
+    await esbuild.build(options);
+} else {
+    const ctx = await esbuild.context(options);
+    if (opts.serve) {
+        const {hosts, port} = await ctx.serve({servedir: options.outdir, host:"localhost", port:opts.port});
+        console.log(`listening on`);
+        for(const host of hosts) {
+            console.log(`\thttp://${host}:${port}`);
+        }
+        console.log(`Ctrl+C to stop`);
+    } else {
+        await ctx.watch();
+    }
+}

@@ -1,7 +1,7 @@
 import React, {useMemo} from "react";
-import {LogInfo, NodeInfo} from "./store/store";
+import {LogInfo, NodeInfo} from "../store/store";
 import Tooltip from "./tooltip";
-import {cssColor} from "./colors";
+import {cssColor} from "../colors";
 
 export default function LogView({nodes, logs, testNodeName}: {
     nodes: NodeInfo[],

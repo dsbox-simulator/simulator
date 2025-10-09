@@ -1,4 +1,5 @@
 import {Channel, invoke} from '@tauri-apps/api/core';
+import {LazyStore} from "@tauri-apps/plugin-store";
 import EventEmitter from "../eventEmitter";
 import {
     Command,
@@ -17,6 +18,7 @@ import Api from "./api";
 
 export default class TauriApi implements Api {
     private emitter: EventEmitter = new EventEmitter();
+    private tauri_store: LazyStore = new LazyStore(".dsbox_storage.json");
 
     public constructor() {
         const onEvent = new Channel<Event<EventData>>;
@@ -105,14 +107,18 @@ export default class TauriApi implements Api {
     }
 
     public store(key: string, value: any) {
-        throw new Error("Method not implemented.");
+        this.tauri_store.set(key, value)
+            .then(() => {
+            });
     }
 
     public async load(key: string): Promise<any> {
-        throw new Error("Method not implemented.");
+        return await this.tauri_store.get(key);
     }
 
     public remove(key: string) {
-        throw new Error("Method not implemented.");
+        this.tauri_store.delete(key)
+            .then(() => {
+            });
     }
 }

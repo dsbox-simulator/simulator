@@ -8,10 +8,8 @@
   "main": "src/main.ts",
   "scripts": {
     "build": "node build.js",
-    "build-prod": "cross-env NODE_ENV=production node build.js",
-    "watch": "npm-watch build",
-    "watch-prod": "npm-watch build-prod",
-    "generate-client": "node generate-client.mjs"
+    "watch": "npm run build -- --watch",
+    "serve": "npm run build -- --serve"
   },
   "watch": {
     "build": {
@@ -45,11 +43,12 @@
     "htmlnano": "^2.1.5",
     "npm-watch": "^0.13.0",
     "typescript": "^5.9.3",
-    "cross-env": "^10.1.0"
+    "commander": "^14.0.1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-store": "^2.4.0",
     "@flatten-js/core": "^1.6.4",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",

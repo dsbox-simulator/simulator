@@ -1,5 +1,5 @@
 import React from "react";
-import {MessageInfo} from "./store/store";
+import {MessageInfo} from "../store/store";
 import Tooltip from "./tooltip";
 import {Json} from "./json";
 
