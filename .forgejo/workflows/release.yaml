@@ -31,7 +31,7 @@ jobs:
       - name: Build webapp
         working-directory: webapp
         run: |
-          npm run build-prod
+          npm run build -- --release
       - name: Build DsBox Linux
         run: |
           . $HOME/.cargo/env
