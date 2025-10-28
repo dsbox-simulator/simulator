@@ -127,7 +127,7 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
     return <div>
         <div className="mb-3">
             <div className="d-flex justify-content-between">
-                <label htmlFor="testComand">Server</label>
+                <label htmlFor="testComand">Test</label>
                 <Tooltip
                     tooltip={"When opening a `.lua` file prefer using the built-in interpreter instead of searching for a `lua` interpreter on the system"}>
                     <div className="form-check form-switch">
