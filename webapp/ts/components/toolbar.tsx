@@ -1,34 +1,11 @@
 import React, {useEffect, useState} from "react"
 import {open} from "@tauri-apps/plugin-dialog";
 import Tooltip from "./tooltip";
-import {Command, Commands, displayCommand, splitCommand} from "../api/types";
+import {Commands, displayCommand, splitCommand} from "../api/types";
 import Modal from "./modal";
 import {invoke} from "@tauri-apps/api/core";
+import FileDropZone from "./fileDropZone";
 
-
-const INTERPRETERS_BY_EXTENSION: { [extension: string]: string } = {
-    ".py": "python",
-    ".js": "node",
-    ".pl": "perl",
-    ".rb": "ruby",
-};
-
-function commandFrom(commandStr: string, split: boolean): Command {
-    let command: Command;
-    if (split) {
-        command = splitCommand(commandStr);
-    } else {
-        command = {program: commandStr, args: []};
-    }
-
-    for (const extension of Object.keys(INTERPRETERS_BY_EXTENSION)) {
-        if (command.program.endsWith(extension)) {
-            command.args.splice(0, 0, command.program);
-            command.program = INTERPRETERS_BY_EXTENSION[extension]!;
-        }
-    }
-    return command;
-}
 
 export default function Toolbar({
                                     icon,
@@ -53,7 +30,9 @@ export default function Toolbar({
         testCommand: {program: "", args: []},
         serverCommand: {program: "", args: []}
     });
-    useEffect(() => {if (commands !== null) setEditCommands(commands)}, [commands]);
+    useEffect(() => {
+        if (commands !== null) setEditCommands(commands)
+    }, [commands]);
 
     const [openSettings, setOpenSettings] = useState(false);
 
@@ -95,7 +74,8 @@ export default function Toolbar({
                                 <button className="btn btn-sm btn-primary" onClick={_ => setOpenSettings(true)}>
                                     <i className="bi bi-pencil-square"></i>
                                 </button>
-                                <Modal open={openSettings} title={'Edit nodes'} confirmButton={"Save & Restart"}
+                                <Modal className="modal-xl" open={openSettings} title={'Edit nodes'}
+                                       confirmButton={"Save & Restart"}
                                        onClose={(confirmed) => {
                                            if (confirmed) {
                                                onRestart(editCommands);
@@ -125,19 +105,22 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
 
     const browseFor = async (commandName: "testCommand" | "serverCommand") => {
         const file = await open({multiple: false, directory: false, defaultPath: "."});
-        const preferBuiltin = (commandName == "testCommand" && testPreferBuiltinLua) || (commandName == "serverCommand" && serverPreferBuiltinLua);
         if (file === null) return;
-        const found = await invoke<{ language: string, interpreter: string } | null>("find_interpreter", {file});
+        await setCommandFromPath(commandName, file);
+    }
+
+    const setCommandFromPath = async (commandName: "testCommand" | "serverCommand", path: string) => {
+        const preferBuiltin = (commandName == "testCommand" && testPreferBuiltinLua) || (commandName == "serverCommand" && serverPreferBuiltinLua);
+        const found = await invoke<{ language: string, interpreter: string } | null>("find_interpreter", {path});
         console.log("found", found, "perferBuiltin", preferBuiltin);
         if (found === null || (found.language === "lua" && preferBuiltin)) {
             console.log("nointerpreter");
-            setCommands({...commands, [commandName]: {program: file, args: []}});
+            setCommands({...commands, [commandName]: {program: path, args: []}});
         } else {
-            setCommands({...commands, [commandName]: {program: found.interpreter, args: [file]}});
+            setCommands({...commands, [commandName]: {program: found.interpreter, args: [path]}});
         }
     }
-
-    const setCommand = (commandName: "testCommand" | "serverCommand", command: string) => {
+    const setCommandFromString = (commandName: "testCommand" | "serverCommand", command: string) => {
         setCommands({...commands, [commandName]: splitCommand(command)});
     }
 
@@ -158,9 +141,11 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
             </div>
             <div className="input-group">
                 <button className="btn btn-outline-secondary" onClick={_ => browseFor("testCommand")}>Browse</button>
-                <input type="text" id="testComand" className="form-control"
-                       value={displayCommand(commands.testCommand)}
-                       onChange={e => setCommand("testCommand", e.target.value)}/>
+                <FileDropZone onDrop={paths => setCommandFromPath("testCommand", paths[0]!)}>
+                    <input type="text" id="testComand" className="form-control"
+                           value={displayCommand(commands.testCommand)}
+                           onChange={e => setCommandFromString("testCommand", e.target.value)}/>
+                </FileDropZone>
             </div>
         </div>
         <div className="mb-3">
@@ -180,9 +165,11 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
             <div className="input-group">
                 <button className="btn btn-outline-secondary" onClick={_ => browseFor("serverCommand")}>Browse
                 </button>
-                <input type="text" id="serverComand" className="form-control"
-                       value={displayCommand(commands.serverCommand)}
-                       onChange={e => setCommand("serverCommand", e.target.value)}/>
+                <FileDropZone onDrop={paths => setCommandFromPath("serverCommand", paths[0]!)}>
+                    <input type="text" id="serverComand" className="form-control"
+                           value={displayCommand(commands.serverCommand)}
+                           onChange={e => setCommandFromString("serverCommand", e.target.value)}/>
+                </FileDropZone>
             </div>
         </div>
     </div>;

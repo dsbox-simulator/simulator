@@ -60,8 +60,8 @@ const INTERPRETERS: LazyLock<HashMap<Language, &'static [&'static str]>> = LazyL
 });
 
 #[tauri::command]
-pub fn find_interpreter(file: String) -> Option<Found> {
-    let extension = std::path::Path::new(&file).extension()?;
+pub fn find_interpreter(path: String) -> Option<Found> {
+    let extension = std::path::Path::new(&path).extension()?;
     let language = *EXTENSIONS.get(extension.to_string_lossy().as_ref())?;
     let interpreters = INTERPRETERS;
     let interpreters = interpreters.get(&language)?;

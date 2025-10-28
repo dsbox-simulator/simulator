@@ -1,15 +1,17 @@
 import React, {useRef} from "react";
 import {createPortal} from "react-dom";
 import * as bootstrap from "bootstrap";
+import classNames from "classnames";
 
 interface ModalState {
     modal: bootstrap.Modal | null,
     closeConfirm: boolean,
 }
 
-export default function Modal({open, onClose, title, cancelButton, confirmButton, children}: {
+export default function Modal({open, onClose, className, title, cancelButton, confirmButton, children}: {
     open: boolean,
     onClose: (confirmed: boolean) => void,
+    className?: string,
     title: React.ReactNode,
     children: React.ReactNode
     cancelButton?: string,
@@ -27,7 +29,7 @@ export default function Modal({open, onClose, title, cancelButton, confirmButton
     };
     if (open) {
         return createPortal(<div ref={enableModal} className="modal fade">
-            <div className="modal-dialog">
+            <div className={classNames("modal-dialog", className)}>
                 <div className="modal-content">
                     <div className="modal-header">
                         <h1 className="modal-title fs-5">{title}</h1>

@@ -12,16 +12,15 @@ export default function MousePan({children}: { children: JSX.Element }) {
             x: 0,
             y: 0,
         }
-        const startDrag = (e:MouseEvent) => {
+        const startDrag = (e: MouseEvent) => {
             element.style.setProperty("cursor", "grabbing");
-            element.style.setProperty("pointer-events", "none");
             state.dragging = true;
             state.x = e.clientX;
             state.y = e.clientY;
             state.left = element.scrollLeft;
             state.top = element.scrollTop;
         }
-        const stopDrag = (e:MouseEvent) => {
+        const stopDrag = (_e: MouseEvent) => {
             element.style.setProperty("cursor", "grab");
             element.style.removeProperty("pointer-events");
             state.dragging = false;

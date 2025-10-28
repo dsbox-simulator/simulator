@@ -109,7 +109,7 @@ export default function LamportDiagram({nodes, messages, logs, testNodeName}: {
     testNodeName: string,
 }) {
     const [lamportProps, colorMap] = useMemo(() => toLamportProps(nodes, messages, logs, testNodeName), [nodes, messages, logs]);
-    return <div className="h-100">
+    return <div className="h-100 position-relative">
         <LamportDiagramImpl {...lamportProps} />
         <Legend colors={colorMap}/>
     </div>;
@@ -169,7 +169,7 @@ function LamportDiagramImpl({
     };
 
     return <MousePan>
-        <div className="d-flex overflow-scroll h-100 mb-1" ref={enableZoom}>
+        <div className="d-flex overflow-scroll h-100 pb-5" ref={enableZoom}>
             {hoverContent !== null && createPortal(<FollowMouse>
                 {hoverContent}
             </FollowMouse>, document.body)}
@@ -177,7 +177,7 @@ function LamportDiagramImpl({
                 {nodes.map(n => <div key={n} className="d-flex align-items-center px-2"
                                      style={{"height": nodeSpacing}}>{n}</div>)}
             </div>
-            <div ref={e => setMinWidth(e?.clientWidth || 0)} className="w-100" style={{height}}>
+            <div ref={e => setMinWidth(e?.clientWidth || 0)} className="flex-grow-1" style={{height}}>
                 <svg width={width} height={height}>
                     <defs>
                         <Marker id="marker"/>
@@ -252,17 +252,6 @@ function EventLabel({event, pos, radius, hover, unhover}: {
             <text x={width / 2} y={height / 2} style={{textAnchor: "middle", dominantBaseline: "middle"}}
                   fontSize={fontSize} fill="black">{label}</text>
         </g>
-        // return <use href="#pin" x={pos.x} y={pos.y-16} width="12" height="16" stroke="none" fill={event.color}/>
-        // return <foreignObject x={pos.x - 25} y={pos.y - 50} width="50" height="50">
-        //     <div style={{position: "relative", width: 50, height: 50}}>
-        //         <div className="d-inline-block" style={{position: "absolute", left: "50%", bottom: 0}}
-        //              onMouseEnter={_ => hover(<Json json={event.data} format={true}/>)}
-        //              onMouseLeave={unhover}>
-        //             <div className="lamport-label"
-        //                  style={{"--label-color": event.color} as React.CSSProperties}>{event.label}</div>
-        //         </div>
-        //     </div>
-        // </foreignObject>
     }
 }
 
@@ -303,7 +292,7 @@ function Pin({id}: { id: string }) {
 }
 
 function Legend({colors}: { colors: Map<string, string> }) {
-    return <div className="border-top sticky-bottom bg-white p-2">
+    return <div className="border-top position-absolute bottom-0 w-100 bg-white p-2">
         Message Types:
         {[...colors.entries()].map(([type, color]) => <div key={type} className="badge rounded-pill ms-2"
                                                            style={{background: color}}>{type}</div>)}
