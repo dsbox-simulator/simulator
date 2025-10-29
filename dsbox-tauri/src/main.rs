@@ -11,15 +11,6 @@ use log::LevelFilter;
 use tokio::task::JoinHandle;
 
 fn main() {
-    let args = cli::Cli::parse();
-    if let Some(cli::Mode::Cli(cli_args)) = args.mode {
-        run_cli(cli_args, args.lua_unsafe);
-    } else {
-        app_lib::run(args);
-    }
-}
-
-fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
     let mut logger = env_logger::builder();
     logger.filter_level(LevelFilter::Warn);
 
@@ -31,6 +22,15 @@ fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
     logger.parse_default_env();
     logger.init();
 
+    let args = cli::Cli::parse();
+    if let Some(cli::Mode::Cli(cli_args)) = args.mode {
+        run_cli(cli_args, args.lua_unsafe);
+    } else {
+        app_lib::run(args);
+    }
+}
+
+fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
     if let Err(e) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

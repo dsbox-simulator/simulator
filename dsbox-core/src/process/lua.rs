@@ -1,13 +1,13 @@
 //! lua scripts can be used as an implementation of a node
 //! todo: more documentation
 
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-
 use mlua::{
     FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib,
     Table, Value,
 };
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::{oneshot, Mutex};
@@ -161,6 +161,7 @@ impl LuaLauncher {
         mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
         mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
         mod_dsbox.set("clock", lua.create_function(lua_clock)?)?;
+        mod_dsbox.set("sleep", lua.create_function(lua_sleep)?)?;
         let message_class = lua.create_table()?;
         message_class.set("new", lua.create_function(message_new)?)?;
         message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
@@ -471,6 +472,11 @@ fn lua_clock(_: &Lua, _: ()) -> mlua::Result<u128> {
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap();
     Ok(elapsed.as_millis())
+}
+
+fn lua_sleep(_: &Lua, seconds: f64) -> mlua::Result<()> {
+    std::thread::sleep(Duration::from_secs_f64(seconds));
+    Ok(())
 }
 
 pub fn log_marker_color_from_str(color: &str) -> Option<LogMarkerColor> {

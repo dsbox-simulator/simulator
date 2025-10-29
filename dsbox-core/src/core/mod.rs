@@ -33,7 +33,6 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
-use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -46,6 +45,7 @@ use crate::log_color::log_marker_ansi_color;
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
+use crate::Command;
 
 pub mod error;
 pub mod event;
@@ -651,26 +651,32 @@ impl Core {
                 None
             }
         } else {
-            let node = self
+            let launch_result = self
                 .launch_node_with_middleware(
                     launch.name,
                     &launch.middleware_before,
                     &launch.middleware_after,
                 )
-                .await?;
-            let id = node.id;
-            let name = node.name.clone();
-            let commandline = node.commandline(MiddlewareId(launch.middleware_before.len()));
-            self.event_sender
-                .send(Event::node_launched(
-                    self.timestamp_source.now(),
-                    id,
-                    name,
-                    commandline,
-                ))
-                .await
-                .ok();
-            None
+                .await;
+            match launch_result {
+                Ok(node) => {
+                    let id = node.id;
+                    let name = node.name.clone();
+                    let commandline =
+                        node.commandline(MiddlewareId(launch.middleware_before.len()));
+                    self.event_sender
+                        .send(Event::node_launched(
+                            self.timestamp_source.now(),
+                            id,
+                            name,
+                            commandline,
+                        ))
+                        .await
+                        .ok();
+                    None
+                }
+                Err(e) => Some(e.to_string()),
+            }
         };
         let ts = self.timestamp_source.now();
         self.dispatch(
