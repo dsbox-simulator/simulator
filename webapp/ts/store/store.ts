@@ -26,6 +26,15 @@ export interface MessageInfo {
     dropped: boolean,
 }
 
+
+export function isLog(data: MessageInfo | LogInfo | null): data is LogInfo {
+    return data?.message.hasOwnProperty("text") || false;
+}
+
+export function isMessage(message: MessageInfo | LogInfo | null): message is MessageInfo {
+    return message?.message.hasOwnProperty("src") || false;
+}
+
 export default class Store {
     private readonly api: Api;
     private nodes: NodeInfo[] = [];

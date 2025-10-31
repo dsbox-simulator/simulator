@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import LamportDiagram from "./components/lamportDiagram";
-import Store from "./store/store";
+import Store, {isLog, isMessage, LogInfo, MessageInfo} from "./store/store";
 import Toolbar from "./components/toolbar";
 import MessageView from "./components/messageView";
 import LogView from "./components/logView";
@@ -23,13 +23,14 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
     const testNodeName = "test";
     const [showOnlyUndelivered, setShowOnlyUndelivered] = useState(true);
     const [commands, setCommands] = useState<Commands | null>(null);
+    const [highlighted, setHighlighted] = useState<MessageInfo | LogInfo | null>(null);
     const setCommandsSave = (commands: Commands): void => {
         setCommands(commands);
         store.store("last_commands", commands);
     };
 
     useEffect(() => {
-        (async() => {
+        (async () => {
             let store = storeRef.current!;
             let commands = await store.currentCommands()
             if (commands.testCommand.program === "") {
@@ -63,7 +64,12 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
         </div>
         <div className="content">
             <div className="lamport-diagram">
-                <LamportDiagram nodes={nodes} messages={messages} logs={logs} testNodeName={testNodeName}/>
+                <LamportDiagram nodes={nodes}
+                                messages={messages}
+                                highlighted={highlighted}
+                                setHighlighted={setHighlighted}
+                                logs={logs}
+                                testNodeName={testNodeName}/>
             </div>
             <div className="messages-logs">
                 <div className="tool-pane">
@@ -79,7 +85,10 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                         </div>
                     </div>
                     <div className="tool-pane-content overflow-y-scroll">
-                        <MessageView messages={messages} onlyUndelivered={showOnlyUndelivered}
+                        <MessageView messages={messages}
+                                     onlyUndelivered={showOnlyUndelivered}
+                                     highlighted={isMessage(highlighted) ? highlighted : null}
+                                     setHighlighted={setHighlighted}
                                      onDeliver={m => store.deliver(m)}
                                      onDrop={m => store.drop(m)}/>
                     </div>
@@ -89,7 +98,12 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                         <div><i className="bi bi-terminal"></i> Logs</div>
                     </div>
                     <div className="tool-pane-content overflow-y-scroll">
-                        <LogView nodes={nodes} logs={logs} testNodeName={testNodeName}/>
+                        <LogView
+                            nodes={nodes}
+                            logs={logs}
+                            highlighted={isLog(highlighted) ? highlighted : null}
+                            setHighlighted={setHighlighted}
+                            testNodeName={testNodeName}/>
                     </div>
                 </div>
             </div>

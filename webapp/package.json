@@ -43,20 +43,19 @@
     "htmlnano": "^2.1.5",
     "npm-watch": "^0.13.0",
     "typescript": "^5.9.3",
-    "commander": "^14.0.1"
+    "commander": "^14.0.2"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.8.0",
-    "@tauri-apps/plugin-dialog": "^2.4.0",
-    "@tauri-apps/plugin-store": "^2.4.0",
-    "@tauri-apps/plugin-window-state": "^2.4.0",
-    "@flatten-js/core": "^1.6.4",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-store": "^2.4.1",
+    "@tauri-apps/plugin-window-state": "^2.4.1",
+    "@flatten-js/core": "^1.6.6",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-syntax-highlighter": "^15.6.6",
-    "classnames": "^2.5.1",
-    "svgo": "^3.0.2"
+    "react-syntax-highlighter": "^16.1.0",
+    "classnames": "^2.5.1"
   }
 }

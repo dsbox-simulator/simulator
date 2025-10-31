@@ -1,15 +1,18 @@
 import React, {useMemo} from "react";
 import {LogInfo, NodeInfo} from "../store/store";
 import Tooltip from "./tooltip";
-import {cssColor} from "../colors";
+import LogMessage from "./logMessage";
+import classNames from "classnames";
 
-export default function LogView({nodes, logs, testNodeName}: {
+export default function LogView({nodes, logs, highlighted, setHighlighted, testNodeName}: {
     nodes: NodeInfo[],
     logs: LogInfo[],
+    highlighted: LogInfo | null,
+    setHighlighted: (log: LogInfo | null) => void,
     testNodeName: string
 }) {
     const nodesById = useMemo(() => new Map<number, NodeInfo>(nodes.map(n => [n.id, n])), [nodes]);
-    return <table className="table table-sm font-monospace">
+    return <table className="table table-hover table-sm font-monospace">
         <thead>
         <tr>
             <th><Tooltip tooltip="sent at"><i className="bi bi-box-arrow-right"></i></Tooltip></th>
@@ -18,11 +21,27 @@ export default function LogView({nodes, logs, testNodeName}: {
         </tr>
         </thead>
         <tbody>
-        {logs.map((log: LogInfo) => <tr key={log.timestamp.logical}>
-            <td>{log.timestamp.logical}</td>
-            <td>{nodesById.get(log.node)?.name || <i>{testNodeName}</i>}</td>
-            <td><span style={{color: cssColor(log.message.marker?.color || "Black")}}>{log.message.text}</span></td>
-        </tr>)}
+        {logs.map((log: LogInfo) => <LogRow key={log.timestamp.logical}
+                                            log={log}
+                                            highlighted={highlighted}
+                                            setHighLighted={setHighlighted}
+                                            nodesById={nodesById}
+                                            testNodeName={testNodeName}/>)}
         </tbody>
     </table>;
+}
+
+function LogRow({log, highlighted, setHighLighted, nodesById, testNodeName}: {
+    log: LogInfo,
+    highlighted: LogInfo | null,
+    setHighLighted: (log: LogInfo | null) => void,
+    nodesById: Map<number, NodeInfo>,
+    testNodeName: string
+}) {
+    return <tr className={classNames({"table-secondary": log.timestamp.logical === highlighted?.timestamp.logical})}
+               onMouseEnter={() => setHighLighted(log)} onMouseLeave={() => setHighLighted(null)}>
+        <td>{log.timestamp.logical}</td>
+        <td>{nodesById.get(log.node)?.name || <i>{testNodeName}</i>}</td>
+        <td><LogMessage log={log.message}/></td>
+    </tr>
 }

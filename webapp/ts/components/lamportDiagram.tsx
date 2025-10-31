@@ -1,10 +1,12 @@
 import React, {useMemo, useRef, useState} from "react";
 import {Circle, Point, Segment, Shape} from "@flatten-js/core";
 import {Json} from "./json";
-import {LogInfo, MessageInfo, NodeInfo} from "../store/store";
+import {isLog, isMessage, LogInfo, MessageInfo, NodeInfo} from "../store/store";
 import {cssColor} from "../colors";
 import {createPortal} from "react-dom";
 import MousePan from "./mousePan";
+import classNames from "classnames";
+import LogMessage from "./logMessage";
 
 interface Event {
     node: number
@@ -27,6 +29,8 @@ interface LamportDiagramProps {
     nodes: string[],
     events: Event[],
     communications: Communication[],
+    highlights: { event?: number, communication?: number }[],
+    getHoverData?: (data: any | null) => React.ReactNode,
     defaultNodeSpacing?: number,
     defaultEventSpacing?: number,
     eventRadius?: number,
@@ -37,8 +41,10 @@ function selectColor(nmb: number): string {
     return `hsl(${hue},75%,50%)`;
 }
 
+
 function toLamportProps(nodes: NodeInfo[],
                         messages: MessageInfo[],
+                        highlighted: MessageInfo | LogInfo | null,
                         logs: LogInfo[],
                         testNodeName: string): [LamportDiagramProps, Map<string, string>] {
     const nodeNames = [testNodeName, ...nodes.map(n => n.name)];
@@ -49,14 +55,16 @@ function toLamportProps(nodes: NodeInfo[],
     nodesById.set(0, 0);
     const events: Event[] = [];
     const communications: Communication[] = [];
+    const highlights: { event?: number, communication?: number }[] = [];
     for (const message of messages) {
+        const isHighlighted = isMessage(highlighted) && message.sentAt === highlighted.sentAt;
         if (message.message.src === "core" || message.message.dest === "core") continue;
         const sender = nodesByName.get(message.message.src);
         if (sender === undefined) continue;
         events.push({
             node: sender,
             logicalClock: message.sentAt.logical,
-            data: message.message.body,
+            data: message,
             color: message.dropped ? "red" : "white",
         });
         if (message.deliveredAt !== null) {
@@ -65,7 +73,7 @@ function toLamportProps(nodes: NodeInfo[],
             events.push({
                 node: receiver,
                 logicalClock: message.deliveredAt.logical,
-                data: message.message.body,
+                data: message,
                 color: "white",
             });
             let color = colorMap.get(message.message.body.type);
@@ -80,37 +88,64 @@ function toLamportProps(nodes: NodeInfo[],
                 sentLogicalClock: message.sentAt.logical,
                 receivedLogicalClock: message.deliveredAt.logical,
                 color,
-                data: message.message.body,
+                data: message,
             });
+            if (isHighlighted) {
+                highlights.push({communication: communications.length - 1});
+            }
+        } else {
+            if (isHighlighted) {
+                highlights.push({event: events.length - 1});
+            }
         }
     }
     for (const log of logs) {
+        const isHighlighted = isLog(highlighted) && log.timestamp.logical == highlighted.timestamp.logical;
         const node = nodesById.get(log.node);
         if (node === undefined) continue;
         events.push({
             node,
-            data: log.message.text,
+            data: log,
             logicalClock: log.timestamp.logical,
             label: log.message.marker?.label,
             color: cssColor(log.message.marker?.color || "Black"),
         });
+        if (isHighlighted) {
+            highlights.push({event: events.length - 1});
+        }
     }
     return [{
         nodes: nodeNames,
         events,
         communications,
+        highlights,
     }, colorMap]
 }
 
-export default function LamportDiagram({nodes, messages, logs, testNodeName}: {
+export default function LamportDiagram({nodes, messages, highlighted, setHighlighted, logs, testNodeName}: {
     nodes: NodeInfo[],
     messages: MessageInfo[],
+    highlighted: MessageInfo | LogInfo | null,
+    setHighlighted: (highlighted: MessageInfo | LogInfo | null) => void,
     logs: LogInfo[]
     testNodeName: string,
 }) {
-    const [lamportProps, colorMap] = useMemo(() => toLamportProps(nodes, messages, logs, testNodeName), [nodes, messages, logs]);
+    const [lamportProps, colorMap] = useMemo(() =>
+            toLamportProps(nodes, messages, highlighted, logs, testNodeName),
+        [nodes, messages, highlighted, logs]);
+    const onHover = (data: MessageInfo | LogInfo | null): React.ReactNode => {
+        setHighlighted(data);
+        if (isMessage(data)) {
+            return <Json json={data.message.body}/>;
+        } else if (isLog(data)) {
+            return <LogMessage log={data.message}/>
+        } else {
+            return null;
+        }
+    }
+
     return <div className="h-100 position-relative">
-        <LamportDiagramImpl {...lamportProps} />
+        <LamportDiagramImpl {...lamportProps} getHoverData={onHover}/>
         <Legend colors={colorMap}/>
     </div>;
 }
@@ -119,6 +154,8 @@ function LamportDiagramImpl({
                                 nodes,
                                 events,
                                 communications,
+                                highlights,
+                                getHoverData,
                                 defaultNodeSpacing = 75,
                                 defaultEventSpacing = 50,
                                 eventRadius = 6
@@ -143,28 +180,29 @@ function LamportDiagramImpl({
     const timelinePos = (nodeIdx: number, logicalTimestamp: number) =>
         new Point(((logicalTimestamp - firstTimestamp) + 0.5) * eventSpacing, timelineY(nodeIdx));
 
-    const hover = (content: React.ReactNode) => {
-        setHoverContent(content);
+    const hover = (data: any | null) => {
+        if (getHoverData) {
+            setHoverContent(getHoverData(data));
+        }
         return true;
     }
 
-    const unhover = () => {
-        setHoverContent(null);
-        return true;
-    }
 
     const enableZoom = (element: HTMLDivElement | null) => {
         if (element === null) return;
         element.addEventListener("wheel", event => {
-            if (event.shiftKey) {
-                const spacing = nodeSpacing - event.deltaY * 0.1;
-                setNodeSpacing(Math.min(Math.max(spacing, 24), 100));
-            } else {
+            if (event.ctrlKey) {
                 const spacing = eventSpacing - event.deltaY * 0.1;
                 setEventSpacing(Math.min(Math.max(spacing, 24), 100));
+                event.preventDefault();
+                return false;
+            } else if (event.altKey) {
+                const spacing = nodeSpacing - event.deltaY * 0.1;
+                setNodeSpacing(Math.min(Math.max(spacing, 24), 100));
+                event.preventDefault();
+                return false;
             }
-            event.preventDefault();
-            return false;
+            return true;
         }, {passive: false});
     };
 
@@ -193,7 +231,8 @@ function LamportDiagramImpl({
                                                          shape={new Segment(new Point(0, timelineY(idx)), new Point(width, timelineY(idx)))}/>)}
                     </g>
                     <g stroke="currentColor">
-                        {communications.map(comm => {
+                        {communications.map((comm, index) => {
+                            const highlighted = highlights.find(h => h.communication === index) !== undefined;
                             const sentP = timelinePos(comm.from, comm.sentLogicalClock);
                             const receivedP = timelinePos(comm.to, comm.receivedLogicalClock);
                             const fullSegment = new Segment(sentP, receivedP);
@@ -201,10 +240,13 @@ function LamportDiagramImpl({
                             const arrowSegment = new Segment(
                                 fullSegment.ps.translate(fullSegment.tangentInStart().multiply(eventRadius)),
                                 fullSegment.pe.translate(fullSegment.tangentInEnd().multiply(eventRadius + 10)));
-                            return <g key={comm.sentLogicalClock}
-                                      onMouseEnter={_ => hover(<Json json={comm.data} format={true}/>)}
-                                      onMouseLeave={unhover}>
-                                <AsSvg shape={fullSegment} className="lamport-comm" strokeWidth={eventRadius * 3}
+                            return <g className={classNames("lamport-comm", {highlighted})}
+                                      key={comm.sentLogicalClock}
+                                      onMouseEnter={() => hover(comm.data)}
+                                      onMouseLeave={() => hover(null)}>
+                                <AsSvg shape={fullSegment}
+                                       className="lamport-comm-highlight"
+                                       strokeWidth={eventRadius * 3}
                                        strokeLinecap="round"></AsSvg>
                                 <AsSvg shape={arrowSegment} markerEnd="url(#marker)"
                                        stroke={comm.color}/>
@@ -212,12 +254,12 @@ function LamportDiagramImpl({
                         })}
                     </g>
                     <g stroke="currentColor" fill="white">
-                        {events.map(event =>
+                        {events.map((event, index) =>
                             <EventLabel key={event.logicalClock} event={event}
                                         pos={timelinePos(event.node, event.logicalClock)}
                                         radius={eventRadius}
-                                        hover={hover}
-                                        unhover={unhover}/>)}
+                                        highlighted={highlights.find(h => h.event === index) !== undefined}
+                                        hover={hover}/>)}
                     </g>
                 </svg>
             </div>
@@ -225,31 +267,41 @@ function LamportDiagramImpl({
     </MousePan>;
 }
 
-function EventLabel({event, pos, radius, hover, unhover}: {
+function EventLabel({event, pos, radius, highlighted, hover}: {
     event: Event,
     pos: Point,
     radius: number,
-    hover: (content: React.ReactNode) => boolean,
-    unhover: () => boolean
+    highlighted: boolean,
+    hover: (data: any | null) => boolean,
 }) {
     if (event.label === undefined) {
-        return <AsSvg shape={new Circle(pos, radius)} fill={event.color}
-                      onMouseEnter={() => hover(<Json json={event.data} format={true}/>)}
-                      onMouseLeave={unhover}/>;
+        return <g className={classNames("lamport-event", {highlighted})}>
+            <AsSvg className="lamport-event-highlight" shape={new Circle(pos, radius + 3)}/>
+            <AsSvg shape={new Circle(pos, radius)} fill={event.color}
+                   onMouseEnter={() => hover(event.data)}
+                   onMouseLeave={() => hover(null)}/>
+        </g>;
     } else {
         const fontSize = 12;
         const padding = 4;
+        const margin = 3;
         const length = Math.min(event.label.length, 3);
         const label = event.label.substring(0, length);
-        const width = length * fontSize + padding * 2;
-        const height = fontSize + padding * 2;
-        const x = pos.x - width / 2;
-        const y = pos.y - height / 2;
-        return <g transform={`translate(${x}, ${y})`} stroke="none"
-                  onMouseEnter={() => hover(<Json json={event.data} format={true}/>)}
-                  onMouseLeave={unhover}>
-            <rect width={width} height={height} fill={event.color} rx={radius}/>
-            <text x={width / 2} y={height / 2} style={{textAnchor: "middle", dominantBaseline: "middle"}}
+        const innerWidth = length * fontSize + padding * 2;
+        const innerHeight = fontSize + padding * 2;
+        const outerWidth = innerWidth + margin * 2;
+        const outerHeight = innerHeight + margin * 2;
+        const x = pos.x - outerWidth / 2;
+        const y = pos.y - outerHeight / 2;
+        return <g className={classNames("lamport-event", {highlighted})}
+                  transform={`translate(${x}, ${y})`}
+                  stroke="none"
+                  onMouseEnter={() => hover(event.data)}
+                  onMouseLeave={() => hover(null)}>
+            <rect className="lamport-event-highlight" width={innerWidth + margin * 2}
+                  height={innerHeight + margin * 2} rx={radius}/>
+            <rect x={margin} y={margin} width={innerWidth} height={innerHeight} fill={event.color} rx={radius}/>
+            <text x={outerWidth / 2} y={outerHeight / 2} style={{textAnchor: "middle", dominantBaseline: "middle"}}
                   fontSize={fontSize} fill="black">{label}</text>
         </g>
     }
