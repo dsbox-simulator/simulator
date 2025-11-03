@@ -6,6 +6,7 @@ use crate::core::{Core, CoreReset, CoreState};
 use crate::Command;
 
 /// A command for the [`Core`] to control its execution
+#[derive(Debug)]
 pub enum RemoteCommand {
     /// Pauses the delivery of [`Message`](libproto::Message)s in the [`Core`].
     Break,
@@ -30,6 +31,7 @@ pub enum RemoteCommand {
 impl Core {
     /// handles a single [`RemoteCommand`]
     pub async fn handle_command(&mut self, command: RemoteCommand) -> Result<(), CoreError> {
+        log::trace!("handle_command: {command:?}");
         match command {
             RemoteCommand::Break => self.set_state(CoreState::Paused),
             RemoteCommand::Step => self.set_state(CoreState::Stepping),
@@ -51,7 +53,7 @@ impl Core {
                 self.restart(true).await?;
             }
             RemoteCommand::Shutdown => {
-                self.begin_shutdown(0..)?;
+                self.begin_shutdown(0..);
                 self.reset_flag = Some(CoreReset::Shutdown);
             }
         }

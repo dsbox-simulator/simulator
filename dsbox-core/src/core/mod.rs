@@ -25,7 +25,7 @@ use tokio::time::{Duration, Instant};
 
 use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
-use libproto::services::{LogMessage, TimerExpired};
+use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
     BeginMonitor, Break, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Reset,
     ResetFinished,
@@ -33,6 +33,7 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
+use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -45,7 +46,6 @@ use crate::log_color::log_marker_ansi_color;
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
-use crate::Command;
 
 pub mod error;
 pub mod event;
@@ -222,6 +222,7 @@ impl Core {
         // launch test node/publish initial reset event
         self.restart(false).await?;
         let mut deadline = None;
+        let mut error_ocurred = None;
         loop {
             let mut num_running = 0;
             let mut num_servers = 0;
@@ -242,23 +243,29 @@ impl Core {
 
             let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
 
-            self.step(dont_block).await?;
+            if let Err(e) = self.step(dont_block).await {
+                self.log_core_error(e).await;
+            }
             if let Some(launch) = self.launch_queue.pop_front() {
-                self.launch_single(launch).await?;
+                self.launch_single(launch).await;
             } else if self.reset_flag.is_some() && self.network.is_empty() {
                 if deadline.is_none() {
                     deadline = Some(Instant::now() + Duration::from_secs(1));
                 } else if num_servers == 0 || Instant::now() > deadline.unwrap() {
                     deadline = None;
                     let shutdown = self.reset_flag.take().unwrap() == CoreReset::Shutdown;
-                    self.reset(shutdown).await?;
+                    self.reset(shutdown).await;
                     if shutdown {
                         break;
                     };
                 }
             }
         }
-        Ok(())
+        if let Some(error) = error_ocurred {
+            Err(error)
+        } else {
+            Ok(())
+        }
     }
 
     fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Message)> {
@@ -316,6 +323,7 @@ impl Core {
         middleware_id: MiddlewareId,
         process_event: ProcessEvent,
     ) -> Result<bool, CoreError> {
+        log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
                 self.dispatch(Some((node_id, middleware_id)), timestamp, message)
@@ -328,7 +336,7 @@ impl Core {
                     marker: None,
                 };
                 self.log(timestamp, node_id, middleware_id, log_message)
-                    .await?;
+                    .await;
                 Ok(true)
             }
             ProcessEvent::Exited(exit_code) => {
@@ -336,7 +344,7 @@ impl Core {
                     .await?;
                 if self.nodes.resolve_alias(node_id).is_test {
                     // test process exited: shut down all processes gracefully
-                    self.begin_shutdown(..)?;
+                    self.begin_shutdown(..);
                 }
                 Ok(true)
             }
@@ -403,6 +411,7 @@ impl Core {
         sent_timestamp: Timestamp,
         message: Message,
     ) -> Result<(), CoreError> {
+        log::trace!("deliver {message:?}");
         let Some(destination_id) = self.nodes.lookup_and_resolve(&message.dst).map(|n| n.id) else {
             return Err(CoreError::DispatchError {
                 name: message.src.clone(),
@@ -515,7 +524,8 @@ impl Core {
                         "tried to send log message without a source (i.e. the core sent it to the core?)"
                     );
                 };
-                self.log(timestamp, source_id, middleware_id, message).await
+                self.log(timestamp, source_id, middleware_id, message).await;
+                Ok(())
             }
             Break::TYPE => {
                 if self.interactive {
@@ -528,7 +538,7 @@ impl Core {
                 if self.reset_flag.is_none() {
                     self.reset_flag = Some(CoreReset::Reset);
                 }
-                self.begin_shutdown(1..)?;
+                self.begin_shutdown(1..);
                 Ok(())
             }
             Launch::TYPE => {
@@ -604,7 +614,7 @@ impl Core {
     }
 
     /// signals all nodes to begin shutting down (e.g. close stdin handles etc.)
-    fn begin_shutdown<R>(&mut self, range: R) -> Result<(), CoreError>
+    fn begin_shutdown<R>(&mut self, range: R)
     where
         R: SliceIndex<[NodeRef], Output = [NodeRef]>,
     {
@@ -613,7 +623,6 @@ impl Core {
                 proc.begin_shutdown();
             }
         }
-        Ok(())
     }
 
     /// begin shutdown of nodes in given `range` and wait a grace period of 1 second before returning
@@ -633,7 +642,7 @@ impl Core {
     }
 
     /// launches a single new server
-    async fn launch_single(&mut self, launch: Launch) -> Result<(), CoreError> {
+    async fn launch_single(&mut self, launch: Launch) {
         let error = if launch.as_test {
             if !launch.middleware_before.is_empty() || !launch.middleware_after.is_empty() {
                 Some("cannot specify middleware when launching a test node".to_string())
@@ -684,12 +693,12 @@ impl Core {
             ts,
             Message::new(CORE_NAME, TEST_NODE_NAME, None, LaunchFinished { error }),
         )
-        .await?;
-        Ok(())
+        .await
+        .expect("sending launch_finished message");
     }
 
     /// Resets the [`Core`] and sets up a new test run
-    async fn reset(&mut self, shutdown: bool) -> Result<(), CoreError> {
+    async fn reset(&mut self, shutdown: bool) {
         if shutdown {
             self.terminate_now(0..).await;
         } else {
@@ -705,7 +714,8 @@ impl Core {
                 ts,
                 Message::new(CORE_NAME, TEST_NODE_NAME, None, ResetFinished {}),
             )
-            .await?;
+            .await
+            .expect("sending reset_finished message");
 
             // reset the timestamps to restart at 0
             self.timestamp_source = TimestampSource::new();
@@ -715,7 +725,6 @@ impl Core {
                 .await
                 .ok();
         }
-        Ok(())
     }
 
     /// launches a new node with its corresponding process and middleware processes
@@ -796,7 +805,7 @@ impl Core {
         source_id: NodeId,
         middleware_id: MiddlewareId,
         message: LogMessage,
-    ) -> Result<(), CoreError> {
+    ) {
         let node = self.nodes.resolve_alias(source_id);
         if let Some(marker) = &message.marker {
             let (color, reset) = if let Some(color) = marker.color {
@@ -823,7 +832,25 @@ impl Core {
             .send(Event::log(timestamp, source_id, message))
             .await
             .ok();
-        Ok(())
+    }
+
+    async fn log_core_error(&mut self, error: CoreError) {
+        let message = format!("simulation core error:\n{error}");
+        log::error!("{message}");
+        self.event_sender
+            .send(Event::log(
+                self.timestamp_source.now(),
+                NodeId(0),
+                LogMessage {
+                    text: message,
+                    marker: Some(LogMarker {
+                        label: "ERR".to_string(),
+                        color: Some(LogMarkerColor::Red),
+                    }),
+                },
+            ))
+            .await
+            .ok();
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
@@ -846,9 +873,7 @@ impl Core {
         );
         Ok(())
     }
-}
 
-impl Core {
     /// split a string into the program and args
     /// for now, it just splits the string using the space character,
     /// taking the first element as the program and the remaining elements as the args

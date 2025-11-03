@@ -29,8 +29,8 @@
 .tool-pane {
     display: flex;
     flex-direction: column;
-    flex-basis: 0;
-    flex-grow: 1;
+    width: 50vw;
+    overflow-x: scroll;
 }
 
 .tool-pane:not(:first-child) {

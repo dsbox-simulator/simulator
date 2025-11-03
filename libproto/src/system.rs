@@ -29,7 +29,7 @@ pub struct Launch {
     pub middleware_after: Vec<Command>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Command {
     pub program: String,

@@ -1,7 +1,10 @@
 use std::future::Future;
-use std::pin::pin;
-
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use std::pin::{pin, Pin};
+use std::task::{Context, Poll};
+use tokio::io::{
+    AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
+    Lines,
+};
 use tokio::select;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::oneshot;
@@ -45,8 +48,16 @@ pub async fn process_io_helper<I, O, E, C>(
                 if send_result.is_err() { break; }
             },
             stderr_line = stderr.next_line(), if !stderr_closed => {
-                let Ok(Some(line)) = stderr_line else { stderr_closed = true; continue; };
-                if event_sender.send(ProcessEvent::Log(line.to_owned())).await.is_err() {
+                let Ok(Some(mut log)) = stderr_line else { stderr_closed = true; continue; };
+                if let Ok((more, closed)) = poll_more_lines(&mut stderr).await {
+                    stderr_closed = closed;
+                    log.push('\n');
+                    log.push_str(&more);
+                } else {
+                    stderr_closed = true;
+                    continue;
+                }
+                if event_sender.send(ProcessEvent::Log(log.to_owned())).await.is_err() {
                     break;
                 }
             }
@@ -81,4 +92,36 @@ async fn write_message(
     to.write_all(b"\n").await?;
     to.flush().await?;
     Ok(())
+}
+
+async fn poll_more_lines<R>(lines: &mut Lines<R>) -> tokio::io::Result<(String, bool)>
+where
+    R: AsyncBufRead + Unpin,
+{
+    PollMoreLines(lines).await
+}
+
+struct PollMoreLines<'a, R>(&'a mut Lines<R>);
+
+impl<'a, R> Future for PollMoreLines<'a, R>
+where
+    R: AsyncBufRead + Unpin,
+{
+    type Output = tokio::io::Result<(String, bool)>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let inner = &mut self.get_mut().0;
+        let mut closed = false;
+        let mut extra_lines = String::new();
+        while let Poll::Ready(result) = Pin::new(&mut **inner).poll_next_line(cx) {
+            if let Some(result) = result? {
+                extra_lines.push('\n');
+                extra_lines.push_str(&result);
+            } else {
+                closed = true;
+                break;
+            }
+        }
+        Poll::Ready(Ok((extra_lines, closed)))
+    }
 }

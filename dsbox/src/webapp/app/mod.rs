@@ -148,7 +148,7 @@ impl App {
                 }
                 result = poll_fn(poll_optional_join_handle(&mut self.core_handle)) => {
                     match result {
-                        Ok(Ok(())) => {}
+                        Ok(Ok(())) => log::info!("core shut down"),
                         Err(join_error) => log::warn!("core shut down with an error: {join_error}"),
                         Ok(Err(core_error)) => log::warn!("core shut down with an error: {core_error}"),
                     }

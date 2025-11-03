@@ -1,9 +1,11 @@
 //! A [`ProcessEvent`] encompasses everything that happens in a process.
 //! This includes sending [`Message`]s, logging lines, exiting, and errors,
 //! and might be expanded in the future.
+
 use libproto::Message;
 
 /// Describes what happened in the process
+#[derive(Debug)]
 pub enum ProcessEvent {
     /// A [`Message`] was written to the processes `stdout`.
     Message(Message),

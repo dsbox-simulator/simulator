@@ -112,11 +112,21 @@ impl LuaLauncher {
             .call_async(())
             .await
             .map(|v: Value| v.as_i32().unwrap_or(0));
+        let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
         if let Err(e) = &result {
-            log::warn!("script `{}` exited with an error: {e}", file.display());
+            let error_message = e.to_string();
+            let message = format!(
+                "script `{}` exited with an error: {error_message}",
+                file.display()
+            );
+            app_data
+                .sender
+                .send(ProcessEvent::Log(message.clone()))
+                .await
+                .ok();
+            log::warn!("{}", message);
         }
         let exit_code = result.as_ref().ok().copied().unwrap_or(-1);
-        let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
         app_data
             .sender
             .send(ProcessEvent::Exited(exit_code))
