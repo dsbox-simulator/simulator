@@ -31,17 +31,14 @@ fn main() {
 }
 
 fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
-    if let Err(e) = tokio::runtime::Builder::new_current_thread()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(run_dsbox(args, allow_lua_unsafe))
-    {
-        log::error!("{e}");
-    }
+        .block_on(run_dsbox(args, allow_lua_unsafe));
 }
 
-async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) -> Result<(), CoreError> {
+async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) {
     let core = Core::new(
         Core::split_command(args.test_command),
         Core::make_command(args.server_command),
@@ -55,12 +52,11 @@ async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) -> Result<(), Cor
         None
     };
 
-    let result = core.run().await;
+    core.run().await;
 
     if let Some(recorder) = recorder {
         recorder.await.ok();
     }
-    result
 }
 
 async fn spawn_protocol_recorder(

@@ -5,8 +5,8 @@
 
 use std::fmt::{Display, Formatter};
 
-use libproto::Message;
 use crate::core::node::MiddlewareId;
+use libproto::Message;
 
 /// An error that occurred during execution
 #[derive(Debug)]
@@ -34,16 +34,24 @@ pub enum CoreError {
         middleware_id: MiddlewareId,
     },
     /// An error occurred trying to launch a process.
-    LaunchFailed { command: String, error: std::io::Error },
+    LaunchFailed {
+        command: String,
+        error: std::io::Error,
+    },
     /// A process wrote some text to its standard output, that could not be parsed into a [`Message`].
-    SerializeError { source: String, raw_message: String, error: String },
+    SerializeError {
+        source: String,
+        raw_message: String,
+        error: String,
+    },
 }
 
 /// Gives a reason why a [`Message`] could not be dispatched
 #[derive(Debug)]
 pub enum DispatchErrorKind {
     /// The source name of a [`Message`] does not match the processes associated node name (or names, in case of the test process).
-    SourceNameMismatch,
+    /// Contains the name that was given in the message and the name(s) of the node that sent the message (the test node might have several aliases)
+    SourceNameMismatch(String, Vec<String>),
     /// The destination of a [`Message`] could not be resolved (the node name does not exist).
     DestinationUnknown,
 }
@@ -51,23 +59,56 @@ pub enum DispatchErrorKind {
 impl Display for CoreError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CoreError::DispatchError { name, message, kind, .. } => {
-                write!(f, "node `{name}` - dispatch error: {kind}; message: {}", message.to_json())
+            CoreError::DispatchError {
+                name,
+                message,
+                kind,
+                ..
+            } => {
+                write!(
+                    f,
+                    "node `{name}` - dispatch error: {kind}; message: {}",
+                    message.to_json()
+                )
             }
             CoreError::IllegalCoreMessage { source, message } => {
-                write!(f, "non-test process `{source}` tried to send core message: {}", message.to_json())
+                write!(
+                    f,
+                    "non-test process `{source}` tried to send core message: {}",
+                    message.to_json()
+                )
             }
             CoreError::UnknownCoreMessage { source, ty } => {
                 write!(f, "unknown system message from `{source}`: {ty}")
             }
-            CoreError::LaunchFailed { command, error: err } => {
-                write!(f, "failed to launch process with command {command:?}: {err}")
+            CoreError::LaunchFailed {
+                command,
+                error: err,
+            } => {
+                write!(
+                    f,
+                    "failed to launch process with command {command:?}: {err}"
+                )
             }
-            CoreError::SerializeError { source, raw_message, error } => {
-                write!(f, "failed to deserialize message from process `{source}`: {error} (raw message: {raw_message:?})")
+            CoreError::SerializeError {
+                source,
+                raw_message,
+                error,
+            } => {
+                write!(
+                    f,
+                    "failed to deserialize message from process `{source}`: {error} (raw message: {raw_message:?})"
+                )
             }
-            CoreError::MissingMiddleware { source, node, middleware_id: middleware_idx } => {
-                write!(f, "failed to forward message to next middleware process: `{node}` only has `{middleware_idx}` middleware(s). Process: `{source}`")
+            CoreError::MissingMiddleware {
+                source,
+                node,
+                middleware_id: middleware_idx,
+            } => {
+                write!(
+                    f,
+                    "failed to forward message to next middleware process: `{node}` only has `{middleware_idx}` middleware(s). Process: `{source}`"
+                )
             }
         }
     }
@@ -76,7 +117,11 @@ impl Display for CoreError {
 impl Display for DispatchErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DispatchErrorKind::SourceNameMismatch => f.write_str("source name does not match source id"),
+            DispatchErrorKind::SourceNameMismatch(got, expected) => write!(
+                f,
+                "source name does not match source id, expected one of [{:?}], got {:?}",
+                expected, got
+            ),
             DispatchErrorKind::DestinationUnknown => f.write_str("destination unknown"),
         }
     }

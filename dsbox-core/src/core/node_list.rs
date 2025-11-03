@@ -16,7 +16,7 @@ pub struct NodeList {
 
 pub enum NodeRef {
     Node(Node),
-    Alias { name: String, id: usize },
+    Alias { name: String, id: NodeId },
 }
 
 impl NodeList {
@@ -41,7 +41,11 @@ impl NodeList {
     pub fn add_alias(&mut self, for_id: NodeId, name: String) -> (NodeId, &mut Node) {
         let alias_id = NodeId(self.len());
         self.names.insert(name.clone(), self.len());
-        self.nodes.push(NodeRef::Alias {name, id: for_id.0});
+        let target_node = self.resolve_alias(for_id);
+        self.nodes.push(NodeRef::Alias {
+            name,
+            id: target_node.id,
+        });
         (alias_id, self.resolve_alias_mut(for_id))
     }
 
@@ -66,13 +70,29 @@ impl NodeList {
     pub fn alias_same_node(&self, node: &NodeRef, name: &str) -> bool {
         let left = match node {
             NodeRef::Node(node) => node,
-            NodeRef::Alias { id, .. } => self.resolve_alias(NodeId(*id)),
+            NodeRef::Alias { id, .. } => self.resolve_alias(*id),
         };
         let Some(id) = self.names.get(name) else {
             return false;
         };
         let right = self.resolve_alias(NodeId(*id));
         std::ptr::eq(left, right)
+    }
+
+    pub fn aliases_of(&self, target: &NodeRef) -> Vec<String> {
+        let target = match target {
+            NodeRef::Node(node) => node,
+            NodeRef::Alias { id, .. } => self.resolve_alias(*id),
+        };
+        let mut aliases = Vec::new();
+        for node in &self.nodes {
+            match node {
+                NodeRef::Node(node) if node.id == target.id => aliases.push(node.name.clone()),
+                NodeRef::Alias { id, name } if *id == target.id => aliases.push(name.clone()),
+                _ => {}
+            }
+        }
+        aliases
     }
 
     pub fn iter(&self) -> Iter<'_, NodeRef> {
@@ -103,7 +123,7 @@ impl NodeList {
         loop {
             match &self.nodes[index] {
                 NodeRef::Node(node) => return node,
-                NodeRef::Alias { id, .. } => index = *id,
+                NodeRef::Alias { id, .. } => index = id.0,
             }
         }
     }
@@ -115,7 +135,7 @@ impl NodeList {
             let node = &self.nodes[index];
             match node {
                 NodeRef::Node(_) => break,
-                NodeRef::Alias { id, .. } => index = *id,
+                NodeRef::Alias { id, .. } => index = id.0,
             }
         }
         self.nodes[index].as_node_mut().unwrap()

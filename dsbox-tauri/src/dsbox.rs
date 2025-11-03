@@ -1,5 +1,4 @@
 use async_channel::{Receiver, Sender};
-use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
@@ -12,7 +11,7 @@ pub struct DsboxState {
     remote: Sender<RemoteCommand>,
     subscriber: Receiver<Event>,
     #[allow(unused)]
-    core_handle: JoinHandle<Result<(), CoreError>>,
+    core_handle: JoinHandle<()>,
     commands: Commands,
 }
 

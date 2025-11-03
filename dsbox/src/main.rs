@@ -32,25 +32,21 @@ async fn main() {
     logger.init();
 
     let args = Args::parse();
-    if let Err(e) = run(args).await {
-        log::error!("{e}")
-    }
-
+    run(args).await;
     log::logger().flush();
 }
 
 /// Starts a new [`Core`], initialized with the given [`Args`].
 /// If necessary, also starts the [`Webapp`](webapp::Webapp).
-async fn run(args: Args) -> Result<(), CoreError> {
+async fn run(args: Args) {
     if args.interactive {
         run_webapp(&args).await;
-        Ok(())
     } else {
         run_cli(args).await
     }
 }
 
-async fn run_cli(args: Args) -> Result<(), CoreError> {
+async fn run_cli(args: Args) {
     let core = Core::new(
         Core::split_command(&args.test_command),
         Core::make_command(args.server_command),
@@ -64,12 +60,11 @@ async fn run_cli(args: Args) -> Result<(), CoreError> {
         None
     };
 
-    let result = core.run().await;
+    core.run().await;
 
     if let Some(recorder) = recorder {
         recorder.await.ok();
     }
-    result
 }
 
 async fn spawn_protocol_recorder(

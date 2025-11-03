@@ -13,17 +13,17 @@ use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
 
 use async_channel::{Receiver, Sender};
+use dsbox_core::Command;
 use serde::Serialize;
 use serde_json::Value;
 use std::future::poll_fn;
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use dsbox_core::Command;
 
 pub struct App {
     remote: Sender<RemoteCommand>,
     subscriber: Receiver<Event>,
-    core_handle: Option<JoinHandle<Result<(), CoreError>>>,
+    core_handle: Option<JoinHandle<()>>,
     commands: Commands,
 }
 
@@ -148,9 +148,8 @@ impl App {
                 }
                 result = poll_fn(poll_optional_join_handle(&mut self.core_handle)) => {
                     match result {
-                        Ok(Ok(())) => log::info!("core shut down"),
-                        Err(join_error) => log::warn!("core shut down with an error: {join_error}"),
-                        Ok(Err(core_error)) => log::warn!("core shut down with an error: {core_error}"),
+                        Ok(()) => log::info!("core shut down"),
+                        Err(join_error) => log::error!("core panicked: {join_error}"),
                     }
                     break;
                 }

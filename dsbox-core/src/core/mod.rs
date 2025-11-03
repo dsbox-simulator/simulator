@@ -218,11 +218,13 @@ impl Core {
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
-    pub async fn run(mut self) -> Result<(), CoreError> {
+    pub async fn run(mut self) {
         // launch test node/publish initial reset event
-        self.restart(false).await?;
+        if let Err(e) = self.restart(false).await {
+            self.log_core_error(e).await;
+            return;
+        }
         let mut deadline = None;
-        let mut error_ocurred = None;
         loop {
             let mut num_running = 0;
             let mut num_servers = 0;
@@ -260,11 +262,6 @@ impl Core {
                     };
                 }
             }
-        }
-        if let Some(error) = error_ocurred {
-            Err(error)
-        } else {
-            Ok(())
         }
     }
 
@@ -368,10 +365,12 @@ impl Core {
         if let Some((source_id, _)) = source {
             let source = &self.nodes[source_id];
             if !self.nodes.alias_same_node(source, &message.src) {
+                let aliases = self.nodes.aliases_of(source);
+                let got = message.src.clone();
                 return Err(CoreError::DispatchError {
                     name: source.name().to_owned(),
                     message,
-                    kind: DispatchErrorKind::SourceNameMismatch,
+                    kind: DispatchErrorKind::SourceNameMismatch(got, aliases),
                 });
             }
         }
