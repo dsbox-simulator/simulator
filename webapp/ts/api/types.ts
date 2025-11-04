@@ -132,10 +132,12 @@ export function splitCommand(command: string): Command {
     return {program: program || "", args};
 }
 
-export function displayCommand(command: Command|undefined): string {
-    if (command===undefined) {
+export function displayCommand(command: Command | undefined): string {
+    if (command === undefined) {
         return "";
+    } else if (command.args.length > 0) {
+        return `${command.program} ${command.args.join(" ")}`
     } else {
-        return `${command.program} ${command.args.join(" ")}`;
+        return command.program;
     }
 }

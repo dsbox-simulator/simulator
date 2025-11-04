@@ -42,6 +42,6 @@ function LogRow({log, highlighted, setHighLighted, nodesById, testNodeName}: {
                onMouseEnter={() => setHighLighted(log)} onMouseLeave={() => setHighLighted(null)}>
         <td>{log.timestamp.logical}</td>
         <td>{nodesById.get(log.node)?.name || <i>{testNodeName}</i>}</td>
-        <td><LogMessage log={log.message}/></td>
+        <td className="w-100"><LogMessage log={log.message}/></td>
     </tr>
 }

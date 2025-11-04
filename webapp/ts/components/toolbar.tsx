@@ -26,15 +26,14 @@ export default function Toolbar({
     inTauri: boolean,
     connected: boolean
 }) {
-    const [editCommands, setEditCommands] = useState<Commands>({
-        testCommand: {program: "", args: []},
-        serverCommand: {program: "", args: []}
-    });
+    const [editTestCommand, setEditTestCommand] = useState<string>("");
+    const [editServerCommand, setEditServerCommand] = useState<string>("");
     useEffect(() => {
-        if (commands !== null) setEditCommands(commands)
+        if (commands !== null) {
+            setEditTestCommand(displayCommand(commands.testCommand));
+            setEditServerCommand(displayCommand(commands.serverCommand));
+        }
     }, [commands]);
-
-    const [openSettings, setOpenSettings] = useState(false);
 
     return <nav className="navbar navbar-expand bg-body-tertiary border-bottom">
         <div className="container-fluid">
@@ -71,18 +70,21 @@ export default function Toolbar({
                     <li className="nav-item d-flex flex-grow-1 gap-2 align-items-center">
                         <div className="input-group input-group-sm">
                             {inTauri && <>
-                                <button className="btn btn-sm btn-primary" onClick={_ => setOpenSettings(true)}>
+                                <button className="btn btn-sm btn-primary" data-bs-toggle="modal"
+                                        data-bs-target="#edit-commands">
                                     <i className="bi bi-pencil-square"></i>
                                 </button>
-                                <Modal className="modal-xl" open={openSettings} title={'Edit nodes'}
+                                <Modal className="modal-xl" id="edit-commands" title={'Edit nodes'}
                                        confirmButton={"Save & Restart"}
-                                       onClose={(confirmed) => {
-                                           if (confirmed) {
-                                               onRestart(editCommands);
-                                           }
-                                           setOpenSettings(false);
+                                       onConfirm={() => {
+                                           onRestart({
+                                               testCommand: splitCommand(editTestCommand),
+                                               serverCommand: splitCommand(editServerCommand),
+                                           });
                                        }}>
-                                    <EditNodes commands={editCommands} setCommands={setEditCommands}></EditNodes>
+                                    <EditCommands testCommand={editTestCommand} setTestCommand={setEditTestCommand}
+                                                  serverCommand={editServerCommand}
+                                                  setServerCommand={setEditServerCommand}/>
                                 </Modal>
                             </>}
                             <span className="input-group-text">Test:</span>
@@ -99,29 +101,28 @@ export default function Toolbar({
     </nav>
 }
 
-function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (commands: Commands) => void }) {
+function EditCommands({testCommand, setTestCommand, serverCommand, setServerCommand}: {
+    testCommand: string,
+    setTestCommand: (cmd: string) => void,
+    serverCommand: string,
+    setServerCommand: (cmd: string) => void
+}) {
     const [testPreferBuiltinLua, setTestPreferBuiltinLua] = useState<boolean>(true);
     const [serverPreferBuiltinLua, setServerPreferBuiltinLua] = useState<boolean>(true);
 
-    const browseFor = async (commandName: "testCommand" | "serverCommand") => {
+    const browseFor = async (setCommand: (cmd: string) => void, preferBuiltinLua: boolean) => {
         const file = await open({multiple: false, directory: false, defaultPath: "."});
         if (file === null) return;
-        await setCommandFromPath(commandName, file);
+        await setCommandFromPath(setCommand, preferBuiltinLua, file);
     }
 
-    const setCommandFromPath = async (commandName: "testCommand" | "serverCommand", path: string) => {
-        const preferBuiltin = (commandName == "testCommand" && testPreferBuiltinLua) || (commandName == "serverCommand" && serverPreferBuiltinLua);
+    const setCommandFromPath = async (setCommand: (cmd: string) => void, preferBuiltinLua: boolean, path: string) => {
         const found = await invoke<{ language: string, interpreter: string } | null>("find_interpreter", {path});
-        console.log("found", found, "perferBuiltin", preferBuiltin);
-        if (found === null || (found.language === "lua" && preferBuiltin)) {
-            console.log("nointerpreter");
-            setCommands({...commands, [commandName]: {program: path, args: []}});
+        if (found === null || (found.language === "lua" && preferBuiltinLua)) {
+            setCommand(path);
         } else {
-            setCommands({...commands, [commandName]: {program: found.interpreter, args: [path]}});
+            setCommand(`${found.interpreter} ${path}`);
         }
-    }
-    const setCommandFromString = (commandName: "testCommand" | "serverCommand", command: string) => {
-        setCommands({...commands, [commandName]: splitCommand(command)});
     }
 
     return <div>
@@ -140,11 +141,13 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
                 </Tooltip>
             </div>
             <div className="input-group">
-                <button className="btn btn-outline-secondary" onClick={_ => browseFor("testCommand")}>Browse</button>
-                <FileDropZone onDrop={paths => setCommandFromPath("testCommand", paths[0]!)}>
+                <button className="btn btn-outline-secondary"
+                        onClick={_ => browseFor(setTestCommand, testPreferBuiltinLua)}>Browse
+                </button>
+                <FileDropZone onDrop={paths => setCommandFromPath(setTestCommand, testPreferBuiltinLua, paths[0]!)}>
                     <input type="text" id="testComand" className="form-control"
-                           value={displayCommand(commands.testCommand)}
-                           onChange={e => setCommandFromString("testCommand", e.target.value)}/>
+                           value={testCommand}
+                           onChange={e => setTestCommand(e.target.value)}/>
                 </FileDropZone>
             </div>
         </div>
@@ -163,12 +166,13 @@ function EditNodes({commands, setCommands}: { commands: Commands, setCommands: (
                 </Tooltip>
             </div>
             <div className="input-group">
-                <button className="btn btn-outline-secondary" onClick={_ => browseFor("serverCommand")}>Browse
+                <button className="btn btn-outline-secondary"
+                        onClick={_ => browseFor(setServerCommand, serverPreferBuiltinLua)}>Browse
                 </button>
-                <FileDropZone onDrop={paths => setCommandFromPath("serverCommand", paths[0]!)}>
+                <FileDropZone onDrop={paths => setCommandFromPath(setServerCommand, serverPreferBuiltinLua, paths[0]!)}>
                     <input type="text" id="serverComand" className="form-control"
-                           value={displayCommand(commands.serverCommand)}
-                           onChange={e => setCommandFromString("serverCommand", e.target.value)}/>
+                           value={serverCommand}
+                           onChange={e => setServerCommand(e.target.value)}/>
                 </FileDropZone>
             </div>
         </div>
