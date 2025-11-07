@@ -57,7 +57,7 @@ jobs:
             For debian/ubuntu (deb) based distributions download `DsBox_0.1.0_amd64.deb` and install with
             ```sh
             sudo apt-get update
-            sudo apt-get install ./DsBox-0.1.0-1.x86_64.rpm
+            sudo apt-get install ./DsBox_0.1.0_amd64.deb
             ```
             
             For windows, download `x86_64-windows.tar.gz` and extract `dsbox.exe`
