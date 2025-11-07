@@ -5,6 +5,8 @@ on:
 jobs:
   build-and-release:
     runs-on: docker
+    container:
+      image: node:lts-bookworm
     steps:
       - name: Checkout the tag
         uses: actions/checkout@v4
@@ -20,10 +22,6 @@ jobs:
           rustup target add x86_64-pc-windows-msvc
           cargo install cargo-xwin --version 0.19.2
           cargo install tauri-cli --git https://github.com/tauri-apps/tauri
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - name: Install webapp packages
         working-directory: webapp
         run: |
