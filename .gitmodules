@@ -1,3 +1,0 @@
-[submodule "dsbox-nodes"]
-	path = nodes
-	url = git@git.bs.informatik.uni-siegen.de:breitweiser/DsBox-Nodes.git
