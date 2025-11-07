@@ -36,6 +36,13 @@ pub struct Command {
     pub args: Vec<String>,
 }
 
+/// Sent from the core to the test process when a non-test node exits
+#[derive(Payload, Serialize, Deserialize)]
+pub struct Exited {
+    pub name: String,
+    pub exit_code: i32,
+}
+
 /// Reply to a [`Launch`] message from the core, after the server successfully launched.
 #[derive(Payload, Serialize, Deserialize)]
 pub struct LaunchFinished {

@@ -27,13 +27,12 @@ use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
-    BeginMonitor, Break, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Reset,
+    BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Reset,
     ResetFinished,
 };
 use libproto::{Message, Payload};
 use node::Node;
 
-use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -46,6 +45,7 @@ use crate::log_color::log_marker_ansi_color;
 use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
+use crate::Command;
 
 pub mod error;
 pub mod event;
@@ -66,6 +66,8 @@ pub struct Core {
     timestamp_source: TimestampSource,
     /// Manages all nodes that are participating in the simulation
     nodes: NodeList,
+    /// the [`NodeId`] of the test node (probably `NodeId(0)`) most of the time)
+    test_node_id: NodeId,
     /// launches new processes
     launcher: Launcher,
     /// Command string from which the test process was launched
@@ -149,6 +151,7 @@ impl Core {
         Self {
             timestamp_source: TimestampSource::new(),
             nodes: NodeList::new(),
+            test_node_id: NodeId(0),
             launcher: Launcher::new(allow_lua_unsafe),
             test_command,
             server_command,
@@ -195,13 +198,10 @@ impl Core {
                 .await
                 .ok();
 
-            assert_eq!(
-                self.launch(LaunchCommand::Test, true, TEST_NODE_NAME.to_string())
-                    .await?
-                    .id,
-                NodeId(0),
-                "expected test process to have id 0"
-            );
+            self.test_node_id = self
+                .launch(LaunchCommand::Test, true, TEST_NODE_NAME.to_string())
+                .await?
+                .id;
         }
         Ok(())
     }
@@ -508,7 +508,7 @@ impl Core {
                 if let Some((_, middleware_id)) = source {
                     self.timer_manager.add(
                         Instant::now() + Duration::from_secs_f64(timer.seconds),
-                        message.body.msg_id,
+                        message.body.id,
                         message.src,
                         timer.name,
                         middleware_id,
@@ -646,7 +646,7 @@ impl Core {
             if !launch.middleware_before.is_empty() || !launch.middleware_after.is_empty() {
                 Some("cannot specify middleware when launching a test node".to_string())
             } else {
-                let (alias_id, node) = self.nodes.add_alias(NodeId(0), launch.name.clone());
+                let (alias_id, node) = self.nodes.add_alias(self.test_node_id, launch.name.clone());
                 self.event_sender
                     .send(Event::node_launched(
                         self.timestamp_source.now(),
@@ -839,7 +839,7 @@ impl Core {
         self.event_sender
             .send(Event::log(
                 self.timestamp_source.now(),
-                NodeId(0),
+                self.test_node_id,
                 LogMessage {
                     text: message,
                     marker: Some(LogMarker {
@@ -870,6 +870,19 @@ impl Core {
             node.name,
             node.commandline(middleware_id)
         );
+        if !node.is_test {
+            self.nodes
+                .resolve_alias(self.test_node_id)
+                .send(ProcessCommand::Deliver(Message::new(
+                    CORE_NAME,
+                    TEST_NODE_NAME,
+                    None,
+                    Exited {
+                        name: node.name.clone(),
+                        exit_code,
+                    },
+                )));
+        }
         Ok(())
     }
 

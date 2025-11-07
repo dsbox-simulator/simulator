@@ -2,11 +2,12 @@
 //! todo: more documentation
 
 use mlua::{
-    FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue, StdLib,
-    Table, Value,
+    Error, FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue,
+    StdLib, Table, Value,
 };
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
@@ -24,6 +25,20 @@ pub struct LuaLauncher {
     luarocks_path: Option<String>,
     luarocks_cpath: Option<String>,
 }
+
+/// gets passed to the lua instance via [`Lua::set_app_data`] and is then available in the
+/// native function implementations
+struct LuaAppData {
+    /// a sender to send events to the core
+    sender: Sender<ProcessEvent>,
+    /// a receiver to receive commands (currently only messages) from the core
+    receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
+    /// the name of this node (useful for automatically sending log messages with extended information to the core)
+    name: String,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Exit(i32);
 
 impl LuaLauncher {
     pub async fn new() -> Self {
@@ -113,25 +128,50 @@ impl LuaLauncher {
             .await
             .map(|v: Value| v.as_i32().unwrap_or(0));
         let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
-        if let Err(e) = &result {
-            let error_message = e.to_string();
-            let message = format!(
-                "script `{}` exited with an error: {error_message}",
-                file.display()
-            );
-            app_data
-                .sender
-                .send(ProcessEvent::Log(message.clone()))
-                .await
-                .ok();
-            log::warn!("{}", message);
-        }
-        let exit_code = result.as_ref().ok().copied().unwrap_or(-1);
+        let exit_code = match Self::extract_exit_code(result) {
+            Ok(exit_code) => exit_code,
+            Err(e) => {
+                let error_message = e.to_string();
+                let message = format!(
+                    "script `{}` exited with an error: {error_message}",
+                    file.display()
+                );
+                app_data
+                    .sender
+                    .send(ProcessEvent::Log(message.clone()))
+                    .await
+                    .ok();
+                log::warn!("{}", message);
+                -1
+            }
+        };
         app_data
             .sender
             .send(ProcessEvent::Exited(exit_code))
             .await
             .ok();
+    }
+
+    fn extract_exit_code(result: Result<i32, Error>) -> Result<i32, Error> {
+        match result {
+            Ok(exit_code) => Ok(exit_code),
+            Err(Error::CallbackError { traceback, cause }) => {
+                if let Error::ExternalError(std_error) = cause.as_ref() {
+                    if let Some(exit) = std_error.downcast_ref::<Exit>() {
+                        return Ok(exit.0);
+                    }
+                }
+                Err(Error::CallbackError { traceback, cause })
+            }
+            Err(Error::ExternalError(std_error)) => {
+                if let Some(exit) = std_error.downcast_ref::<Exit>() {
+                    Ok(exit.0)
+                } else {
+                    Err(Error::ExternalError(std_error))
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
@@ -172,6 +212,8 @@ impl LuaLauncher {
         mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
         mod_dsbox.set("clock", lua.create_function(lua_clock)?)?;
         mod_dsbox.set("sleep", lua.create_function(lua_sleep)?)?;
+        mod_dsbox.set("exit", lua.create_async_function(lua_exit)?)?;
+        mod_dsbox.set("__exit_metatable", lua.create_table()?)?;
         let message_class = lua.create_table()?;
         message_class.set("new", lua.create_function(message_new)?)?;
         message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
@@ -254,17 +296,6 @@ impl LuaLauncher {
 
         Ok(lua)
     }
-}
-
-/// gets passed to the lua instance via [`Lua::set_app_data`] and is then available in the
-/// native function implementations
-struct LuaAppData {
-    /// a sender to send events to the core
-    sender: Sender<ProcessEvent>,
-    /// a receiver to receive commands (currently only messages) from the core
-    receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
-    /// the name of this node (useful for automatically sending log messages with extended information to the core)
-    name: String,
 }
 
 impl LuaAppData {
@@ -489,6 +520,10 @@ fn lua_sleep(_: &Lua, seconds: f64) -> mlua::Result<()> {
     Ok(())
 }
 
+async fn lua_exit(_: Lua, exit_code: i32) -> mlua::Result<()> {
+    Err(Error::ExternalError(Arc::new(Exit(exit_code))))
+}
+
 pub fn log_marker_color_from_str(color: &str) -> Option<LogMarkerColor> {
     match color {
         "black" => Some(LogMarkerColor::Black),
@@ -510,3 +545,10 @@ pub fn log_marker_color_from_str(color: &str) -> Option<LogMarkerColor> {
         _ => None,
     }
 }
+
+impl std::fmt::Display for Exit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Exit({})", self.0)
+    }
+}
+impl std::error::Error for Exit {}

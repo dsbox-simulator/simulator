@@ -14,7 +14,6 @@ pub use crate::payload::Payload;
 
 mod payload;
 pub mod init;
-pub mod echo;
 #[cfg(feature = "system_messages")]
 pub mod system;
 #[cfg(feature = "middleware")]
@@ -45,7 +44,7 @@ pub struct Body {
     /// An optional id for the message. This id can be determined by the sender. A receiver can reply to a message and use this field
     /// as an identifier, so that the original sender can figure out what message the reply is referring to. See [`Body::in_reply_to`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub msg_id: Option<usize>,
+    pub id: Option<usize>,
 
     /// An optional id that identifies a message that this message is a reply to. See [`Body::msg_id`]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,7 +83,7 @@ impl Message {
             dst: dst.to_owned(),
             body: Body {
                 ty: P::TYPE.to_owned(),
-                msg_id,
+                id: msg_id,
                 in_reply_to: None,
                 data,
             },
@@ -95,7 +94,7 @@ impl Message {
     /// (swaps source and destination, and sets the `in_reply_to` field if `self` has a `msg_id`).
     pub fn reply<P: Payload>(&self, msg_id: Option<usize>, ty: P) -> Self {
         let mut message = Self::new(&self.dst, &self.src, msg_id, ty);
-        message.body.in_reply_to = self.body.msg_id;
+        message.body.in_reply_to = self.body.id;
         message
     }
 
