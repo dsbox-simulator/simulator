@@ -26,12 +26,10 @@ impl DsboxState {
     pub fn new(args: crate::cli::Cli) -> Self {
         let test_command = Core::split_command(args.test_command.unwrap_or_default());
         let server_command = Core::make_command(args.server_command.unwrap_or_default());
-        let core = Core::new(
-            test_command.clone(),
-            server_command.clone(),
-            true,
-            args.lua_unsafe,
-        );
+        let core = Core::builder(test_command.clone(), server_command.clone())
+            .interactive(true)
+            .allow_lua_unsafe(args.lua_unsafe)
+            .build();
         Self {
             remote: core.remote_control(),
             subscriber: core.subscribe_events(),

@@ -46,8 +46,10 @@ use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
+pub use builder::Builder;
 use network::Network;
 
+mod builder;
 pub mod error;
 pub mod event;
 mod monitor;
@@ -70,6 +72,11 @@ pub struct Core {
     nodes: NodeList,
     /// the [`NodeId`] of the test node (probably `NodeId(0)`) most of the time
     test_node_id: NodeId,
+    /// the name of the test node
+    test_node_name: String,
+    /// the name of the simulation core
+    /// this name must be used as the source/destination for "core" messages and is used in core logs
+    core_name: String,
     /// launches new processes
     launcher: Launcher,
     /// Command string from which the test process was launched
@@ -135,32 +142,22 @@ enum LaunchCommand<'a> {
     /// launch a custom command (e.g. for middleware)
     Custom(&'a Command),
 }
-/// The "node name" of the [`Core`]. It is used by tests to send core messages (i.e. [`Launch`])
-pub const CORE_NAME: &'static str = "core";
 
-/// The "node name" of the test process. It is used by the [`Core`] to send messages to the test process that are not specific to a test node (i.e. [`LaunchFinished`])
-const TEST_NODE_NAME: &'static str = "test";
-
-impl Core {
-    /// Creates a new [`Core`] from the given cli arguments (which include the server and test executables among other things).
-    /// If the program is started in interactive mode, the [`Core`] starts in state [`CoreState::Paused`].
-    pub fn new(
-        test_command: Command,
-        server_command: Command,
-        interactive: bool,
-        allow_lua_unsafe: bool,
-    ) -> Self {
+impl From<Builder> for Core {
+    fn from(builder: Builder) -> Self {
         let (remote_sender, remote_receiver) = async_channel::bounded(1);
         let (event_sender, event_receiver) = async_channel::unbounded();
         Self {
             timestamp_source: TimestampSource::new(),
             nodes: NodeList::new(),
             test_node_id: NodeId(0),
-            launcher: Launcher::new(allow_lua_unsafe),
-            test_command,
-            server_command,
-            interactive,
-            state: if interactive {
+            test_node_name: builder.test_node_name,
+            core_name: builder.core_name,
+            launcher: Launcher::new(builder.allow_lua_unsafe),
+            test_command: builder.test_command,
+            server_command: builder.server_command,
+            interactive: builder.interactive,
+            state: if builder.interactive {
                 CoreState::Paused
             } else {
                 CoreState::Running
@@ -176,6 +173,14 @@ impl Core {
             exit_set: HashMap::new(),
             reset_flag: None,
         }
+    }
+}
+
+impl Core {
+
+    /// returns a new [`Builder`] for configuring and building a new [`Core`]
+    pub fn builder(test_command: Command, server_command: Command) -> Builder {
+        Builder::new(test_command, server_command)
     }
 
     async fn restart(&mut self, re_init: bool) -> Result<(), CoreError> {
@@ -382,7 +387,7 @@ impl Core {
             .await
             .ok();
 
-        if message.dst == CORE_NAME {
+        if message.dst == self.core_name {
             // handle messages to the core immediately, circumventing the network
             return self.handle_core_message(source, timestamp, message).await;
         }
@@ -392,7 +397,7 @@ impl Core {
             if !middleware_id.is_top() {
                 node.send_to_middleware(
                     ProcessCommand::Deliver(Message::new(
-                        CORE_NAME,
+                        &self.core_name,
                         &node.name,
                         None,
                         Forward { message },
@@ -404,7 +409,7 @@ impl Core {
         }
 
         self.send_monitor_event(timestamp, &message, None).await;
-        if message.src == CORE_NAME {
+        if message.src == self.core_name {
             // deliver messages from the core immediately, circumventing the network
             let now = self.timestamp_source.now();
             self.deliver(now, source.map(|(id, _)| id), message).await?;
@@ -465,7 +470,7 @@ impl Core {
                 // to the target node. Among other reasons, this de-clutters the message log (monitor events
                 // should not be the target of any kind of debugging/visualization)
                 monitor_node.send(ProcessCommand::Deliver(Message::new(
-                    CORE_NAME,
+                    &self.core_name,
                     session.source(),
                     None,
                     MonitorEvent {
@@ -486,7 +491,7 @@ impl Core {
 
     async fn send_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
         let mut reply = Message::new(
-            CORE_NAME,
+            &self.core_name,
             &timer.source,
             None,
             TimerExpired { name: timer.name },
@@ -709,7 +714,12 @@ impl Core {
         self.dispatch(
             None,
             ts,
-            Message::new(CORE_NAME, TEST_NODE_NAME, None, LaunchFinished { error }),
+            Message::new(
+                &self.core_name,
+                &self.test_node_name,
+                None,
+                LaunchFinished { error },
+            ),
         )
         .await
         .expect("sending launch_finished message");
@@ -730,7 +740,12 @@ impl Core {
             self.dispatch(
                 None,
                 ts,
-                Message::new(CORE_NAME, TEST_NODE_NAME, None, ResetFinished {}),
+                Message::new(
+                    &self.core_name,
+                    &self.test_node_name,
+                    None,
+                    ResetFinished {},
+                ),
             )
             .await
             .expect("sending reset_finished message");
@@ -782,7 +797,7 @@ impl Core {
         self.dispatch(
             None,
             ts,
-            Message::new(CORE_NAME, &name, None, Init { name: name.clone() }),
+            Message::new(&self.core_name, &name, None, Init { name: name.clone() }),
         )
         .await?;
         Ok(self.nodes.resolve_alias_mut(node_id))
@@ -790,7 +805,12 @@ impl Core {
 
     async fn launch_test_node(&mut self) -> Result<NodeId, CoreError> {
         let node_id = self
-            .launch(LaunchCommand::Test, true, false, TEST_NODE_NAME.to_string())
+            .launch(
+                LaunchCommand::Test,
+                true,
+                false,
+                self.test_node_name.clone(),
+            )
             .await?
             .id;
         let node = self.nodes.resolve_alias(node_id);
@@ -799,7 +819,7 @@ impl Core {
             .send(Event::node_launched(
                 self.timestamp_source.now(),
                 node_id,
-                TEST_NODE_NAME.to_string(),
+                self.test_node_name.clone(),
                 commandline,
             ))
             .await
@@ -836,7 +856,7 @@ impl Core {
             LaunchCommand::Custom(command) => command,
         };
         self.launcher
-            .launch(command.clone(), is_test, name)
+            .launch(command.clone(), is_test, name, self.core_name.clone())
             .await
             .map_err(|e| CoreError::LaunchFailed {
                 command: command.to_string(),
@@ -948,8 +968,8 @@ impl Core {
                 None,
                 timestamp,
                 Message::new(
-                    CORE_NAME,
-                    TEST_NODE_NAME,
+                    &self.core_name,
+                    &self.test_node_name,
                     None,
                     Exited {
                         name: node.name.clone(),

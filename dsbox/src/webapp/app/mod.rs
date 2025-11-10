@@ -10,7 +10,7 @@ use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
 use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
-use dsbox_core::core::Core;
+use dsbox_core::core::{Builder, Core};
 
 use async_channel::{Receiver, Sender};
 use dsbox_core::Command;
@@ -38,12 +38,11 @@ impl App {
     pub async fn new(args: Args) -> Result<Self, CoreError> {
         let test_command = Core::split_command(&args.test_command);
         let server_command = Core::make_command(args.server_command.iter().cloned());
-        let core = Core::new(
-            test_command.clone(),
-            server_command.clone(),
-            true,
-            args.lua_unsafe,
-        );
+        let core = Core::builder(test_command.clone(), server_command.clone())
+            .interactive(true)
+            .allow_lua_unsafe(args.lua_unsafe)
+            .build();
+
         let subscriber = core.subscribe_events();
         let remote = core.remote_control();
         let core_handle = tokio::task::spawn(async move { core.run().await });

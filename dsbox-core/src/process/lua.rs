@@ -11,13 +11,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 
-use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 use libproto::Message;
+use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 
-use crate::core::CORE_NAME;
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
 
@@ -35,6 +34,8 @@ struct LuaAppData {
     receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
     /// the name of this node (useful for automatically sending log messages with extended information to the core)
     name: String,
+    /// the name of the simulation core. Used as the `dest` field for log messages.
+    core_name: String,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -82,12 +83,14 @@ impl LuaLauncher {
         command_receiver: UnboundedReceiver<ProcessCommand>,
         event_sender: Sender<ProcessEvent>,
         name: String,
+        core_name: String,
     ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         log::trace!("launching lua node `{}`, args: {args:?}", file.display());
         let app_data = LuaAppData {
             sender: event_sender,
             receiver: Mutex::new(command_receiver),
             name,
+            core_name,
         };
 
         let (finished_tx, finished_rx) = oneshot::channel();
@@ -388,7 +391,7 @@ impl LuaAppData {
         Ok(app_data
             .send_event(ProcessEvent::Message(Message::new(
                 &app_data.name,
-                CORE_NAME,
+                &app_data.core_name,
                 None,
                 LogMessage {
                     text: message,

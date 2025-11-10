@@ -6,7 +6,7 @@ use async_channel::Receiver;
 use clap::Parser;
 use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
-use dsbox_core::core::Core;
+use dsbox_core::core::{Builder, Core};
 use log::LevelFilter;
 use tokio::task::JoinHandle;
 
@@ -47,12 +47,13 @@ async fn run(args: Args) {
 }
 
 async fn run_cli(args: Args) {
-    let core = Core::new(
+    let core = Core::builder(
         Core::split_command(&args.test_command),
         Core::make_command(args.server_command),
-        false,
-        args.lua_unsafe,
-    );
+    )
+    .interactive(false)
+    .allow_lua_unsafe(args.lua_unsafe)
+    .build();
 
     let recorder = if let Some(filename) = args.save_protocol {
         Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)

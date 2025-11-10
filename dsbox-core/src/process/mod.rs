@@ -72,6 +72,7 @@ impl Launcher {
         command: crate::Command,
         for_test: bool,
         name: String,
+        core_name: String,
     ) -> Result<Process, Error> {
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
@@ -88,6 +89,7 @@ impl Launcher {
                 command_receiver,
                 event_sender,
                 name,
+                core_name,
             )
             .await?
         } else {
@@ -136,6 +138,7 @@ impl Launcher {
         command_receiver: UnboundedReceiver<ProcessCommand>,
         event_sender: Sender<ProcessEvent>,
         name: String,
+        core_name: String,
     ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         if self.lua_launcher.is_none() {
             self.lua_launcher = Some(LuaLauncher::new().await)
@@ -147,6 +150,7 @@ impl Launcher {
             command_receiver,
             event_sender,
             name,
+            core_name,
         )
     }
     #[cfg(not(feature = "lua"))]
@@ -157,6 +161,7 @@ impl Launcher {
         _: bool,
         _: UnboundedReceiver<ProcessCommand>,
         _: Sender<ProcessEvent>,
+        _: String,
         _: String,
     ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
         panic!("this version of dsbox was built without lua support")

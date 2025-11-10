@@ -38,12 +38,13 @@ fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
 }
 
 async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) {
-    let core = Core::new(
+    let core = Core::builder(
         Core::split_command(args.test_command),
         Core::make_command(args.server_command),
-        false,
-        allow_lua_unsafe,
-    );
+    )
+    .interactive(false)
+    .allow_lua_unsafe(allow_lua_unsafe)
+    .build();
 
     let recorder = if let Some(filename) = args.save_protocol {
         Some(spawn_protocol_recorder(core.subscribe_events(), filename).await)
