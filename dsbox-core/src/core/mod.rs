@@ -16,7 +16,8 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and test node names, as well as all running [`MonitorSession`]s.
 
-use std::collections::VecDeque;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
 use std::ops::RangeBounds;
 use std::slice::SliceIndex;
 
@@ -33,6 +34,7 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
+use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -42,14 +44,14 @@ use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerManager};
 use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
-use crate::network::Network;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
-use crate::Command;
+use network::Network;
 
 pub mod error;
 pub mod event;
 mod monitor;
+mod network;
 mod node;
 mod node_list;
 pub mod remote_control;
@@ -66,7 +68,7 @@ pub struct Core {
     timestamp_source: TimestampSource,
     /// Manages all nodes that are participating in the simulation
     nodes: NodeList,
-    /// the [`NodeId`] of the test node (probably `NodeId(0)`) most of the time)
+    /// the [`NodeId`] of the test node (probably `NodeId(0)`) most of the time
     test_node_id: NodeId,
     /// launches new processes
     launcher: Launcher,
@@ -96,7 +98,9 @@ pub struct Core {
     /// (used to prevent recursion in the async [`dispatch`](Core::dispatch) fn because launching a node
     /// requires dispatching an init message to that node)
     launch_queue: VecDeque<Launch>,
-
+    /// map of `NodeId`s that have exited and their exit code. When these nodes have all their
+    /// outstanding messages delivered, the core sends an `"exited"` message to the test, if requested.
+    exit_set: HashMap<NodeId, i32>,
     /// when the test sends a reset message, some stuff has to be finished/cleaned up before
     /// the new nodes may be launched,
     /// so we set this flag while we wait for everything to become ready
@@ -169,6 +173,7 @@ impl Core {
             network: Network::new(),
             timer_manager: TimerManager::new(),
             launch_queue: VecDeque::new(),
+            exit_set: HashMap::new(),
             reset_flag: None,
         }
     }
@@ -198,10 +203,7 @@ impl Core {
                 .await
                 .ok();
 
-            self.test_node_id = self
-                .launch(LaunchCommand::Test, true, TEST_NODE_NAME.to_string())
-                .await?
-                .id;
+            self.test_node_id = self.launch_test_node().await?;
         }
         Ok(())
     }
@@ -265,7 +267,7 @@ impl Core {
         }
     }
 
-    fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Message)> {
+    fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
         if !matches!(self.state, CoreState::Paused) {
             self.network.remove_oldest()
         } else {
@@ -281,9 +283,9 @@ impl Core {
         //       other possible solution: regularly check receiving queues of all processes, and if they
         //       reach a total threshold of buffered messages (say, 1,000,000) panic as a last resort?
 
-        if let Some((sent_timestamp, message)) = self.get_next_message_for_delivery() {
-            self.deliver(sent_timestamp, message).await?;
-            if matches!(self.state, CoreState::Stepping) {
+        if let Some((sent_timestamp, source_id, message)) = self.get_next_message_for_delivery() {
+            self.deliver(sent_timestamp, source_id, message).await?;
+            if self.state == CoreState::Stepping {
                 self.state = CoreState::Paused;
             }
         } else {
@@ -374,12 +376,14 @@ impl Core {
                 });
             }
         }
+
         self.event_sender
             .send(Event::send_message(timestamp, message.clone()))
             .await
             .ok();
 
         if message.dst == CORE_NAME {
+            // handle messages to the core immediately, circumventing the network
             return self.handle_core_message(source, timestamp, message).await;
         }
 
@@ -400,7 +404,13 @@ impl Core {
         }
 
         self.send_monitor_event(timestamp, &message, None).await;
-        self.network.insert(timestamp, message);
+        if message.src == CORE_NAME {
+            // deliver messages from the core immediately, circumventing the network
+            let now = self.timestamp_source.now();
+            self.deliver(now, source.map(|(id, _)| id), message).await?;
+        } else {
+            self.network.insert(timestamp, source.map(|s| s.0), message);
+        }
         Ok(())
     }
 
@@ -408,27 +418,35 @@ impl Core {
     async fn deliver(
         &mut self,
         sent_timestamp: Timestamp,
+        source_id: Option<NodeId>,
         message: Message,
     ) -> Result<(), CoreError> {
         log::trace!("deliver {message:?}");
-        let Some(destination_id) = self.nodes.lookup_and_resolve(&message.dst).map(|n| n.id) else {
-            return Err(CoreError::DispatchError {
+        let result = if let Some(destination_id) =
+            self.nodes.lookup_and_resolve(&message.dst).map(|n| n.id)
+        {
+            let timestamp = self.timestamp_source.now();
+            self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
+                .await;
+            self.event_sender
+                .send(Event::deliver_message(timestamp, sent_timestamp.logical))
+                .await
+                .ok();
+            self.nodes
+                .resolve_alias_mut(destination_id)
+                .send(ProcessCommand::Deliver(message));
+            Ok(())
+        } else {
+            Err(CoreError::DispatchError {
                 name: message.src.clone(),
                 message,
                 kind: DispatchErrorKind::DestinationUnknown,
-            });
+            })
         };
-        let timestamp = self.timestamp_source.now();
-        self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
-            .await;
-        self.event_sender
-            .send(Event::deliver_message(timestamp, sent_timestamp.logical))
-            .await
-            .ok();
-        self.nodes
-            .resolve_alias_mut(destination_id)
-            .send(ProcessCommand::Deliver(message));
-        Ok(())
+        if let Some(source_id) = source_id {
+            self.maybe_notify_exited(source_id).await;
+        }
+        result
     }
 
     /// Checks whether any active monitoring session matches against the given [`Message`], and sends a [`MonitorEvent`]
@@ -662,6 +680,7 @@ impl Core {
             let launch_result = self
                 .launch_node_with_middleware(
                     launch.name,
+                    launch.request_exited_message,
                     &launch.middleware_before,
                     &launch.middleware_after,
                 )
@@ -730,11 +749,17 @@ impl Core {
     async fn launch_node_with_middleware(
         &mut self,
         name: String,
+        exited_message_requested: bool,
         middleware_before: &[Command],
         middleware_after: &[Command],
     ) -> Result<&mut Node, CoreError> {
         let node = self
-            .launch(LaunchCommand::Server, false, name.clone())
+            .launch(
+                LaunchCommand::Server,
+                false,
+                exited_message_requested,
+                name.clone(),
+            )
             .await?;
         let node_id = node.id;
         for middleware in middleware_before.iter().rev() {
@@ -763,15 +788,37 @@ impl Core {
         Ok(self.nodes.resolve_alias_mut(node_id))
     }
 
+    async fn launch_test_node(&mut self) -> Result<NodeId, CoreError> {
+        let node_id = self
+            .launch(LaunchCommand::Test, true, false, TEST_NODE_NAME.to_string())
+            .await?
+            .id;
+        let node = self.nodes.resolve_alias(node_id);
+        let commandline = node.commandline(MiddlewareId(0));
+        self.event_sender
+            .send(Event::node_launched(
+                self.timestamp_source.now(),
+                node_id,
+                TEST_NODE_NAME.to_string(),
+                commandline,
+            ))
+            .await
+            .ok();
+        Ok(node_id)
+    }
+
     /// launches a new process and creates the corresponding node
     async fn launch(
         &mut self,
         command: LaunchCommand<'_>,
         is_test: bool,
+        exited_message_requested: bool,
         name: String,
     ) -> Result<&mut Node, CoreError> {
         let proc = self.launch_proc(command, is_test, name.clone()).await?;
-        let node = self.nodes.add(Node::new(name, is_test, proc));
+        let node = self
+            .nodes
+            .add(Node::new(name, is_test, exited_message_requested, proc));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
         Ok(node)
@@ -853,6 +900,10 @@ impl Core {
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
+    ///
+    /// Additionally, if there are no further messages in the network for this node, notifies the
+    /// test node that the node has exited (if requested). Otherwise, saves the exit code for later
+    /// delivery of the exit notification.
     async fn process_exited(
         &mut self,
         timestamp: Timestamp,
@@ -870,10 +921,33 @@ impl Core {
             node.name,
             node.commandline(middleware_id)
         );
-        if !node.is_test {
-            self.nodes
-                .resolve_alias(self.test_node_id)
-                .send(ProcessCommand::Deliver(Message::new(
+
+        self.exit_set.insert(source_id, exit_code);
+        self.maybe_notify_exited(source_id).await;
+        Ok(())
+    }
+
+    /// checks if the given node has all remaining message delivered and sends an
+    /// exit notification to the test node
+    async fn maybe_notify_exited(&mut self, node_id: NodeId) {
+        let exit_code = match self.exit_set.entry(node_id) {
+            Entry::Occupied(entry) => {
+                if self.network.has_remaining_messages(node_id) {
+                    return;
+                }
+                entry.remove()
+            }
+            Entry::Vacant(_) => return,
+        };
+
+        let node = self.nodes.resolve_alias(node_id);
+        if node.exited_message_requested {
+            let timestamp = self.timestamp_source.now();
+            // box the future to because of recursing in an async function
+            let future = self.dispatch(
+                None,
+                timestamp,
+                Message::new(
                     CORE_NAME,
                     TEST_NODE_NAME,
                     None,
@@ -881,9 +955,10 @@ impl Core {
                         name: node.name.clone(),
                         exit_code,
                     },
-                )));
+                ),
+            );
+            Box::pin(future).await.unwrap();
         }
-        Ok(())
     }
 
     /// split a string into the program and args
@@ -893,7 +968,7 @@ impl Core {
         Self::make_command(command.as_ref().split(" ").map(|s| s.to_string()))
     }
 
-    /// make a command from an interator of strings. The first element becomes the program,
+    /// make a command from an iterator of strings. The first element becomes the program,
     /// the remaining elements become the args
     pub fn make_command(command: impl IntoIterator<Item = String>) -> Command {
         let mut command = command.into_iter();

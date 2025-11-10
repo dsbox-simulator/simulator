@@ -45,22 +45,20 @@ function selectColor(nmb: number): string {
 function toLamportProps(nodes: NodeInfo[],
                         messages: MessageInfo[],
                         highlighted: MessageInfo | LogInfo | null,
-                        logs: LogInfo[],
-                        testNodeName: string): [LamportDiagramProps, Map<string, string>] {
-    const nodeNames = [testNodeName, ...nodes.map(n => n.name)];
+                        logs: LogInfo[]): [LamportDiagramProps, Map<string, string>] {
+    const nodeNames = [...nodes.map(n => n.name)];
     const colorMap = new Map<string, string>();
     const nodesByName = new Map<string, number>(nodeNames.map((n, i) => [n, i]));
-    const nodesById = new Map<number, number>(nodes.map((n, i) => [n.id, i + 1]));
-    nodesByName.set(testNodeName, 0);
-    nodesById.set(0, 0);
+    const nodesById = new Map<number, number>(nodes.map((n, i) => [n.id, i]));
     const events: Event[] = [];
     const communications: Communication[] = [];
     const highlights: { event?: number, communication?: number }[] = [];
     for (const message of messages) {
         const isHighlighted = isMessage(highlighted) && message.sentAt === highlighted.sentAt;
-        if (message.message.src === "core" || message.message.dest === "core") continue;
+        // if (message.message.src === "core" || message.message.dest === "core") continue;
         const sender = nodesByName.get(message.message.src);
-        if (sender === undefined) continue;
+        const receiver = nodesByName.get(message.message.dest);
+        if (sender === undefined || receiver === undefined) continue;
         events.push({
             node: sender,
             logicalClock: message.sentAt.logical,
@@ -122,16 +120,15 @@ function toLamportProps(nodes: NodeInfo[],
     }, colorMap]
 }
 
-export default function LamportDiagram({nodes, messages, highlighted, setHighlighted, logs, testNodeName}: {
+export default function LamportDiagram({nodes, messages, highlighted, setHighlighted, logs}: {
     nodes: NodeInfo[],
     messages: MessageInfo[],
     highlighted: MessageInfo | LogInfo | null,
     setHighlighted: (highlighted: MessageInfo | LogInfo | null) => void,
-    logs: LogInfo[]
-    testNodeName: string,
+    logs: LogInfo[],
 }) {
     const [lamportProps, colorMap] = useMemo(() =>
-            toLamportProps(nodes, messages, highlighted, logs, testNodeName),
+            toLamportProps(nodes, messages, highlighted, logs),
         [nodes, messages, highlighted, logs]);
     const onHover = (data: MessageInfo | LogInfo | null): React.ReactNode => {
         setHighlighted(data);

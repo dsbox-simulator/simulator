@@ -4,20 +4,29 @@ import Tooltip from "./tooltip";
 import {Json} from "./json";
 import classNames from "classnames";
 
-function messageFilter(message: MessageInfo, onlyUndelivered: boolean): boolean {
+function messageFilter(message: MessageInfo, filterNodes: Set<string>, onlyUndelivered: boolean): boolean {
     if (onlyUndelivered && message.deliveredAt !== null) return false;
-    return !(message.message.src === "core" || message.message.dest === "core");
+    return filterNodes.has(message.message.src) && filterNodes.has(message.message.dest);
 }
 
-export default function MessageView({messages, onlyUndelivered, highlighted, setHighlighted, onDeliver, onDrop}: {
+export default function MessageView({
+                                        messages,
+                                        filterNodes,
+                                        onlyUndelivered,
+                                        highlighted,
+                                        setHighlighted,
+                                        onDeliver,
+                                        onDrop
+                                    }: {
     messages: MessageInfo[],
+    filterNodes: Set<string>,
     onlyUndelivered: boolean,
     highlighted: MessageInfo | null,
     setHighlighted: (messages: MessageInfo | null) => void,
     onDeliver: (messages: MessageInfo) => void,
     onDrop: (messages: MessageInfo) => void,
 }) {
-    const shownMessages = messages.filter(m => messageFilter(m, onlyUndelivered));
+    const shownMessages = messages.filter(m => messageFilter(m, filterNodes, onlyUndelivered));
     return <table className="table table-small font-monospace table-hover">
         <thead>
         <tr className="sticky-top">

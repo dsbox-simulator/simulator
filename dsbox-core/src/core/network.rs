@@ -1,15 +1,15 @@
 //! Manages [`Message`]s in transit.
 //!
-//! All [`Message`]s in the network simulation first enter the network (when the are sent),
+//! All [`Message`]s in the network simulation first enter the network (when they are sent),
 //! and at a later point are removed from the network (and then delivered).
-//! The [`Network`] struct is used to manage all [`Message`]s that are currently in the network (i.e in transit)
+//! The [`Network`] struct is used to manage all [`Message`]s that are currently in the network (i.e. in transit)
 
 use std::collections::VecDeque;
 
 use libproto::Message;
 
+use crate::core::node::NodeId;
 use crate::timestamp::Timestamp;
-
 
 /// holds all [`Message`]s that are in transit, ordered by the timestamp they are sent.
 /// [`Message`]s can be removed in FIFO order, or one-by-one using the logical timestamp as a key
@@ -17,13 +17,15 @@ pub struct Network {
     /// all [`Message`]s and their corresponding timestamps, that are currently in the network.
     ///
     /// this queue is always ordered by timestamp (from oldest to newest) as ensured by [`Network::insert`].
-    messages_in_transit: VecDeque<(Timestamp, Message)>,
+    messages_in_transit: VecDeque<(Timestamp, Option<NodeId>, Message)>,
 }
 
 impl Network {
     /// creates a new (empty) network
     pub fn new() -> Self {
-        Self { messages_in_transit: VecDeque::new() }
+        Self {
+            messages_in_transit: VecDeque::new(),
+        }
     }
 
     /// returns `true` if there are no [`Message`]s in transit
@@ -33,25 +35,39 @@ impl Network {
     }
 
     /// inserts a new [`Message`] into the network, with the given timestamp,
+    ///
     /// # Panics
+    ///
     /// Panics if a [`Message`] with the same timestamp is already in the network.
     /// If timestamps are created using [`TimestampSource::now`] for each [`Message`], then this should never happen
-    pub fn insert(&mut self, timestamp: Timestamp, message: Message) {
+    pub fn insert(&mut self, timestamp: Timestamp, source_id: Option<NodeId>, message: Message) {
         match self.message_by_timestamp(timestamp.logical) {
             Ok(_) => panic!("tried to insert message into network with same timestamp twice"),
-            Err(idx) => self.messages_in_transit.insert(idx, (timestamp, message))
+            Err(idx) => self
+                .messages_in_transit
+                .insert(idx, (timestamp, source_id, message)),
         }
+    }
+
+    /// returns `true` if there are remaining messages in the network from the given [`NodeId`]
+    pub fn has_remaining_messages(&self, source_id: NodeId) -> bool {
+        self.messages_in_transit
+            .iter()
+            .any(|(_, id, _)| id.is_some_and(|id| id == source_id))
     }
 
     /// Removes and returns the [`Message`] with the oldest timestamp (i.e. in FIFO order regarding the timestamps).
     /// Returns `None` if there are no [`Message`]s in the network.
-    pub fn remove_oldest(&mut self) -> Option<(Timestamp, Message)> {
+    pub fn remove_oldest(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
         self.messages_in_transit.pop_front()
     }
 
     /// Removes and returns the [`Message`] with the given logical timestamp, or `None` if no message with that timestamp is in the network.
     #[allow(unused)]
-    pub fn remove_one(&mut self, logical_timestamp: usize) -> Option<(Timestamp, Message)> {
+    pub fn remove_one(
+        &mut self,
+        logical_timestamp: usize,
+    ) -> Option<(Timestamp, Option<NodeId>, Message)> {
         if let Ok(idx) = self.message_by_timestamp(logical_timestamp) {
             self.messages_in_transit.remove(idx)
         } else {
@@ -59,9 +75,10 @@ impl Network {
         }
     }
 
-    /// Returns [`Result::Ok`] with the index of the [`Message`] in the queue that has the given timestamp, if it exists.
-    /// Otherwise Returns [`Result::Err`] with the index in the queue where a [`Message`] with the given timestamp should be inserted.
+    /// Returns [`Ok`] with the index of the [`Message`] in the queue that has the given timestamp, if it exists.
+    /// Otherwise, Returns [`Err`] with the index in the queue where a [`Message`] with the given timestamp should be inserted.
     fn message_by_timestamp(&self, logical_timestamp: usize) -> Result<usize, usize> {
-        self.messages_in_transit.binary_search_by_key(&logical_timestamp, |(t, _)| t.logical)
+        self.messages_in_transit
+            .binary_search_by_key(&logical_timestamp, |(t, _, _)| t.logical)
     }
 }

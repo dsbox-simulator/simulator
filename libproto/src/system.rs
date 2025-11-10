@@ -20,12 +20,21 @@ pub struct ResetFinished {}
 /// are commands to be launched as the "middleware-stack" for the server
 #[derive(Payload, Serialize, Deserialize)]
 pub struct Launch {
+    /// the name of the node
     pub name: String,
+    /// whether this node is a test node (in which case no process is actually launched) or a
+    /// regular node, that will be launched as an independent process
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub as_test: bool,
+    /// if set, the core will send an `exited` message to the test when this node's process terminates.
+    /// Only works if `as_test` is `false`.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default = "true_if_missing")]
+    pub request_exited_message: bool,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    #[doc(hidden)]
     pub middleware_before: Vec<Command>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    #[doc(hidden)]
     pub middleware_after: Vec<Command>,
 }
 
@@ -87,4 +96,8 @@ impl std::fmt::Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.program, self.args.join(" "))
     }
+}
+
+fn true_if_missing() -> bool {
+    true
 }

@@ -20,7 +20,6 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
     const connected = store.useConnected();
     const logs = store.useLogs();
     const messages = store.useMessages();
-    const testNodeName = "test";
     const [showOnlyUndelivered, setShowOnlyUndelivered] = useState(true);
     const [commands, setCommands] = useState<Commands | null>(null);
     const [highlighted, setHighlighted] = useState<MessageInfo | LogInfo | null>(null);
@@ -68,8 +67,7 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                                 messages={messages}
                                 highlighted={highlighted}
                                 setHighlighted={setHighlighted}
-                                logs={logs}
-                                testNodeName={testNodeName}/>
+                                logs={logs}/>
             </div>
             <div className="messages-logs">
                 <div className="tool-pane">
@@ -78,14 +76,16 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                             <i className="bi bi-envelope"></i> Messages
                         </div>
                         <div className="form-check form-switch">
-                            <input className="form-check-input" type="checkbox" role="switch" id="showAllMessages"
+                            <input className="form-check-input" type="checkbox" role="switch" id="showDeliveredMessages"
                                    checked={!showOnlyUndelivered}
                                    onChange={e => setShowOnlyUndelivered(!e.target.checked)}/>
-                            <label className="form-check-label" htmlFor="showAllMessages">Show all messages</label>
+                            <label className="form-check-label" htmlFor="showDeliveredMessages">Show delivered
+                                messages</label>
                         </div>
                     </div>
                     <div className="tool-pane-content overflow-y-scroll">
                         <MessageView messages={messages}
+                                     filterNodes={new Set(nodes.map(n => n.name))}
                                      onlyUndelivered={showOnlyUndelivered}
                                      highlighted={isMessage(highlighted) ? highlighted : null}
                                      setHighlighted={setHighlighted}
@@ -102,8 +102,7 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                             nodes={nodes}
                             logs={logs}
                             highlighted={isLog(highlighted) ? highlighted : null}
-                            setHighlighted={setHighlighted}
-                            testNodeName={testNodeName}/>
+                            setHighlighted={setHighlighted}/>
                     </div>
                 </div>
             </div>

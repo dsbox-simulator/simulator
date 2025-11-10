@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::process::{Process, ProcessCommand, ProcessEvent};
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct NodeId(pub usize);
@@ -19,16 +19,18 @@ pub struct Node {
     pub id: NodeId,
     pub name: String,
     pub is_test: bool,
+    pub exited_message_requested: bool,
     process_stack: Vec<Process>,
     primary_index: usize,
 }
 
 impl Node {
-    pub fn new(name: String, is_test: bool, process: Process) -> Self {
+    pub fn new(name: String, is_test: bool, exited_message_requested: bool, process: Process) -> Self {
         Self {
             id: NodeId(0),
             name,
             is_test,
+            exited_message_requested,
             process_stack: vec![process],
             primary_index: 0,
         }

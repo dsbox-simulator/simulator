@@ -65,16 +65,12 @@ export default class Store {
             emitDebounced("messages_changed");
         });
         this.api.onSendMessage(event => {
-            const message = {
+            this.messages = [...this.messages, {
                 sentAt: event.timestamp,
                 deliveredAt: null,
                 message: event.data.msg,
                 dropped: false
-            };
-            this.messages = [...this.messages, message];
-            if (message.message.src == "core" || message.message.dest == "core") {
-                this.deliver(message);
-            }
+            }];
             emitDebounced("messages_changed");
         });
         this.api.onDeliverMessage(event => {

@@ -1,9 +1,9 @@
 //! Commands used to control the execution of the simulation
 
+use crate::Command;
 use crate::core::error::CoreError;
 use crate::core::event::Event;
 use crate::core::{Core, CoreReset, CoreState};
-use crate::Command;
 
 /// A command for the [`Core`] to control its execution
 #[derive(Debug)]
@@ -76,8 +76,8 @@ impl Core {
     }
 
     async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {
-        if let Some((timestamp, message)) = self.network.remove_one(sent_timestamp) {
-            self.deliver(timestamp, message).await?
+        if let Some((timestamp, source_id, message)) = self.network.remove_one(sent_timestamp) {
+            self.deliver(timestamp, source_id, message).await?
         }
         Ok(())
     }
