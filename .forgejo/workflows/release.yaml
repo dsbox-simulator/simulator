@@ -42,22 +42,30 @@ jobs:
         run: |
           mkdir /tmp/release
           tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/release/ dsbox
-          cp target/release/bundle/deb/DsBox_0.1.0_amd64.deb /tmp/release
-          cp target/release/bundle/rpm/DsBox-0.1.0-1.x86_64.rpm /tmp/release
+          cp target/release/bundle/deb/DsBox_*_amd64.deb /tmp/release
+          cp target/release/bundle/rpm/DsBox-*-1.x86_64.rpm /tmp/release
           tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-msvc/release/ dsbox.exe
+      - name: Publish Packages
+        run: |
+          curl --user ${{ foregjo.repository_owner }}:${{ forgejo.token }} \
+            --upload-file /tmp/release/*.deb \
+            ${{ forgejo.api_url }}/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
+          curl --user ${{ foregjo.repository_owner }}:${{ forgejo.token }} \
+            --upload-file /tmp/release/*.rpm \
+            ${{ forgejo.api_url }}/packages/${{ forgejo.repository_owner }}/rpm/upload
       - name: Upload release
         uses: actions/forgejo-release@v2.6.0
         with:
           release-notes: |
-            For fedora (rpm) based distributions, download `DsBox-0.1.0-1.x86_64.rpm` and install with 
+            For fedora (rpm) based distributions, download `DsBox-<version>-1.x86_64.rpm` and install with 
             ```sh
-            sudo dnf install ./DsBox-0.1.0-1.x86_64.rpm
+            sudo dnf install ./DsBox-<version>-1.x86_64.rpm
             ```
             
-            For debian/ubuntu (deb) based distributions download `DsBox_0.1.0_amd64.deb` and install with
+            For debian/ubuntu (deb) based distributions download `DsBox_<version>_amd64.deb` and install with
             ```sh
             sudo apt-get update
-            sudo apt-get install ./DsBox_0.1.0_amd64.deb
+            sudo apt-get install ./DsBox_<version>_amd64.deb
             ```
             
             For windows, download `x86_64-windows.tar.gz` and extract `dsbox.exe`
