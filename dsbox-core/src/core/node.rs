@@ -16,20 +16,29 @@ pub struct NodeId(pub usize);
 pub struct MiddlewareId(pub usize);
 
 pub struct Node {
+    /// the [`NodeId`] of this node
     pub id: NodeId,
+    /// the name of this node
     pub name: String,
+    /// `true` if this is the test node
     pub is_test: bool,
+    /// `true` if the test node has requested to receive an `exited` message upon this nodes termination
     pub exited_message_requested: bool,
+    /// `true` if this node is still required to send a `register` message to the core. Used for better error messages
+    pub requires_registration: bool,
+    /// that stack of processes that implement this node. This is where Middlewares are implemented, though support is experimental and un-documented
     process_stack: Vec<Process>,
+    /// the index in `process_stack` where the actual implementation of this process resides (as opposed to middleware processes)
     primary_index: usize,
 }
 
 impl Node {
-    pub fn new(name: String, is_test: bool, exited_message_requested: bool, process: Process) -> Self {
+    pub fn new(name: String, is_test: bool, exited_message_requested: bool, requires_registration: bool, process: Process) -> Self {
         Self {
             id: NodeId(0),
             name,
             is_test,
+            requires_registration,
             exited_message_requested,
             process_stack: vec![process],
             primary_index: 0,

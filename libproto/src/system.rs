@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use crate::Message;
 use crate::Payload;
 
+/// Sent from a test node to the core when starting. Only used to implement better error messages
+/// in case someone mixes up test and server programs
+#[derive(Default, Payload, Serialize, Deserialize)]
+pub struct Register {}
+
 /// Sent from the test process to the core when it wants to reset the simulation
 /// all nodes will be shut down and then a [`ResetFinished`] message will be sent to the test
 #[derive(Default, Payload, Serialize, Deserialize)]

@@ -22,6 +22,10 @@ pub enum CoreError {
     },
     /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-test node.
     IllegalCoreMessage { source: String, message: Message },
+    /// A test program has failed to send the initial `register` message, indicating that it might not be a test program at all
+    MissingRegistration { source: String },
+    /// A non-test program has sent a `register` message, indicating that it might actually be a test program
+    UnexpectedRegistration { source: String },
     /// A core [`Message`] could not be handled, because it's type is unknown.
     UnknownCoreMessage { source: String, ty: String },
     /// A message could not be forwarded to the next middleware, because the source process is last in the stack
@@ -56,6 +60,19 @@ pub enum DispatchErrorKind {
     DestinationUnknown,
 }
 
+impl CoreError {
+    /// returns `true` if the core could (or rather should) continue running if this error has occurred
+    /// during a step
+    pub fn can_continue(&self) -> bool {
+        match self {
+            CoreError::MissingRegistration { .. } | CoreError::UnexpectedRegistration { .. } => {
+                false
+            }
+            _ => true,
+        }
+    }
+}
+
 impl Display for CoreError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -76,6 +93,18 @@ impl Display for CoreError {
                     f,
                     "non-test process `{source}` tried to send core message: {}",
                     message.to_json()
+                )
+            }
+            CoreError::MissingRegistration { source } => {
+                write!(
+                    f,
+                    "process `{source}` has failed to register as a test. Are you sure you have specified the correct test program?"
+                )
+            }
+            CoreError::UnexpectedRegistration { source } => {
+                write!(
+                    f,
+                    "process `{source}` has attempted to register as a test. Are you sure you have specified the correct server program?"
                 )
             }
             CoreError::UnknownCoreMessage { source, ty } => {

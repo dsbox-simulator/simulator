@@ -10,6 +10,7 @@ pub struct Builder {
     pub(super) server_command: Command,
     pub(super) interactive: bool,
     pub(super) allow_lua_unsafe: bool,
+    pub(super) omit_test_register: bool,
     pub(super) core_name: String,
     pub(super) test_node_name: String,
 }
@@ -22,6 +23,7 @@ impl Builder {
             server_command,
             interactive: false,
             allow_lua_unsafe: false,
+            omit_test_register: false,
             core_name: DEFAULT_CORE_NAME.to_string(),
             test_node_name: DEFAULT_TEST_NODE_NAME.to_string(),
         }
@@ -48,6 +50,15 @@ impl Builder {
     /// enable/disable unsafe lua libraries
     pub fn allow_lua_unsafe(mut self, allow_lua_unsafe: bool) -> Self {
         self.allow_lua_unsafe = allow_lua_unsafe;
+        self
+    }
+
+    /// enable/disable the tests `register` message.
+    /// When enabled, the core expects each test to immediately send a `register` message
+    /// to the core, so that it can detect if a server program has accidentally been
+    /// started as a test program by the user, and can report accordingly
+    pub fn omit_test_register(mut self, omit_test_register: bool) -> Self {
+        self.omit_test_register = omit_test_register;
         self
     }
 

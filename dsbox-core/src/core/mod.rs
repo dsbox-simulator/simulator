@@ -28,8 +28,8 @@ use libproto::init::Init;
 use libproto::middleware::{Forward, Next};
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
-    BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Reset,
-    ResetFinished,
+    BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Register,
+    Reset, ResetFinished,
 };
 use libproto::{Message, Payload};
 use node::Node;
@@ -85,6 +85,11 @@ pub struct Core {
     server_command: Command,
     /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
     interactive: bool,
+    /// The core expects each test to immediately send a `register` message
+    /// to the core, so that it can detect if a server program has accidentally been
+    /// started as a test program by the user, and can report accordingly.
+    /// This flag can be used to suppress that behaviour.
+    omit_test_register: bool,
     /// The current execution state (i.e. running/stepping/paused...)
     state: CoreState,
     /// Receives [`RemoteCommand`]s for controlling this [`Core`]
@@ -157,6 +162,7 @@ impl From<Builder> for Core {
             test_command: builder.test_command,
             server_command: builder.server_command,
             interactive: builder.interactive,
+            omit_test_register: builder.omit_test_register,
             state: if builder.interactive {
                 CoreState::Paused
             } else {
@@ -177,7 +183,6 @@ impl From<Builder> for Core {
 }
 
 impl Core {
-
     /// returns a new [`Builder`] for configuring and building a new [`Core`]
     pub fn builder(test_command: Command, server_command: Command) -> Builder {
         Builder::new(test_command, server_command)
@@ -253,7 +258,11 @@ impl Core {
             let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
 
             if let Err(e) = self.step(dont_block).await {
+                let can_continue = e.can_continue();
                 self.log_core_error(e).await;
+                if !can_continue {
+                    return;
+                }
             }
             if let Some(launch) = self.launch_queue.pop_front() {
                 self.launch_single(launch).await;
@@ -330,6 +339,7 @@ impl Core {
         log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
+                self.check_registration(node_id, &message)?;
                 self.dispatch(Some((node_id, middleware_id)), timestamp, message)
                     .await?;
                 Ok(false)
@@ -358,6 +368,23 @@ impl Core {
                 error,
             }),
         }
+    }
+
+    fn check_registration(&self, node_id: NodeId, message: &Message) -> Result<(), CoreError> {
+        let node = self.nodes.resolve_alias(node_id);
+        let is_registration_message =
+            message.dst == self.core_name && message.body.ty == Register::TYPE;
+        if node.requires_registration && !is_registration_message {
+            return Err(CoreError::MissingRegistration {
+                source: node.name.clone(),
+            });
+        }
+        if !self.omit_test_register && !node.requires_registration && is_registration_message {
+            return Err(CoreError::UnexpectedRegistration {
+                source: node.name.clone(),
+            });
+        }
+        Ok(())
     }
 
     /// Dispatches a single [`Message`] into the network.
@@ -552,6 +579,14 @@ impl Core {
             Break::TYPE => {
                 if self.interactive {
                     self.state = CoreState::Paused;
+                }
+                Ok(())
+            }
+            Register::TYPE => {
+                if let Some((source_id, _)) = source {
+                    self.nodes
+                        .resolve_alias_mut(source_id)
+                        .requires_registration = false;
                 }
                 Ok(())
             }
@@ -797,7 +832,16 @@ impl Core {
         self.dispatch(
             None,
             ts,
-            Message::new(&self.core_name, &name, None, Init { name: name.clone() }),
+            Message::new(
+                &self.core_name,
+                &name,
+                None,
+                Init {
+                    name: name.clone(),
+                    core_name: self.core_name.clone(),
+                    is_test: false,
+                },
+            ),
         )
         .await?;
         Ok(self.nodes.resolve_alias_mut(node_id))
@@ -824,6 +868,23 @@ impl Core {
             ))
             .await
             .ok();
+
+        let timestamp = self.timestamp_source.now();
+        self.dispatch(
+            None,
+            timestamp,
+            Message::new(
+                &self.core_name,
+                &self.test_node_name,
+                None,
+                Init {
+                    name: self.test_node_name.clone(),
+                    core_name: self.core_name.clone(),
+                    is_test: true,
+                },
+            ),
+        )
+        .await?;
         Ok(node_id)
     }
 
@@ -836,9 +897,13 @@ impl Core {
         name: String,
     ) -> Result<&mut Node, CoreError> {
         let proc = self.launch_proc(command, is_test, name.clone()).await?;
-        let node = self
-            .nodes
-            .add(Node::new(name, is_test, exited_message_requested, proc));
+        let node = self.nodes.add(Node::new(
+            name,
+            is_test,
+            exited_message_requested,
+            is_test && !self.omit_test_register,
+            proc,
+        ));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
         Ok(node)

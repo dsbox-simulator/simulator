@@ -8,4 +8,8 @@ use crate::Payload;
 pub struct Init {
     /// the name of the server itself
     pub name: String,
+    /// the name of the "core", useful for test that want to exchange system messages with the core
+    pub core_name: String,
+    /// `true` if the receiving node is a test node.
+    pub is_test:bool,
 }
