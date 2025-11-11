@@ -1320,10 +1320,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "wasi-common",
  "wasmtime",
  "wasmtime-wasi",
- "wiggle",
 ]
 
 [[package]]
@@ -5867,32 +5865,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasi-common"
-version = "38.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cb4b3bac4c345da5cc7509a16e5b741b0873feb7d23a21b09878ac601a5f4cf"
-dependencies = [
- "anyhow",
- "bitflags 2.9.4",
- "cap-fs-ext",
- "cap-rand",
- "cap-std",
- "cap-time-ext",
- "fs-set-times",
- "io-extras",
- "io-lifetimes",
- "log",
- "rustix 1.1.2",
- "system-interface",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "wasmtime",
- "wiggle",
- "windows-sys 0.60.2",
-]
-
-[[package]]
 name = "wasip2"
 version = "1.0.1+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6031,9 +6003,11 @@ dependencies = [
  "async-trait",
  "bitflags 2.9.4",
  "bumpalo",
+ "bytes",
  "cc",
  "cfg-if",
  "encoding_rs",
+ "futures",
  "fxprof-processed-profile",
  "gimli",
  "hashbrown 0.15.5",
@@ -6540,7 +6514,6 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wiggle-macro",
- "witx",
 ]
 
 [[package]]

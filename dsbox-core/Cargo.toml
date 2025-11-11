@@ -16,12 +16,10 @@ async-channel = "2.5.0"
 
 mlua = { version = "0.11.4", features = ["lua54", "async", "serialize", "vendored"], optional = true }
 
-wasmtime = { version = "38.0.3", optional = true }
-wasmtime-wasi = { version = "38.0.3", optional = true }
-wasi-common = { version = "38.0.3", features = ["tokio"], optional = true }
-wiggle = { version = "38.0.3", optional = true }
+wasmtime = { version = "38.0.3", optional = true}
+wasmtime-wasi = { version = "38.0.3", optional = true, features = ["p3"] }
 
 [features]
 lua = ["dep:mlua"]
-wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasi-common", "dep:wiggle"]
+wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
 default = ["lua"]
