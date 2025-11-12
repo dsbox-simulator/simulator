@@ -7,6 +7,12 @@ import {createPortal} from "react-dom";
 import MousePan from "./mousePan";
 import classNames from "classnames";
 import LogMessage from "./logMessage";
+import uniqolor from "uniqolor";
+
+interface Color {
+    color: string,
+    isLight: boolean,
+}
 
 interface Event {
     node: number
@@ -36,18 +42,12 @@ interface LamportDiagramProps {
     eventRadius?: number,
 }
 
-function selectColor(nmb: number): string {
-    const hue = nmb * 137.508; // use golden angle approximation
-    return `hsl(${hue},75%,50%)`;
-}
-
-
 function toLamportProps(nodes: NodeInfo[],
                         messages: MessageInfo[],
                         highlighted: MessageInfo | LogInfo | null,
-                        logs: LogInfo[]): [LamportDiagramProps, Map<string, string>] {
+                        logs: LogInfo[]): [LamportDiagramProps, Map<string, Color>] {
     const nodeNames = [...nodes.map(n => n.name)];
-    const colorMap = new Map<string, string>();
+    const colorMap = new Map<string, Color>();
     const nodesByName = new Map<string, number>(nodeNames.map((n, i) => [n, i]));
     const nodesById = new Map<number, number>(nodes.map((n, i) => [n.id, i]));
     const events: Event[] = [];
@@ -55,7 +55,6 @@ function toLamportProps(nodes: NodeInfo[],
     const highlights: { event?: number, communication?: number }[] = [];
     for (const message of messages) {
         const isHighlighted = isMessage(highlighted) && message.sentAt === highlighted.sentAt;
-        // if (message.message.src === "core" || message.message.dest === "core") continue;
         const sender = nodesByName.get(message.message.src);
         const receiver = nodesByName.get(message.message.dest);
         if (sender === undefined || receiver === undefined) continue;
@@ -76,7 +75,7 @@ function toLamportProps(nodes: NodeInfo[],
             });
             let color = colorMap.get(message.message.body.type);
             if (color === undefined) {
-                color = selectColor(colorMap.size);
+                color = uniqolor(message.message.body.type, {saturation: 60, lightness: 60});
                 colorMap.set(message.message.body.type, color);
             }
 
@@ -85,7 +84,7 @@ function toLamportProps(nodes: NodeInfo[],
                 to: receiver,
                 sentLogicalClock: message.sentAt.logical,
                 receivedLogicalClock: message.deliveredAt.logical,
-                color,
+                color: color.color,
                 data: message,
             });
             if (isHighlighted) {
@@ -106,7 +105,7 @@ function toLamportProps(nodes: NodeInfo[],
             data: log,
             logicalClock: log.timestamp.logical,
             label: log.message.marker?.label,
-            color: cssColor(log.message.marker?.color || "Black"),
+            color: cssColor(log.message.marker?.color || "White"),
         });
         if (isHighlighted) {
             highlights.push({event: events.length - 1});
@@ -340,11 +339,14 @@ function Pin({id}: { id: string }) {
     </symbol>
 }
 
-function Legend({colors}: { colors: Map<string, string> }) {
+function Legend({colors}: { colors: Map<string, Color> }) {
     return <div className="border-top position-absolute bottom-0 w-100 bg-white p-2">
         Message Types:
         {[...colors.entries()].map(([type, color]) => <div key={type} className="badge rounded-pill ms-2"
-                                                           style={{background: color}}>{type}</div>)}
+                                                           style={{
+                                                               background: color.color,
+                                                               color: color.isLight ? "black" : "white"
+                                                           }}>{type}</div>)}
     </div>
 }
 

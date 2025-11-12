@@ -39,6 +39,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "uniqolor": "^1.1.1",
     "esbuild": "0.25.10",
     "htmlnano": "^2.1.5",
     "npm-watch": "^0.13.0",

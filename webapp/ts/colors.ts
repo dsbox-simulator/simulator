@@ -1,38 +1,39 @@
 import {LogMarkerColor} from "./api/types";
 
+// color scheme taken from https://github.com/Gogh-Co/Gogh, using the "Nord Light" theme.
 export function cssColor(labelColor: LogMarkerColor):string {
     switch (labelColor) {
         case "Black":
-            return "#000000";
+            return "#003B4E";
         case "Red":
-            return "#c00000";
+            return "#E64569";
         case "Green":
-            return "#00c000";
+            return "#069F5F";
         case "Yellow":
-            return "#c0c000";
+            return "#DAB752";
         case "Blue":
-            return "#0000c0";
+            return "#439ECF";
         case "Magenta":
-            return "#c000c0";
+            return "#D961DC";
         case "Cyan":
-            return "#00c0c0";
+            return "#00B1BE";
         case "White":
-            return "#c0c0c0";
+            return "#B3B3B3";
         case "BrightBlack":
-            return "#808080";
+            return "#3E89A1";
         case "BrightRed":
-            return "#ff0000";
+            return "#E4859A";
         case "BrightGreen":
-            return "#00ff00";
+            return "#A2CCA1";
         case "BrightYellow":
-            return "#ffff00";
+            return "#E1E387";
         case "BrightBlue":
-            return "#0000ff";
+            return "#6FBBE2";
         case "BrightMagenta":
-            return "#ff00ff";
+            return "#E586E7";
         case "BrightCyan":
-            return "#00ffff";
+            return "#96DCDA";
         case "BrightWhite":
-            return "#ffffff";
+            return "#DEDEDE";
     }
 }
