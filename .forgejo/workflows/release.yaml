@@ -47,10 +47,10 @@ jobs:
           tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-msvc/release/ dsbox.exe
       - name: Publish Packages
         run: |
-          curl --user ${{ forgejo.repository_owner }}:${{ forgejo.token }} \
+          curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
             --upload-file /tmp/release/*.deb \
             ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
-          curl --user ${{ forgejo.repository_owner }}:${{ forgejo.token }} \
+           curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
             --upload-file /tmp/release/*.rpm \
             ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/rpm/upload
       - name: Upload release
