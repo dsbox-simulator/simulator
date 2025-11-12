@@ -49,10 +49,10 @@ jobs:
         run: |
           curl --user ${{ forgejo.repository_owner }}:${{ forgejo.token }} \
             --upload-file /tmp/release/*.deb \
-            ${{ forgejo.api_url }}/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
+            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
           curl --user ${{ forgejo.repository_owner }}:${{ forgejo.token }} \
             --upload-file /tmp/release/*.rpm \
-            ${{ forgejo.api_url }}/packages/${{ forgejo.repository_owner }}/rpm/upload
+            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/rpm/upload
       - name: Upload release
         uses: actions/forgejo-release@v2.6.0
         with:
