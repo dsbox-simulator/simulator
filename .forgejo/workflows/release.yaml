@@ -9,7 +9,7 @@ jobs:
       image: node:lts-bookworm
     steps:
       - name: Checkout the tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install rust
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - name: Install apt dependencies
@@ -54,7 +54,7 @@ jobs:
             --upload-file /tmp/release/*.rpm \
             ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/rpm/upload
       - name: Upload release
-        uses: actions/forgejo-release@v2.6.0
+        uses: actions/forgejo-release@v2.7.3
         with:
           release-notes: |
             For fedora (rpm) based distributions, download `DsBox-<version>-1.x86_64.rpm` and install with 
