@@ -4,9 +4,8 @@
 use crate::cli::Args;
 use async_channel::Receiver;
 use clap::Parser;
-use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
-use dsbox_core::core::{Builder, Core};
+use dsbox_core::core::Core;
 use log::LevelFilter;
 use tokio::task::JoinHandle;
 

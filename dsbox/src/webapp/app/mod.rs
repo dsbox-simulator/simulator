@@ -10,7 +10,7 @@ use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
 use dsbox_core::core::error::CoreError;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
-use dsbox_core::core::{Builder, Core};
+use dsbox_core::core::Core;
 
 use async_channel::{Receiver, Sender};
 use dsbox_core::Command;
@@ -219,15 +219,15 @@ impl App {
         Ok(())
     }
 
-    async fn store(&mut self, key: String, value: Value) -> Result<(), response::Error> {
+    async fn store(&mut self, _key: String, _value: Value) -> Result<(), response::Error> {
         todo!()
     }
 
-    async fn load(&mut self, key: String) -> Result<Option<Value>, response::Error> {
+    async fn load(&mut self, _key: String) -> Result<Option<Value>, response::Error> {
         todo!()
     }
 
-    async fn remove(&mut self, key: String) -> Result<(), response::Error> {
+    async fn remove(&mut self, _key: String) -> Result<(), response::Error> {
         todo!()
     }
 }
