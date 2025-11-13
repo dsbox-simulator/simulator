@@ -20,7 +20,6 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
     const connected = store.useConnected();
     const logs = store.useLogs();
     const messages = store.useMessages();
-    const [showOnlyUndelivered, setShowOnlyUndelivered] = useState(true);
     const [commands, setCommands] = useState<Commands | null>(null);
     const [highlighted, setHighlighted] = useState<MessageInfo | LogInfo | null>(null);
     const setCommandsSave = (commands: Commands): void => {
@@ -70,41 +69,17 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
                                 logs={logs}/>
             </div>
             <div className="messages-logs">
-                <div className="tool-pane">
-                    <div className="tool-pane-header">
-                        <div>
-                            <i className="bi bi-envelope"></i> Messages
-                        </div>
-                        <div className="form-check form-switch">
-                            <input className="form-check-input" type="checkbox" role="switch" id="showDeliveredMessages"
-                                   checked={!showOnlyUndelivered}
-                                   onChange={e => setShowOnlyUndelivered(!e.target.checked)}/>
-                            <label className="form-check-label" htmlFor="showDeliveredMessages">Show delivered
-                                messages</label>
-                        </div>
-                    </div>
-                    <div className="tool-pane-content overflow-y-scroll">
-                        <MessageView messages={messages}
-                                     filterNodes={new Set(nodes.map(n => n.name))}
-                                     onlyUndelivered={showOnlyUndelivered}
-                                     highlighted={isMessage(highlighted) ? highlighted : null}
-                                     setHighlighted={setHighlighted}
-                                     onDeliver={m => store.deliver(m)}
-                                     onDrop={m => store.drop(m)}/>
-                    </div>
-                </div>
-                <div className="tool-pane">
-                    <div className="tool-pane-header">
-                        <div><i className="bi bi-terminal"></i> Logs</div>
-                    </div>
-                    <div className="tool-pane-content overflow-y-scroll">
-                        <LogView
-                            nodes={nodes}
-                            logs={logs}
-                            highlighted={isLog(highlighted) ? highlighted : null}
-                            setHighlighted={setHighlighted}/>
-                    </div>
-                </div>
+                <MessageView messages={messages}
+                             filterNodes={new Set(nodes.map(n => n.name))}
+                             highlighted={isMessage(highlighted) ? highlighted : null}
+                             setHighlighted={setHighlighted}
+                             onDeliver={m => store.deliver(m)}
+                             onDrop={m => store.drop(m)}/>
+                <LogView
+                    nodes={nodes}
+                    logs={logs}
+                    highlighted={isLog(highlighted) ? highlighted : null}
+                    setHighlighted={setHighlighted}/>
             </div>
         </div>
     </div>

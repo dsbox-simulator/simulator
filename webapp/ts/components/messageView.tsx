@@ -1,5 +1,5 @@
 import React, {Fragment, useState} from "react";
-import {LogInfo, MessageInfo} from "../store/store";
+import {MessageInfo} from "../store/store";
 import Tooltip from "./tooltip";
 import {Json} from "./json";
 import classNames from "classnames";
@@ -9,15 +9,40 @@ function messageFilter(message: MessageInfo, filterNodes: Set<string>, onlyUndel
     return filterNodes.has(message.message.src) && filterNodes.has(message.message.dest);
 }
 
-export default function MessageView({
-                                        messages,
-                                        filterNodes,
-                                        onlyUndelivered,
-                                        highlighted,
-                                        setHighlighted,
-                                        onDeliver,
-                                        onDrop
-                                    }: {
+export default function MessageView(props: {
+    messages: MessageInfo[],
+    filterNodes: Set<string>,
+    highlighted: MessageInfo | null,
+    setHighlighted: (messages: MessageInfo | null) => void,
+    onDeliver: (messages: MessageInfo) => void,
+    onDrop: (messages: MessageInfo) => void,
+}) {
+    const [showOnlyUndelivered, setShowOnlyUndelivered] = useState(true);
+    return <div className="tool-pane">
+        <div className="tool-pane-header">
+            <div>
+                <i className="bi bi-envelope"></i> Messages
+            </div>
+            <div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" role="switch" id="showDeliveredMessages"
+                       checked={!showOnlyUndelivered}
+                       onChange={e => setShowOnlyUndelivered(!e.target.checked)}/>
+                <label className="form-check-label" htmlFor="showDeliveredMessages">Show delivered
+                    messages</label>
+            </div>
+        </div>
+        <div className="tool-pane-content overflow-y-scroll">
+            <MessageTable onlyUndelivered={showOnlyUndelivered} {...props}/>
+        </div>
+    </div>;
+}
+
+function MessageTable({
+                          messages,
+                          filterNodes,
+                          onlyUndelivered,
+                          ...props
+                      }: {
     messages: MessageInfo[],
     filterNodes: Set<string>,
     onlyUndelivered: boolean,
@@ -27,7 +52,7 @@ export default function MessageView({
     onDrop: (messages: MessageInfo) => void,
 }) {
     const shownMessages = messages.filter(m => messageFilter(m, filterNodes, onlyUndelivered));
-    return <table className="table table-small font-monospace table-hover">
+    return <table className="table table-sm font-monospace table-hover align-middle">
         <thead>
         <tr className="sticky-top">
             <th></th>
@@ -44,18 +69,15 @@ export default function MessageView({
         <tbody>
         {shownMessages.map(message => <MessageRow key={message.sentAt.logical}
                                                   message={message}
-                                                  onlyUndelivered={onlyUndelivered}
-                                                  highlighted={highlighted}
-                                                  setHighlighted={setHighlighted}
-                                                  onDeliver={onDeliver}
-                                                  onDrop={onDrop}/>)}
+                                                  showDeliveredAt={!onlyUndelivered}
+                                                  {...props}/>)}
         </tbody>
     </table>;
 }
 
-function MessageRow({message, onlyUndelivered, highlighted, setHighlighted, onDeliver, onDrop}: {
+function MessageRow({message, showDeliveredAt, highlighted, setHighlighted, onDeliver, onDrop}: {
     message: MessageInfo,
-    onlyUndelivered: boolean,
+    showDeliveredAt: boolean,
     highlighted: MessageInfo | null,
     setHighlighted: (messages: MessageInfo | null) => void,
     onDeliver: (messages: MessageInfo) => void,
@@ -72,7 +94,7 @@ function MessageRow({message, onlyUndelivered, highlighted, setHighlighted, onDe
             <td><a role="button" onClick={() => setOpen(!open)}><i
                 className={classNames("bi", {"bi-plus-square": !open, "bi-dash-square": open})}></i></a></td>
             <td>{message.sentAt.logical}</td>
-            {!onlyUndelivered && <td>{message.deliveredAt?.logical}</td>}
+            {showDeliveredAt && <td>{message.deliveredAt?.logical}</td>}
             <td>{message.message.src}</td>
             <td>{message.message.dest}</td>
             <td>{message.message.body.type}</td>
