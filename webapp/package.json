@@ -7,9 +7,9 @@
   "type": "module",
   "main": "src/main.ts",
   "scripts": {
-    "build": "node build.js",
-    "watch": "npm run build -- --watch",
-    "serve": "npm run build -- --serve"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "watch": {
     "build": {
@@ -34,17 +34,12 @@
     }
   },
   "devDependencies": {
-    "@chialab/esbuild-plugin-html": "^0.19.0",
     "@types/bootstrap": "^5.2.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "uniqolor": "^1.1.1",
-    "esbuild": "0.25.10",
-    "htmlnano": "^2.1.5",
-    "npm-watch": "^0.13.0",
-    "typescript": "^5.9.3",
-    "commander": "^14.0.2"
+    "vite": "^7.2.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
@@ -52,6 +47,7 @@
     "@tauri-apps/plugin-store": "^2.4.1",
     "@tauri-apps/plugin-window-state": "^2.4.1",
     "@flatten-js/core": "^1.6.6",
+    "uniqolor": "^1.1.1",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "react": "^19.2.0",

@@ -1,7 +1,6 @@
 import {RpcError, RpcErrorInfo, RpcResult} from "./rpcResponse";
 import {RpcRequest} from "./rpcRequest";
 import EventEmitter, {EventListener} from "../eventEmitter";
-import {isDevelopment} from "../env";
 
 interface OutstandingPromise {
     method: string,
@@ -62,14 +61,14 @@ export default class WebSocketRpc {
     }
 
     private send(request: RpcRequest): void {
-        if (isDevelopment) {
+        if (import.meta.env.PROD) {
             console.log('send', request);
         }
         this.socket.send(JSON.stringify(request));
     }
 
     private handleMessage(message: any) {
-        if (isDevelopment && message['method'] !== 'progress') {
+        if (import.meta.env.PROD && message['method'] !== 'progress') {
             console.log('received', message);
         }
         if (isResult(message)) this.handleResult(message);

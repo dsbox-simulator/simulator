@@ -4,9 +4,9 @@
   "identifier": "com.bsvs.dsbox",
   "build": {
     "frontendDist": "../webapp/dist",
-    "beforeBuildCommand": "npm --prefix ../webapp run build -- --release",
-    "beforeDevCommand": "npm --prefix ../webapp run serve",
-    "devUrl": "http://localhost:8000",
+    "beforeBuildCommand": "npm --prefix ../webapp run build",
+    "beforeDevCommand": "npm --prefix ../webapp run dev",
+    "devUrl": "http://localhost:5173",
     "additionalWatchFolders": ["../webapp"]
   },
   "app": {
