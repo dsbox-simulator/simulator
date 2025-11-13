@@ -60,19 +60,6 @@ pub enum DispatchErrorKind {
     DestinationUnknown,
 }
 
-impl CoreError {
-    /// returns `true` if the core could (or rather should) continue running if this error has occurred
-    /// during a step
-    pub fn can_continue(&self) -> bool {
-        match self {
-            CoreError::MissingRegistration { .. } | CoreError::UnexpectedRegistration { .. } => {
-                false
-            }
-            _ => true,
-        }
-    }
-}
-
 impl Display for CoreError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

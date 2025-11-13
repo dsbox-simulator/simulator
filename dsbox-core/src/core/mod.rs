@@ -18,7 +18,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
-use std::ops::RangeBounds;
+use std::ops::{Add, RangeBounds};
 use std::slice::SliceIndex;
 
 use async_channel::{Receiver, Sender};
@@ -34,18 +34,18 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
-use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
 use crate::core::node::{MiddlewareId, NodeId};
 use crate::core::node_list::{NodeList, NodeRef};
 use crate::core::remote_control::RemoteCommand;
-use crate::core::timer_manager::{Timer, TimerManager};
+use crate::core::timer_manager::{Timer, TimerKind, TimerManager};
 use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
+use crate::Command;
 pub use builder::Builder;
 use network::Network;
 
@@ -258,11 +258,7 @@ impl Core {
             let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
 
             if let Err(e) = self.step(dont_block).await {
-                let can_continue = e.can_continue();
                 self.log_core_error(e).await;
-                if !can_continue {
-                    return;
-                }
             }
             if let Some(launch) = self.launch_queue.pop_front() {
                 self.launch_single(launch).await;
@@ -320,7 +316,7 @@ impl Core {
                     }
                 }
                 timer = self.timer_manager.wait_next() => {
-                    self.send_timer_expired(timer).await?;
+                    self.handle_timer_expired(timer).await?;
                 }
                 _ = timeout, if dont_block => {}
             }
@@ -339,7 +335,6 @@ impl Core {
         log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
-                self.check_registration(node_id, &message)?;
                 self.dispatch(Some((node_id, middleware_id)), timestamp, message)
                     .await?;
                 Ok(false)
@@ -370,21 +365,15 @@ impl Core {
         }
     }
 
-    fn check_registration(&self, node_id: NodeId, message: &Message) -> Result<(), CoreError> {
+    fn ensure_registered(&self, node_id: NodeId) -> Result<(), CoreError> {
         let node = self.nodes.resolve_alias(node_id);
-        let is_registration_message =
-            message.dst == self.core_name && message.body.ty == Register::TYPE;
-        if node.requires_registration && !is_registration_message {
-            return Err(CoreError::MissingRegistration {
+        if node.requires_registration {
+            Err(CoreError::MissingRegistration {
                 source: node.name.clone(),
-            });
+            })
+        } else {
+            Ok(())
         }
-        if !self.omit_test_register && !node.requires_registration && is_registration_message {
-            return Err(CoreError::UnexpectedRegistration {
-                source: node.name.clone(),
-            });
-        }
-        Ok(())
     }
 
     /// Dispatches a single [`Message`] into the network.
@@ -516,14 +505,25 @@ impl Core {
         }
     }
 
-    async fn send_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
-        let mut reply = Message::new(
-            &self.core_name,
-            &timer.source,
-            None,
-            TimerExpired { name: timer.name },
-        );
-        reply.body.in_reply_to = timer.msg_id;
+    async fn handle_timer_expired(&mut self, timer: Timer) -> Result<(), CoreError> {
+        match timer.kind {
+            TimerKind::TimerService {
+                source,
+                msg_id,
+                name,
+            } => self.send_timer_expired(source, msg_id, name).await,
+            TimerKind::ExpectRegistry { node_id } => self.ensure_registered(node_id),
+        }
+    }
+
+    async fn send_timer_expired(
+        &mut self,
+        source: String,
+        msg_id: Option<usize>,
+        name: String,
+    ) -> Result<(), CoreError> {
+        let mut reply = Message::new(&self.core_name, &source, None, TimerExpired { name });
+        reply.body.in_reply_to = msg_id;
         let ts = self.timestamp_source.now();
         self.dispatch(None, ts, reply).await
     }
@@ -555,15 +555,14 @@ impl Core {
             Next::TYPE => self.forward_to_next(source, message.payload::<Next>().unwrap().message),
             libproto::services::Timer::TYPE => {
                 let timer = message.payload::<libproto::services::Timer>().unwrap();
-                if let Some((_, middleware_id)) = source {
-                    self.timer_manager.add(
-                        Instant::now() + Duration::from_secs_f64(timer.seconds),
-                        message.body.id,
-                        message.src,
-                        timer.name,
-                        middleware_id,
-                    );
-                }
+                self.timer_manager.add(
+                    Instant::now() + Duration::from_secs_f64(timer.seconds),
+                    TimerKind::TimerService {
+                        msg_id: message.body.id,
+                        source: message.src,
+                        name: timer.name,
+                    },
+                );
                 Ok(())
             }
             LogMessage::TYPE => {
@@ -584,9 +583,14 @@ impl Core {
             }
             Register::TYPE => {
                 if let Some((source_id, _)) = source {
-                    self.nodes
-                        .resolve_alias_mut(source_id)
-                        .requires_registration = false;
+                    let node = self.nodes.resolve_alias_mut(source_id);
+                    if !node.requires_registration {
+                        return Err(CoreError::UnexpectedRegistration {
+                            source: node.name.clone(),
+                        });
+                    } else {
+                        node.requires_registration = false;
+                    }
                 }
                 Ok(())
             }
@@ -897,15 +901,22 @@ impl Core {
         name: String,
     ) -> Result<&mut Node, CoreError> {
         let proc = self.launch_proc(command, is_test, name.clone()).await?;
+        let requires_registration = is_test && !self.omit_test_register;
         let node = self.nodes.add(Node::new(
             name,
             is_test,
             exited_message_requested,
-            is_test && !self.omit_test_register,
+            requires_registration,
             proc,
         ));
         let commandline = node.commandline(MiddlewareId(0));
         log::info!("[{}] command `{commandline}` launched", node.name);
+        if requires_registration {
+            self.timer_manager.add(
+                Instant::now().add(Duration::from_millis(500)),
+                TimerKind::ExpectRegistry { node_id: node.id },
+            )
+        }
         Ok(node)
     }
 
