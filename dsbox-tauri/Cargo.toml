@@ -1,12 +1,12 @@
 [package]
 name = "dsbox"
-version = "0.1.5"
+version = "0.1.6"
 description = "Tauri frontend for `dsbox`"
 authors = ["you"]
 license = ""
 repository = ""
-edition = "2021"
-rust-version = "1.77.2"
+edition = "2024"
+#rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
