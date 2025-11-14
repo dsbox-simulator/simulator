@@ -302,14 +302,14 @@ impl LuaLauncher {
 }
 
 impl LuaAppData {
-    /// attempts to deserialize the given Value as a [`libproto::Message`] using `mlua`s `serde` support
+    /// attempts to deserialize the given Value as a [`Message`] using `mlua`s `serde` support
     /// and sends it to the core
     async fn lua_send(lua: Lua, message: Value) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let message = match lua.from_value(message.clone()) {
             Ok(message) => message,
             Err(e) => {
-                let raw_message = serde_json::to_string(&message).unwrap();
+                let raw_message = serde_json::to_string(&message).unwrap_or_default();
                 app_data
                     .send_event(ProcessEvent::SerializeError {
                         raw_message,
@@ -317,7 +317,7 @@ impl LuaAppData {
                     })
                     .await
                     .ok();
-                return Ok(false);
+                return Err(Error::RuntimeError(e.to_string()));
             }
         };
         Ok(app_data
