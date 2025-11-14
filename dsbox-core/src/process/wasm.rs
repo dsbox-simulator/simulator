@@ -155,9 +155,13 @@ impl WasmLauncher {
             self.wasm_cache.get(path).unwrap()
         };
 
+        let cleaned_env = std::env::vars()
+            .filter(|(name, _)| name.starts_with("DSBOX_"))
+            .collect::<Vec<_>>();
+
         let ctx = WasiCtxBuilder::new()
             .args(args)
-            .inherit_env()
+            .envs(&cleaned_env)
             .stdin(AsyncStdinStream::new(stdin))
             .stdout(AsyncStdoutStream::new(1024, stdout))
             .stderr(AsyncStdoutStream::new(1024, stderr))
