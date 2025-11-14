@@ -35,7 +35,7 @@ which = "8.0.0"
 [features]
 lua = ["dsbox-core/lua"]
 wasm = ["dsbox-core/wasm"]
-default = ["lua"]
+default = ["lua", "wasm"]
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2.4.1"

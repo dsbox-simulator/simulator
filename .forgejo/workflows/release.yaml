@@ -29,11 +29,11 @@ jobs:
       - name: Build DsBox Linux
         run: |
           . $HOME/.cargo/env
-          cargo tauri build --features wasm --bundles deb,rpm
+          cargo tauri build --bundles deb,rpm
       - name: Build DsBox Windows
         run: |
           . $HOME/.cargo/env
-          cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --features wasm --no-bundle
+          cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
       - name: Prepare release files
         run: |
           mkdir /tmp/release
