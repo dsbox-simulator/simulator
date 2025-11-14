@@ -457,7 +457,7 @@ fn message_create_reply(
         ),
     )?;
     let new_body: Table = new_message.get("body")?;
-    new_body.set("in_reply_to", body.get::<Value>("msg_id")?)?;
+    new_body.set("in_reply_to", body.get::<Value>("id")?)?;
     merge_into_table(&new_body, rest)?;
     Ok(new_message)
 }

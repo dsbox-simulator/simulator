@@ -403,7 +403,7 @@ impl Core {
             .await
             .ok();
 
-        if message.dst == self.core_name {
+        if message.dest == self.core_name {
             // handle messages to the core immediately, circumventing the network
             return self.handle_core_message(source, timestamp, message).await;
         }
@@ -444,7 +444,7 @@ impl Core {
     ) -> Result<(), CoreError> {
         log::trace!("deliver {message:?}");
         let result = if let Some(destination_id) =
-            self.nodes.lookup_and_resolve(&message.dst).map(|n| n.id)
+            self.nodes.lookup_and_resolve(&message.dest).map(|n| n.id)
         {
             let timestamp = self.timestamp_source.now();
             self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))

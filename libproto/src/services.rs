@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::Payload;
 
 /// can be sent from a node to the core, in order to receive a [`TimerExpired`] message after the specified time has elapsed
-/// Nodes can use the `msg_id` field to differentiate between different timers expiring
+/// Nodes can use the `id` field to differentiate between different timers expiring
 #[derive(Payload, Serialize, Deserialize)]
 pub struct Timer {
     /// a name for the timer that should be displayed to the user in the webapp

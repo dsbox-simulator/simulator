@@ -45,7 +45,7 @@ export interface Message {
 
 export interface Body {
     type: string;
-    msg_id?: number;
+    id?: number;
     in_reply_to?: number;
 
     [data: string]: any;

@@ -30,7 +30,7 @@ impl MonitorSession {
 
     /// Returns `true` if the given [`Message`] matches this session (i.e. the source node should be notified).
     pub fn matches(&self, message: &Message) -> bool {
-        self.src_match.is_match(&message.src) && self.dst_match.is_match(&message.dst)
+        self.src_match.is_match(&message.src) && self.dst_match.is_match(&message.dest)
     }
 
     /// Returns the name of the node that started this session.

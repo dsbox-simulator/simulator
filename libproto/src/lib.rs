@@ -28,8 +28,7 @@ pub struct Message {
     /// and it is also validated in the core (no node can send messages with a `src` other than itself).
     pub src: String,
     /// The name of the node that the message is meant for.
-    #[serde(rename = "dest")]
-    pub dst: String,
+    pub dest: String,
     /// The contents of the message
     pub body: Body,
 }
@@ -46,7 +45,7 @@ pub struct Body {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<usize>,
 
-    /// An optional id that identifies a message that this message is a reply to. See [`Body::msg_id`]
+    /// An optional id that identifies a message that this message is a reply to. See [`Body::id`]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<usize>,
 
@@ -74,16 +73,16 @@ impl Message {
     }
 
     /// Create a new message with a given source, destination, optional id and a [`Payload`].
-    pub fn new<P: Payload>(src: &str, dst: &str, msg_id: Option<usize>, payload: P) -> Self {
+    pub fn new<P: Payload>(src: &str, dst: &str, id: Option<usize>, payload: P) -> Self {
         let data = serde_json::to_value(payload)
             .expect("failed to convert payload to json value");
 
         Self {
             src: src.to_owned(),
-            dst: dst.to_owned(),
+            dest: dst.to_owned(),
             body: Body {
                 ty: P::TYPE.to_owned(),
-                id: msg_id,
+                id,
                 in_reply_to: None,
                 data,
             },
@@ -91,17 +90,17 @@ impl Message {
     }
 
     /// Creates a message with a [`Payload`] that is a reply to `self`
-    /// (swaps source and destination, and sets the `in_reply_to` field if `self` has a `msg_id`).
-    pub fn reply<P: Payload>(&self, msg_id: Option<usize>, ty: P) -> Self {
-        let mut message = Self::new(&self.dst, &self.src, msg_id, ty);
+    /// (swaps source and destination, and sets the `in_reply_to` field if `self` has an `id`).
+    pub fn reply<P: Payload>(&self, id: Option<usize>, ty: P) -> Self {
+        let mut message = Self::new(&self.dest, &self.src, id, ty);
         message.body.in_reply_to = self.body.id;
         message
     }
 
     /// Attempts to deserialize the message body into the given [`Payload`] type.
     /// Checks if the message type matches the [`Payload`] type and the deserializes the body into that type.
-    /// Returns [`Result::Ok`] if the type matches and the body could be deserialized, and returns
-    /// [`Result::Err`] if the type does not match or there was an error deserializing the body.
+    /// Returns [`Ok`] if the type matches and the body could be deserialized, and returns
+    /// [`Err`] if the type does not match or there was an error deserializing the body.
     pub fn payload<P: Payload>(&self) -> Result<P, PayloadError> {
         if self.body.ty != P::TYPE { return Err(PayloadError::MismatchedType(P::TYPE, self.body.ty.clone())); }
         serde_json::from_value(self.body.data.clone())
@@ -135,7 +134,7 @@ impl Debug for Message {
 /// Error that may occur when trying to deserialize a message body
 #[derive(Debug)]
 pub enum PayloadError {
-    /// The type of the message does no match the type it should have been deserialized into.
+    /// The type of the message does not match the type it should have been deserialized into.
     /// Contains the type was expected (first parameter) and the type the message actually had (second parameter).
     MismatchedType(&'static str, String),
     /// The type matches, but an error occurred during deserialization.
