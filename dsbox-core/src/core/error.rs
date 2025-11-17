@@ -5,7 +5,6 @@
 
 use std::fmt::{Display, Formatter};
 
-use crate::core::node::MiddlewareId;
 use libproto::Message;
 
 /// An error that occurred during execution
@@ -28,15 +27,6 @@ pub enum CoreError {
     UnexpectedRegistration { source: String },
     /// A core [`Message`] could not be handled, because it's type is unknown.
     UnknownCoreMessage { source: String, ty: String },
-    /// A message could not be forwarded to the next middleware, because the source process is last in the stack
-    MissingMiddleware {
-        /// the command that caused the error
-        source: String,
-        /// the name of the node in which the error occurred
-        node: String,
-        /// middleware index which tried to forward the message
-        middleware_id: MiddlewareId,
-    },
     /// An error occurred trying to launch a process.
     LaunchFailed {
         command: String,
@@ -114,16 +104,6 @@ impl Display for CoreError {
                 write!(
                     f,
                     "failed to deserialize message from process `{source}`: {error} (raw message: {raw_message:?})"
-                )
-            }
-            CoreError::MissingMiddleware {
-                source,
-                node,
-                middleware_id: middleware_idx,
-            } => {
-                write!(
-                    f,
-                    "failed to forward message to next middleware process: `{node}` only has `{middleware_idx}` middleware(s). Process: `{source}`"
                 )
             }
         }

@@ -25,7 +25,6 @@ use async_channel::{Receiver, Sender};
 use tokio::time::{Duration, Instant};
 
 use libproto::init::Init;
-use libproto::middleware::{Forward, Next};
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
     BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Register,
@@ -37,7 +36,7 @@ use node::Node;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
-use crate::core::node::{MiddlewareId, NodeId};
+use crate::core::node::NodeId;
 use crate::core::node_list::{NodeList, NodeRef};
 use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerKind, TimerManager};
@@ -142,13 +141,11 @@ enum CoreReset {
 
 /// when launching a node, this is a convenient way to specify which command string should be used
 #[derive(Copy, Clone)]
-enum LaunchCommand<'a> {
+enum LaunchCommand {
     /// launch a new test process
     Test,
     /// launch a new server process
     Server,
-    /// launch a custom command (e.g. for middleware)
-    Custom(&'a Command),
 }
 
 impl From<Builder> for Core {
@@ -315,9 +312,9 @@ impl Core {
                     self.handle_command(remote_command.unwrap()).await?;
                 }
                 process_event = self.nodes.recv_any() => {
-                    if let Some((event, node_id, middleware_idx)) = process_event {
+                    if let Some((event, node_id)) = process_event {
                         let ts = self.timestamp_source.now();
-                        self.handle_process_event(ts, node_id, middleware_idx, event).await?;
+                        self.handle_process_event(ts, node_id, event).await?;
                     }
                 }
                 timer = self.timer_manager.wait_next() => {
@@ -334,14 +331,12 @@ impl Core {
         &mut self,
         timestamp: Timestamp,
         node_id: NodeId,
-        middleware_id: MiddlewareId,
         process_event: ProcessEvent,
     ) -> Result<bool, CoreError> {
         log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
-                self.dispatch(Some((node_id, middleware_id)), timestamp, message)
-                    .await?;
+                self.dispatch(Some(node_id), timestamp, message).await?;
                 Ok(false)
             }
             ProcessEvent::Log(log) => {
@@ -349,13 +344,11 @@ impl Core {
                     text: log,
                     marker: None,
                 };
-                self.log(timestamp, node_id, middleware_id, log_message)
-                    .await;
+                self.log(timestamp, node_id, log_message).await;
                 Ok(true)
             }
             ProcessEvent::Exited(exit_code) => {
-                self.process_exited(timestamp, node_id, middleware_id, exit_code)
-                    .await?;
+                self.process_exited(timestamp, node_id, exit_code).await?;
                 if self.nodes.resolve_alias(node_id).is_test {
                     // test process exited: shut down all processes gracefully
                     self.test_exit_code = exit_code;
@@ -364,7 +357,7 @@ impl Core {
                 Ok(true)
             }
             ProcessEvent::SerializeError { raw_message, error } => Err(CoreError::SerializeError {
-                source: self.nodes.resolve_alias(node_id).commandline(middleware_id),
+                source: self.nodes.resolve_alias(node_id).commandline(),
                 raw_message,
                 error,
             }),
@@ -385,13 +378,13 @@ impl Core {
     /// Dispatches a single [`Message`] into the network.
     async fn dispatch(
         &mut self,
-        source: Option<(NodeId, MiddlewareId)>,
+        source: Option<NodeId>,
         timestamp: Timestamp,
         message: Message,
     ) -> Result<(), CoreError> {
         log::trace!("dispatching message {}", message.to_json());
 
-        if let Some((source_id, _)) = source {
+        if let Some(source_id) = source {
             let source = &self.nodes[source_id];
             if !self.nodes.alias_same_node(source, &message.src) {
                 let aliases = self.nodes.aliases_of(source);
@@ -414,29 +407,13 @@ impl Core {
             return self.handle_core_message(source, timestamp, message).await;
         }
 
-        if let Some((source_id, middleware_id)) = source {
-            let node = self.nodes.resolve_alias(source_id);
-            if !middleware_id.is_top() {
-                node.send_to_middleware(
-                    ProcessCommand::Deliver(Message::new(
-                        &self.core_name,
-                        &node.name,
-                        None,
-                        Forward { message },
-                    )),
-                    middleware_id.above(),
-                );
-                return Ok(());
-            }
-        }
-
         self.send_monitor_event(timestamp, &message, None).await;
         if message.src == self.core_name {
             // deliver messages from the core immediately, circumventing the network
             let now = self.timestamp_source.now();
-            self.deliver(now, source.map(|(id, _)| id), message).await?;
+            self.deliver(now, source.map(|id| id), message).await?;
         } else {
-            self.network.insert(timestamp, source.map(|s| s.0), message);
+            self.network.insert(timestamp, source, message);
         }
         Ok(())
     }
@@ -539,17 +516,17 @@ impl Core {
     /// is not known, or if handling of the [`Message`] itself fails.
     async fn handle_core_message(
         &mut self,
-        source: Option<(NodeId, MiddlewareId)>,
+        source: Option<NodeId>,
         timestamp: Timestamp,
         message: Message,
     ) -> Result<(), CoreError> {
         macro_rules! assert_is_test {
             () => {
-                if let Some((source_id, middleware_id)) = source {
+                if let Some(source_id) = source {
                     let source_node = self.nodes.resolve_alias(source_id);
                     if !source_node.is_test {
                         return Err(CoreError::IllegalCoreMessage {
-                            source: source_node.commandline(middleware_id),
+                            source: source_node.commandline(),
                             message,
                         });
                     }
@@ -558,7 +535,6 @@ impl Core {
         }
 
         match message.body.ty.as_str() {
-            Next::TYPE => self.forward_to_next(source, message.payload::<Next>().unwrap().message),
             libproto::services::Timer::TYPE => {
                 let timer = message.payload::<libproto::services::Timer>().unwrap();
                 self.timer_manager.add(
@@ -573,12 +549,12 @@ impl Core {
             }
             LogMessage::TYPE => {
                 let message = message.payload::<LogMessage>().unwrap();
-                let Some((source_id, middleware_id)) = source else {
+                let Some(source_id) = source else {
                     panic!(
                         "tried to send log message without a source (i.e. the core sent it to the core?)"
                     );
                 };
-                self.log(timestamp, source_id, middleware_id, message).await;
+                self.log(timestamp, source_id, message).await;
                 Ok(())
             }
             Break::TYPE => {
@@ -588,7 +564,7 @@ impl Core {
                 Ok(())
             }
             Register::TYPE => {
-                if let Some((source_id, _)) = source {
+                if let Some(source_id) = source {
                     let node = self.nodes.resolve_alias_mut(source_id);
                     if !node.requires_registration {
                         return Err(CoreError::UnexpectedRegistration {
@@ -633,50 +609,14 @@ impl Core {
                 self.monitor_sessions.push(session);
                 Ok(())
             }
-            Forward::TYPE => {
-                // only the core can send messages of type "forward" to nodes, not the other way around
-                let (source_id, middleware_id) =
-                    source.expect("core tried to send itself a `forward` message");
-                Err(CoreError::IllegalCoreMessage {
-                    source: self
-                        .nodes
-                        .resolve_alias(source_id)
-                        .commandline(middleware_id),
-                    message,
-                })
-            }
             ty => {
-                let (source_id, middleware_id) =
+                let source_id =
                     source.expect("the core tried to send itself an unknown core message");
                 Err(CoreError::UnknownCoreMessage {
-                    source: self
-                        .nodes
-                        .resolve_alias(source_id)
-                        .commandline(middleware_id),
+                    source: self.nodes.resolve_alias(source_id).commandline(),
                     ty: ty.to_owned(),
                 })
             }
-        }
-    }
-
-    /// forward a message to the next process below in the middleware stack
-    fn forward_to_next(
-        &mut self,
-        source: Option<(NodeId, MiddlewareId)>,
-        message: Message,
-    ) -> Result<(), CoreError> {
-        let (source_id, middleware_id) =
-            source.expect("tried to send `next` type message from core");
-        let node = &self.nodes.resolve_alias(source_id);
-        if node.has_middleware(middleware_id.below()) {
-            node.send_to_middleware(ProcessCommand::Deliver(message), middleware_id.below());
-            Ok(())
-        } else {
-            Err(CoreError::MissingMiddleware {
-                source: node.commandline(middleware_id),
-                node: node.name.clone(),
-                middleware_id,
-            })
         }
     }
 
@@ -711,36 +651,26 @@ impl Core {
     /// launches a single new server
     async fn launch_single(&mut self, launch: Launch) {
         let error = if launch.as_test {
-            if !launch.middleware_before.is_empty() || !launch.middleware_after.is_empty() {
-                Some("cannot specify middleware when launching a test node".to_string())
-            } else {
-                let (alias_id, node) = self.nodes.add_alias(self.test_node_id, launch.name.clone());
-                self.event_sender
-                    .send(Event::node_launched(
-                        self.timestamp_source.now(),
-                        alias_id,
-                        launch.name.clone(),
-                        node.commandline(MiddlewareId(0)),
-                    ))
-                    .await
-                    .ok();
-                None
-            }
+            let (alias_id, node) = self.nodes.add_alias(self.test_node_id, launch.name.clone());
+            self.event_sender
+                .send(Event::node_launched(
+                    self.timestamp_source.now(),
+                    alias_id,
+                    launch.name.clone(),
+                    node.commandline(),
+                ))
+                .await
+                .ok();
+            None
         } else {
             let launch_result = self
-                .launch_node_with_middleware(
-                    launch.name,
-                    launch.request_exited_message,
-                    &launch.middleware_before,
-                    &launch.middleware_after,
-                )
+                .launch_server_node(launch.name, launch.request_exited_message)
                 .await;
             match launch_result {
                 Ok(node) => {
                     let id = node.id;
                     let name = node.name.clone();
-                    let commandline =
-                        node.commandline(MiddlewareId(launch.middleware_before.len()));
+                    let commandline = node.commandline();
                     self.event_sender
                         .send(Event::node_launched(
                             self.timestamp_source.now(),
@@ -806,12 +736,10 @@ impl Core {
     }
 
     /// launches a new node with its corresponding process and middleware processes
-    async fn launch_node_with_middleware(
+    async fn launch_server_node(
         &mut self,
         name: String,
         exited_message_requested: bool,
-        middleware_before: &[Command],
-        middleware_after: &[Command],
     ) -> Result<&mut Node, CoreError> {
         let node = self
             .launch(
@@ -822,22 +750,6 @@ impl Core {
             )
             .await?;
         let node_id = node.id;
-        for middleware in middleware_before.iter().rev() {
-            let middleware = self
-                .launch_proc(LaunchCommand::Custom(middleware), false, name.clone())
-                .await?;
-            self.nodes
-                .resolve_alias_mut(node_id)
-                .push_middleware_before(middleware)
-        }
-        for middleware in middleware_after {
-            let middleware = self
-                .launch_proc(LaunchCommand::Custom(middleware), false, name.clone())
-                .await?;
-            self.nodes
-                .resolve_alias_mut(node_id)
-                .push_middleware_after(middleware)
-        }
         let ts = self.timestamp_source.now();
         self.dispatch(
             None,
@@ -868,7 +780,7 @@ impl Core {
             .await?
             .id;
         let node = self.nodes.resolve_alias(node_id);
-        let commandline = node.commandline(MiddlewareId(0));
+        let commandline = node.commandline();
         self.event_sender
             .send(Event::node_launched(
                 self.timestamp_source.now(),
@@ -901,7 +813,7 @@ impl Core {
     /// launches a new process and creates the corresponding node
     async fn launch(
         &mut self,
-        command: LaunchCommand<'_>,
+        command: LaunchCommand,
         is_test: bool,
         exited_message_requested: bool,
         name: String,
@@ -915,7 +827,7 @@ impl Core {
             requires_registration,
             proc,
         ));
-        let commandline = node.commandline(MiddlewareId(0));
+        let commandline = node.commandline();
         log::info!("[{}] command `{commandline}` launched", node.name);
         if requires_registration {
             self.timer_manager.add(
@@ -928,14 +840,13 @@ impl Core {
 
     async fn launch_proc(
         &mut self,
-        command: LaunchCommand<'_>,
+        command: LaunchCommand,
         is_test: bool,
         name: String,
     ) -> Result<Process, CoreError> {
         let command = match command {
             LaunchCommand::Test => &self.test_command,
             LaunchCommand::Server => &self.server_command,
-            LaunchCommand::Custom(command) => command,
         };
         self.launcher
             .launch(command.clone(), is_test, name, self.core_name.clone())
@@ -947,13 +858,7 @@ impl Core {
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
-    async fn log(
-        &mut self,
-        timestamp: Timestamp,
-        source_id: NodeId,
-        middleware_id: MiddlewareId,
-        message: LogMessage,
-    ) {
+    async fn log(&mut self, timestamp: Timestamp, source_id: NodeId, message: LogMessage) {
         let node = self.nodes.resolve_alias(source_id);
         if let Some(marker) = &message.marker {
             let (color, reset) = if let Some(color) = marker.color {
@@ -963,18 +868,13 @@ impl Core {
             };
             log::info!(
                 "[{}][{}]: {color}[{}] {}{reset}",
-                node.commandline(middleware_id),
+                node.commandline(),
                 node.name,
                 marker.label,
                 message.text
             );
         } else {
-            log::info!(
-                "[{}][{}]: {}",
-                node.commandline(middleware_id),
-                node.name,
-                message.text
-            );
+            log::info!("[{}][{}]: {}", node.commandline(), node.name, message.text);
         }
         self.event_sender
             .send(Event::log(timestamp, source_id, message))
@@ -1010,7 +910,6 @@ impl Core {
         &mut self,
         timestamp: Timestamp,
         source_id: NodeId,
-        middleware_id: MiddlewareId,
         exit_code: i32,
     ) -> Result<(), CoreError> {
         self.event_sender
@@ -1021,7 +920,7 @@ impl Core {
         log::info!(
             "[{}] command `{}` exited with code {exit_code}",
             node.name,
-            node.commandline(middleware_id)
+            node.commandline()
         );
 
         self.exit_set.insert(source_id, exit_code);

@@ -35,12 +35,6 @@ pub struct Launch {
     /// Only works if `as_test` is `false`.
     #[serde(skip_serializing_if = "std::ops::Not::not", default = "true_if_missing")]
     pub request_exited_message: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[doc(hidden)]
-    pub middleware_before: Vec<Command>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    #[doc(hidden)]
-    pub middleware_after: Vec<Command>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -16,8 +16,6 @@ mod payload;
 pub mod init;
 #[cfg(feature = "system_messages")]
 pub mod system;
-#[cfg(feature = "middleware")]
-pub mod middleware;
 pub mod services;
 
 

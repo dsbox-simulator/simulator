@@ -1,4 +1,4 @@
-use crate::core::node::{MiddlewareId, Node, NodeId};
+use crate::core::node::{Node, NodeId};
 use crate::process::ProcessEvent;
 use std::collections::HashMap;
 use std::future::Future;
@@ -112,7 +112,7 @@ impl NodeList {
 
     pub fn recv_any<'a>(
         &'a mut self,
-    ) -> impl Future<Output = Option<(ProcessEvent, NodeId, MiddlewareId)>> + Unpin + 'a {
+    ) -> impl Future<Output = Option<(ProcessEvent, NodeId)>> + Unpin + 'a {
         RecvAny {
             nodes: &mut self.nodes,
         }
@@ -289,7 +289,7 @@ pub struct RecvAny<'a> {
 }
 
 impl<'a> Future for RecvAny<'a> {
-    type Output = Option<(ProcessEvent, NodeId, MiddlewareId)>;
+    type Output = Option<(ProcessEvent, NodeId)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut num_closed = 0;
@@ -298,9 +298,9 @@ impl<'a> Future for RecvAny<'a> {
             let NodeRef::Node(node) = node else {
                 continue;
             };
-            match node.poll_recv_any(cx) {
-                Poll::Ready(Some((event, middleware_idx))) => {
-                    return Poll::Ready(Some((event, node.id, middleware_idx)));
+            match node.poll_recv(cx) {
+                Poll::Ready(Some(event)) => {
+                    return Poll::Ready(Some((event, node.id)));
                 }
                 Poll::Ready(None) => num_closed += 1,
                 _ => {}
