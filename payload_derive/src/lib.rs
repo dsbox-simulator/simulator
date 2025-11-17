@@ -9,7 +9,7 @@
 //! it simply generates
 //! ```
 //! impl Payload for Init {
-//!    const TYPE: &'static str = "Init";
+//!    const TYPE: &'static str = "init";
 //! }
 //! ```
 //!

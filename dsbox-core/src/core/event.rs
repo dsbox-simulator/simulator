@@ -2,13 +2,12 @@
 //!
 //! An [`Event`] in this case is anything that happens during the execution of the simulation, including (for now):
 //!
-//! - the setup of the system (a list of nodes by their names)
+//! - the state of the nodes (launching and terminating)
 //! - the sending and delivering of [`Message`]s
-//! - the disconnection of a node
 //! - log lines that are written by nodes
 //!
 //! Other events may be added in the future.
-//! These events are published by the running [`Core`](super::Core).
+//! These events are published by a running [`Core`](super::Core).
 
 use serde::{Deserialize, Serialize};
 
