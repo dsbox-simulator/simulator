@@ -33,7 +33,7 @@ impl DsboxState {
         Self {
             remote: core.remote_control(),
             subscriber: core.subscribe_events(),
-            core_handle: tauri::async_runtime::spawn(async move { core.run().await }),
+            core_handle: tauri::async_runtime::spawn(async move { let _ = core.run().await; }),
             commands: Commands {
                 test_command,
                 server_command,

@@ -7,9 +7,10 @@ use clap::Parser;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::Core;
 use log::LevelFilter;
+use std::process::ExitCode;
 use tokio::task::JoinHandle;
 
-fn main() {
+fn main() -> ExitCode {
     let mut logger = env_logger::builder();
     logger.filter_level(LevelFilter::Warn);
 
@@ -23,21 +24,22 @@ fn main() {
 
     let args = cli::Cli::parse();
     if let Some(cli::Mode::Cli(cli_args)) = args.mode {
-        run_cli(cli_args, args.lua_unsafe);
+        run_cli(cli_args, args.lua_unsafe)
     } else {
         app_lib::run(args);
+        ExitCode::SUCCESS
     }
 }
 
-fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) {
+fn run_cli(args: cli::CliArgs, allow_lua_unsafe: bool) -> ExitCode {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
-        .block_on(run_dsbox(args, allow_lua_unsafe));
+        .block_on(run_dsbox(args, allow_lua_unsafe))
 }
 
-async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) {
+async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) -> ExitCode {
     let core = Core::builder(
         Core::split_command(args.test_command),
         Core::make_command(args.server_command),
@@ -52,11 +54,12 @@ async fn run_dsbox(args: cli::CliArgs, allow_lua_unsafe: bool) {
         None
     };
 
-    core.run().await;
+    let exit_code = core.run().await;
 
     if let Some(recorder) = recorder {
         recorder.await.ok();
     }
+    ExitCode::from(exit_code as u8)
 }
 
 async fn spawn_protocol_recorder(

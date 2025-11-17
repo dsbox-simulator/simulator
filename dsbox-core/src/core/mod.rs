@@ -74,6 +74,9 @@ pub struct Core {
     test_node_id: NodeId,
     /// the name of the test node
     test_node_name: String,
+    /// the exit code of the test. Will be returned from [`Core::run`], and in cli mode
+    /// determines the return code of the whole program. Useful for automated testing.
+    test_exit_code: i32,
     /// the name of the simulation core
     /// this name must be used as the source/destination for "core" messages and is used in core logs
     core_name: String,
@@ -157,6 +160,7 @@ impl From<Builder> for Core {
             nodes: NodeList::new(),
             test_node_id: NodeId(0),
             test_node_name: builder.test_node_name,
+            test_exit_code: 0,
             core_name: builder.core_name,
             launcher: Launcher::new(builder.allow_lua_unsafe),
             test_command: builder.test_command,
@@ -230,11 +234,11 @@ impl Core {
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
-    pub async fn run(mut self) {
+    pub async fn run(mut self) -> i32 {
         // launch test node/publish initial reset event
         if let Err(e) = self.restart(false).await {
             self.log_core_error(e).await;
-            return;
+            return -1;
         }
         let mut deadline = None;
         loop {
@@ -275,6 +279,7 @@ impl Core {
                 }
             }
         }
+        self.test_exit_code
     }
 
     fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
@@ -353,6 +358,7 @@ impl Core {
                     .await?;
                 if self.nodes.resolve_alias(node_id).is_test {
                     // test process exited: shut down all processes gracefully
+                    self.test_exit_code = exit_code;
                     self.begin_shutdown(..);
                 }
                 Ok(true)

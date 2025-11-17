@@ -7,6 +7,7 @@ use clap::Parser;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::Core;
 use log::LevelFilter;
+use std::process::ExitCode;
 use tokio::task::JoinHandle;
 
 mod cli;
@@ -15,7 +16,7 @@ mod webapp;
 
 /// Main entry point for the application. Configures logging and runs the program.
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> ExitCode {
     let mut logger = env_logger::builder();
     logger.filter_level(LevelFilter::Warn);
 
@@ -31,21 +32,23 @@ async fn main() {
     logger.init();
 
     let args = Args::parse();
-    run(args).await;
+    let exit_code = run(args).await;
     log::logger().flush();
+    exit_code
 }
 
 /// Starts a new [`Core`], initialized with the given [`Args`].
 /// If necessary, also starts the [`Webapp`](webapp::Webapp).
-async fn run(args: Args) {
+async fn run(args: Args) -> ExitCode {
     if args.interactive {
         run_webapp(&args).await;
+        ExitCode::SUCCESS
     } else {
         run_cli(args).await
     }
 }
 
-async fn run_cli(args: Args) {
+async fn run_cli(args: Args) -> ExitCode {
     let core = Core::builder(
         Core::split_command(&args.test_command),
         Core::make_command(args.server_command),
@@ -60,11 +63,12 @@ async fn run_cli(args: Args) {
         None
     };
 
-    core.run().await;
+    let exit_code = core.run().await;
 
     if let Some(recorder) = recorder {
         recorder.await.ok();
     }
+    ExitCode::from(exit_code as u8)
 }
 
 async fn spawn_protocol_recorder(

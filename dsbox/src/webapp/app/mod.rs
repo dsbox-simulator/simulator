@@ -45,7 +45,7 @@ impl App {
 
         let subscriber = core.subscribe_events();
         let remote = core.remote_control();
-        let core_handle = tokio::task::spawn(async move { core.run().await });
+        let core_handle = tokio::task::spawn(async move { let _ = core.run().await; });
         Ok(Self {
             remote,
             subscriber,
