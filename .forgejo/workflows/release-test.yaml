@@ -18,7 +18,8 @@ jobs:
       - name: Install rust targets and tools
         run: |
           . $HOME/.cargo/env
-          cargo install tauri-cli
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall tauri-cli
       - name: Install webapp packages
         working-directory: webapp
         run: |
@@ -57,8 +58,9 @@ jobs:
         run: |
           . $HOME/.cargo/env
           rustup target add x86_64-pc-windows-msvc
-          cargo install cargo-xwin
-          cargo install tauri-cli
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall cargo-xwin
+          cargo binstall tauri-cli
       - name: Install webapp packages
         working-directory: webapp
         run: |
