@@ -88,38 +88,41 @@ jobs:
         with:
           path: /tmp/release
           merge-multiple: true
-      - name: Publish Packages
+      - name: Upload Release
         run: |
-          curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
-            --upload-file /tmp/release/*.deb \
-            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
-          curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
-            --upload-file /tmp/release/*.rpm \
-            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/rpm/upload
-      - name: Upload release
-        uses: actions/forgejo-release@v2.7.3
-        with:
-          release-notes: |
-            For fedora (rpm) based distributions, download `DsBox-<version>-1.x86_64.rpm` and install with 
-            ```sh
-            sudo dnf install ./DsBox-<version>-1.x86_64.rpm
-            ```
-            
-            For debian/ubuntu (deb) based distributions download `DsBox_<version>_amd64.deb` and install with
-            ```sh
-            sudo apt-get update
-            sudo apt-get install ./DsBox_<version>_amd64.deb
-            ```
-            
-            For windows, download `x86_64-windows.tar.gz` and extract `dsbox.exe`
-            
-            To verify the simulator is installed run 
-            ```sh
-            dsbox --help
-            ```
-            or (on windows)
-            ```
-            <path>\<to>\dsbox.exe --help
-            ```
-          direction: upload
-          release-dir: /tmp/release
+          ls -al /tmp/release
+#      - name: Publish Packages
+#        run: |
+#          curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
+#            --upload-file /tmp/release/*.deb \
+#            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/debian/pool/bookworm/main/upload
+#          curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
+#            --upload-file /tmp/release/*.rpm \
+#            ${{ forgejo.server_url }}/api/packages/${{ forgejo.repository_owner }}/rpm/upload
+#      - name: Upload release
+#        uses: actions/forgejo-release@v2.7.3
+#        with:
+#          release-notes: |
+#            For fedora (rpm) based distributions, download `DsBox-<version>-1.x86_64.rpm` and install with
+#            ```sh
+#            sudo dnf install ./DsBox-<version>-1.x86_64.rpm
+#            ```
+#
+#            For debian/ubuntu (deb) based distributions download `DsBox_<version>_amd64.deb` and install with
+#            ```sh
+#            sudo apt-get update
+#            sudo apt-get install ./DsBox_<version>_amd64.deb
+#            ```
+#
+#            For windows, download `x86_64-windows.tar.gz` and extract `dsbox.exe`
+#
+#            To verify the simulator is installed run
+#            ```sh
+#            dsbox --help
+#            ```
+#            or (on windows)
+#            ```
+#            <path>\<to>\dsbox.exe --help
+#            ```
+#          direction: upload
+#          release-dir: /tmp/release
