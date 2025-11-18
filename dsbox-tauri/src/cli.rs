@@ -3,6 +3,7 @@
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug, Clone)]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub mode: Option<Mode>,
