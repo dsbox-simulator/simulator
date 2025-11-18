@@ -57,7 +57,7 @@ jobs:
         run: |
           . $HOME/.cargo/env
           rustup target add x86_64-pc-windows-msvc
-          cargo install xwin
+          cargo install cargo-xwin
           cargo install tauri-cli
       - name: Install webapp packages
         working-directory: webapp
