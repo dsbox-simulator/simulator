@@ -1,27 +1,14 @@
 on:
-  push:
-    tags:
-      - "*"
+  workflow_dispatch:
+
 jobs:
-  build-and-release:
+  build-linux:
     runs-on: docker
     container:
-      image: node:lts-bookworm
+      image: git.bs.informatik.uni-siegen.de/dsbox/ci-container:latest
     steps:
       - name: Checkout the tag
         uses: actions/checkout@v5
-      - name: Install rust
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - name: Install apt dependencies
-        run : |
-          apt-get update -y
-          apt-get install clang lld llvm libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev -y
-      - name: Install rust targets and tools
-        run: |
-          . $HOME/.cargo/env
-          rustup target add x86_64-pc-windows-msvc
-          cargo install cargo-xwin
-          cargo install tauri-cli --git https://github.com/tauri-apps/tauri
       - name: Install webapp packages
         working-directory: webapp
         run: |
@@ -30,6 +17,30 @@ jobs:
         run: |
           . $HOME/.cargo/env
           cargo tauri build --bundles deb,rpm
+      - name: Prepare release files
+        run: |
+          mkdir /tmp/release
+          tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/release/ dsbox
+          cp target/release/bundle/deb/DsBox_*_amd64.deb /tmp/release
+          cp target/release/bundle/rpm/DsBox-*-1.x86_64.rpm /tmp/release
+      - name: Upload artifacts
+        uses: forgejo/upload-artifact@v4
+        with:
+          name: artifact-linux
+          path: /tmp/release/*
+
+
+  build-windows:
+    runs-on: docker
+    container:
+      image: git.bs.informatik.uni-siegen.de/dsbox/ci-container:latest
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v5
+      - name: Install webapp packages
+        working-directory: webapp
+        run: |
+          npm install
       - name: Build DsBox Windows
         run: |
           . $HOME/.cargo/env
@@ -37,10 +48,22 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir /tmp/release
-          tar -zcf /tmp/release/x86_64-linux.tar.gz -C target/release/ dsbox
-          cp target/release/bundle/deb/DsBox_*_amd64.deb /tmp/release
-          cp target/release/bundle/rpm/DsBox-*-1.x86_64.rpm /tmp/release
           tar -zcf /tmp/release/x86_64-windows.tar.gz -C target/x86_64-pc-windows-msvc/release/ dsbox.exe
+      - name: Upload artifacts
+        uses: forgejo/upload-artifact@v4
+        with:
+          name: artifact-windows
+          path: /tmp/release/*
+
+  release:
+    runs-on: docker
+    needs: ["build-linux", "build-windows"]
+    steps:
+      - name: Download artifacts
+        uses: forgejo/download-artifact@v4
+        with:
+          path: /tmp/release
+          merge-multiple: true
       - name: Publish Packages
         run: |
           curl --user ${{ vars.REGISTRY_USERNAME }}:${{ secrets.REGISTRY_TOKEN }} \
