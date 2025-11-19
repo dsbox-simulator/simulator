@@ -1,6 +1,8 @@
 //! lua scripts can be used as an implementation of a node
 //! todo: more documentation
 
+use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
+use libproto::Message;
 use mlua::{
     Error, FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaOptions, LuaSerdeExt, MultiValue,
     StdLib, Table, Value,
@@ -11,11 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
-
-use libproto::Message;
-use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 
 use crate::process::command::ProcessCommand;
 use crate::process::event::ProcessEvent;
@@ -328,9 +327,13 @@ impl LuaAppData {
 
     /// waits for a single message to be received by the core
     /// If no more messages are available `nil` is returned.
-    async fn lua_recv(lua: Lua, _: ()) -> mlua::Result<Option<Value>> {
+    async fn lua_recv(
+        lua: Lua,
+        (timeout,): (Option<mlua::Number>,),
+    ) -> mlua::Result<Option<Value>> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
-        let Some(command) = app_data.recv_command().await else {
+        let timeout = timeout.map(|t| Duration::from_secs_f64(t));
+        let Some(command) = app_data.recv_command(timeout).await else {
             return Ok(None);
         };
         match command {
@@ -406,9 +409,15 @@ impl LuaAppData {
         self.sender.send(event).await
     }
 
-    async fn recv_command(&self) -> Option<ProcessCommand> {
+    async fn recv_command(&self, timeout: Option<Duration>) -> Option<ProcessCommand> {
         let mut receiver = self.receiver.lock().await;
-        receiver.recv().await
+        if let Some(timeout) = timeout {
+            tokio::time::timeout(timeout, receiver.recv())
+                .await
+                .unwrap_or_else(|_| None)
+        } else {
+            receiver.recv().await
+        }
     }
 }
 
