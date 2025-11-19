@@ -57,6 +57,7 @@ mod node;
 mod node_list;
 pub mod remote_control;
 mod timer_manager;
+mod version;
 
 /// The core of the simulation
 ///
@@ -761,6 +762,7 @@ impl Core {
                 Init {
                     name: name.clone(),
                     core_name: self.core_name.clone(),
+                    core_version: version::current(),
                     is_test: false,
                 },
             ),
@@ -802,6 +804,7 @@ impl Core {
                 Init {
                     name: self.test_node_name.clone(),
                     core_name: self.core_name.clone(),
+                    core_version: version::current(),
                     is_test: true,
                 },
             ),

@@ -113,11 +113,21 @@ impl Display for CoreError {
 impl Display for DispatchErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DispatchErrorKind::SourceNameMismatch(got, expected) => write!(
-                f,
-                "source name does not match source id, expected one of [{:?}], got {:?}",
-                expected, got
-            ),
+            DispatchErrorKind::SourceNameMismatch(got, expected) => {
+                if expected.len() == 1 {
+                    write!(
+                        f,
+                        "source name does not match source id, expected one `{:?}`, got `{:?}`",
+                        expected[0], got
+                    )
+                } else {
+                    write!(
+                        f,
+                        "source name does not match source id, expected one of `{:?}`, got `{:?}`",
+                        expected, got
+                    )
+                }
+            }
             DispatchErrorKind::DestinationUnknown => f.write_str("destination unknown"),
         }
     }

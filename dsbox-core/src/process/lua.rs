@@ -423,11 +423,11 @@ impl LuaAppData {
 
 fn message_new(
     lua: &Lua,
-    (message_class, src, dst, r#type, rest): (Table, Value, Value, Value, MultiValue),
+    (message_class, src, dest, r#type, rest): (Table, Value, Value, Value, MultiValue),
 ) -> mlua::Result<Table> {
     let new_message = lua.create_table()?;
     new_message.set("src", src)?;
-    new_message.set("dest", dst)?;
+    new_message.set("dest", dest)?;
     let body = lua.create_table()?;
     body.set("type", r#type)?;
     merge_into_table(&body, rest)?;
@@ -481,12 +481,12 @@ async fn message_reply(
 
 async fn message_send(
     lua: Lua,
-    (mut message, mut rest): (Table, MultiValue),
+    (mut message, rest): (Table, MultiValue),
 ) -> mlua::Result<bool> {
     let message_class: Table = get_dsbox(&lua, "Message")?;
     if message == message_class {
-        rest.push_front(message_class.into_lua(&lua)?);
-        message = message_new(&lua, FromLuaMulti::from_lua_multi(rest, &lua)?)?;
+        let (src, dest, r#type, rest) = FromLuaMulti::from_lua_multi(rest, &lua)?;
+        message = message_new(&lua, (message_class, src, dest, r#type, rest))?;
     }
     let message = message.into_lua(&lua)?;
     LuaAppData::lua_send(lua, message).await

@@ -6,18 +6,17 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::io::stdin;
 
-use serde::{Deserialize, Serialize};
-
 pub use payload_derive::Payload;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 pub use crate::payload::Payload;
 
-mod payload;
 pub mod init;
+mod payload;
+pub mod services;
 #[cfg(feature = "system_messages")]
 pub mod system;
-pub mod services;
-
 
 /// A single message that can be sent between the nodes
 #[derive(Clone, Serialize, Deserialize)]
@@ -59,10 +58,8 @@ impl Message {
     }
 
     /// Helper function for nodes iterate over all messages "received" via `stdin`
-    pub fn recv_iter() -> impl Iterator<Item=Result<Self, std::io::Error>> {
-        stdin().lines().map(|line| {
-            Ok(Self::from_json(&line?)?)
-        })
+    pub fn recv_iter() -> impl Iterator<Item = Result<Self, std::io::Error>> {
+        stdin().lines().map(|line| Ok(Self::from_json(&line?)?))
     }
 
     /// Deserializes a (JSON) string into a [`Message`]
@@ -71,9 +68,13 @@ impl Message {
     }
 
     /// Create a new message with a given source, destination, optional id and a [`Payload`].
-    pub fn new<P: Payload>(src: &str, dst: &str, id: Option<usize>, payload: P) -> Self {
-        let data = serde_json::to_value(payload)
-            .expect("failed to convert payload to json value");
+    pub fn new<P: Payload + Serialize>(
+        src: &str,
+        dst: &str,
+        id: Option<usize>,
+        payload: P,
+    ) -> Self {
+        let data = serde_json::to_value(payload).expect("failed to convert payload to json value");
 
         Self {
             src: src.to_owned(),
@@ -89,7 +90,7 @@ impl Message {
 
     /// Creates a message with a [`Payload`] that is a reply to `self`
     /// (swaps source and destination, and sets the `in_reply_to` field if `self` has an `id`).
-    pub fn reply<P: Payload>(&self, id: Option<usize>, ty: P) -> Self {
+    pub fn reply<P: Payload + Serialize>(&self, id: Option<usize>, ty: P) -> Self {
         let mut message = Self::new(&self.dest, &self.src, id, ty);
         message.body.in_reply_to = self.body.id;
         message
@@ -99,16 +100,17 @@ impl Message {
     /// Checks if the message type matches the [`Payload`] type and the deserializes the body into that type.
     /// Returns [`Ok`] if the type matches and the body could be deserialized, and returns
     /// [`Err`] if the type does not match or there was an error deserializing the body.
-    pub fn payload<P: Payload>(&self) -> Result<P, PayloadError> {
-        if self.body.ty != P::TYPE { return Err(PayloadError::MismatchedType(P::TYPE, self.body.ty.clone())); }
+    pub fn payload<P: Payload + DeserializeOwned>(&self) -> Result<P, PayloadError> {
+        if self.body.ty != P::TYPE {
+            return Err(PayloadError::MismatchedType(P::TYPE, self.body.ty.clone()));
+        }
         serde_json::from_value(self.body.data.clone())
             .map_err(|e| PayloadError::DeserializeError(P::TYPE, e))
     }
 
     /// Serializes `self` into a (JSON) [`String`].
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self)
-            .expect("failed to serialize message")
+        serde_json::to_string(self).expect("failed to serialize message")
     }
 
     /// Helper function for nodes to "send" [`Message`]s. (writes them to `stdout`).
