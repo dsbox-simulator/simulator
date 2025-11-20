@@ -49,12 +49,8 @@ impl NodeList {
         (alias_id, self.resolve_alias_mut(for_id))
     }
 
-    pub fn lookup(&self, name: &str) -> Option<&NodeRef> {
-        Some(&self.nodes[*self.names.get(name)?])
-    }
-
-    pub fn lookup_mut(&mut self, name: &str) -> Option<&mut NodeRef> {
-        Some(&mut self.nodes[*self.names.get(name)?])
+    pub fn lookup(&self, name: &str) -> Option<NodeId> {
+        Some(NodeId(*self.names.get(name)?))
     }
 
     pub fn lookup_and_resolve(&self, name: &str) -> Option<&Node> {
@@ -155,6 +151,13 @@ impl NodeRef {
         match self {
             NodeRef::Node(node) => &node.name,
             NodeRef::Alias { name, .. } => name,
+        }
+    }
+
+    pub fn id(&self) -> NodeId {
+        match self {
+            NodeRef::Node(node) => node.id,
+            NodeRef::Alias { id, .. } => *id,
         }
     }
 

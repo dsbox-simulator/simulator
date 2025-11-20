@@ -259,7 +259,7 @@ impl Core {
 
             let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
 
-            if let Err(e) = self.step(dont_block).await {
+            if let Err(e) = self.step(dont_block, num_running).await {
                 self.log_core_error(e).await;
             }
             if let Some(launch) = self.launch_queue.pop_front() {
@@ -288,14 +288,13 @@ impl Core {
         }
     }
 
-    async fn step(&mut self, dont_block: bool) -> Result<(), CoreError> {
+    async fn step(&mut self, dont_block: bool, num_running: usize) -> Result<(), CoreError> {
         // TODO: if processes spam messages and never receive any, they can force the receiving
         //       queues to fill up, which will waste a lot of RAM and possibly de-stabilize the system
         //       possible solution: before picking up a message from a process, check if the other
         //       ends' receiving queue has space for that message? (could probably lead to deadlocks in tricky situations)
         //       other possible solution: regularly check receiving queues of all processes, and if they
         //       reach a total threshold of buffered messages (say, 1,000,000) panic as a last resort?
-
         if let Some((sent_timestamp, source_id, message)) = self.get_next_message_for_delivery() {
             self.deliver(sent_timestamp, source_id, message).await?;
             if self.state == CoreState::Stepping {
@@ -312,7 +311,7 @@ impl Core {
                 remote_command = self.remote_receiver.recv() => {
                     self.handle_command(remote_command.unwrap()).await?;
                 }
-                process_event = self.nodes.recv_any() => {
+                process_event = self.nodes.recv_any(), if num_running > 0 => {
                     if let Some((event, node_id)) = process_event {
                         let ts = self.timestamp_source.now();
                         self.handle_process_event(ts, node_id, event).await?;
@@ -379,23 +378,27 @@ impl Core {
     /// Dispatches a single [`Message`] into the network.
     async fn dispatch(
         &mut self,
-        source: Option<NodeId>,
+        mut source: Option<NodeId>,
         timestamp: Timestamp,
         message: Message,
     ) -> Result<(), CoreError> {
         log::trace!("dispatching message {}", message.to_json());
 
         if let Some(source_id) = source {
-            let source = &self.nodes[source_id];
-            if !self.nodes.alias_same_node(source, &message.src) {
-                let aliases = self.nodes.aliases_of(source);
+            let source_ref = &self.nodes[source_id];
+            if !self.nodes.alias_same_node(source_ref, &message.src) {
+                let aliases = self.nodes.aliases_of(source_ref);
                 let got = message.src.clone();
                 return Err(CoreError::DispatchError {
-                    name: source.name().to_owned(),
+                    name: source_ref.name().to_owned(),
                     message,
                     kind: DispatchErrorKind::SourceNameMismatch(got, aliases),
                 });
             }
+            // `source` up to this point is the NodeId of the Process which
+            // sent the message, but if the was sent from an alias of that process
+            // we figure out the actual node id of the messages source here
+            source = self.nodes.lookup(&message.src);
         }
 
         self.event_sender
@@ -861,8 +864,9 @@ impl Core {
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
-    async fn log(&mut self, timestamp: Timestamp, source_id: NodeId, message: LogMessage) {
-        let node = self.nodes.resolve_alias(source_id);
+    async fn log(&self, timestamp: Timestamp, source_id: NodeId, message: LogMessage) {
+        let node = &self.nodes[source_id];
+        let resolved = self.nodes.resolve_alias(source_id);
         if let Some(marker) = &message.marker {
             let (color, reset) = if let Some(color) = marker.color {
                 (log_marker_ansi_color(color), log_color::RESET)
@@ -871,13 +875,18 @@ impl Core {
             };
             log::info!(
                 "[{}][{}]: {color}[{}] {}{reset}",
-                node.commandline(),
-                node.name,
+                resolved.commandline(),
+                node.name(),
                 marker.label,
                 message.text
             );
         } else {
-            log::info!("[{}][{}]: {}", node.commandline(), node.name, message.text);
+            log::info!(
+                "[{}][{}]: {}",
+                resolved.commandline(),
+                node.name(),
+                message.text
+            );
         }
         self.event_sender
             .send(Event::log(timestamp, source_id, message))
