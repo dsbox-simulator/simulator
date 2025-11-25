@@ -292,11 +292,26 @@ impl LuaLauncher {
                 "?.so"
             ));
 
-            package.set("path", path)?;
-            package.set("cpath", cpath)?;
+            Self::set_lua_paths(&package, path, cpath)?;
         }
 
         Ok(lua)
+    }
+
+    #[cfg(not(windows))]
+    fn set_lua_paths(package: &Table, path: String, cpath: String) -> mlua::Result<()> {
+        package.set("path", path)?;
+        package.set("cpath", cpath)?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn set_lua_paths(package: &Table, path: String, cpath: String) -> mlua::Result<()> {
+        // on windows, convert the paths into the active codepage first, to avoid issues
+        // with umlauts in paths
+        package.set("path", convert_to_acp(&path))?;
+        package.set("cpath", convert_to_acp(&cpath))?;
+        Ok(())
     }
 }
 
@@ -564,3 +579,42 @@ impl std::fmt::Display for Exit {
     }
 }
 impl std::error::Error for Exit {}
+
+#[cfg(windows)]
+fn convert_to_acp(input: &str) -> bstr::BString {
+    unsafe {
+        let widelen = windows::Win32::Globalization::MultiByteToWideChar(
+            windows::Win32::Globalization::CP_UTF8,
+            Default::default(),
+            input.as_bytes(),
+            None,
+        );
+        let mut buf = vec![0u16; widelen as usize];
+        let widelen = windows::Win32::Globalization::MultiByteToWideChar(
+            windows::Win32::Globalization::CP_UTF8,
+            Default::default(),
+            input.as_bytes(),
+            Some(buf.as_mut_slice()),
+        );
+        buf.truncate(widelen as usize);
+        let multilen = windows::Win32::Globalization::WideCharToMultiByte(
+            windows::Win32::Globalization::CP_ACP,
+            Default::default(),
+            buf.as_slice(),
+            None,
+            windows::core::PCSTR::null(),
+            None,
+        );
+        let mut out = bstr::BString::new(vec![0u8; multilen as usize]);
+        let multilen = windows::Win32::Globalization::WideCharToMultiByte(
+            windows::Win32::Globalization::CP_ACP,
+            Default::default(),
+            buf.as_slice(),
+            Some(out.as_mut_slice()),
+            windows::core::PCSTR::null(),
+            None,
+        );
+        out.truncate(multilen as usize);
+        out
+    }
+}

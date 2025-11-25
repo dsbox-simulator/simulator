@@ -19,7 +19,11 @@ mlua = { version = "0.11.4", features = ["lua54", "async", "serialize", "vendore
 wasmtime = { version = "38.0.3", optional = true}
 wasmtime-wasi = { version = "38.0.3", optional = true, features = ["p3"] }
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Globalization"], optional = true }
+bstr = { version = "1.12.1", optional = true }
+
 [features]
-lua = ["dep:mlua"]
+lua = ["dep:mlua", "dep:windows", "dep:bstr"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
 default = ["lua"]
