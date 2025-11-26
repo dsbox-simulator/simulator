@@ -12,6 +12,57 @@ resolver = "3"
 
 default-members = ["dsbox"]
 
+[workspace.dependencies]
+# workspace memebers
+dsbox-core = { path = "dsbox-core" }
+libproto = { path = "libproto" }
+payload_derive = { path = "payload_derive" }
+
+# basics
+chrono = { version = "0.4.42", features = ["serde"] }
+clap = { version = "4.5.53", features = ["derive"] }
+env_logger = "0.11.8"
+log = "0.4.28"
+regex = "1.12.2"
+serde = "1.0.228"
+serde_json = "1.0.145"
+which = "8.0.0"
+
+# async
+async-channel = "2.5.0"
+futures = "0.3.31"
+tokio = "1.48.0"
+
+# web
+axum = { version = "0.8.7", features = ["ws"] }
+flate2 = { version = "1.1.5" }
+mime_guess = { version = "2.0.5" }
+phf = { version = "0.13.1", default-features = false }
+phf_codegen = { version = "0.13.1" }
+tower-http = { version = "0.6.7", features = ["trace"] }
+
+# lua/wasm
+mlua = { version = "0.11.5", features = ["lua54", "async", "serialize", "vendored"] }
+wasmtime = { version = "39.0.1" }
+wasmtime-wasi = { version = "39.0.1", features = ["p3"] }
+
+# windows support
+bstr = { version = "1.12.1" }
+windows = { version = "0.62.2", features = ["Win32_Globalization"] }
+
+# tauri
+tauri = { version = "2.9.3", features = [] }
+tauri-build = { version = "2.5.2", features = [] }
+tauri-plugin-dialog = "2.4.2"
+tauri-plugin-log = "2.7.1"
+tauri-plugin-store = "2.4.1"
+tauri-plugin-window-state = "2.4.1"
+
+# procmacro
+heck = "0.5.0"
+quote = "1.0.42"
+syn = "2.0.111"
+
 [profile.release]
 opt-level = "s"
 lto = true

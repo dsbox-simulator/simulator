@@ -34,7 +34,7 @@ enum LoadedWasm {
 enum StartFn {
     P1(TypedFunc<(), ()>),
     P2(p2::bindings::Command),
-    P3(component::Instance, p3::bindings::Command),
+    P3(p3::bindings::Command),
 }
 
 impl WasmLauncher {
@@ -92,9 +92,9 @@ impl WasmLauncher {
                         Ok(Ok(())) => 0,
                         _ => -1,
                     },
-                    StartFn::P3(instance, command) => {
-                        let result = instance
-                            .run_concurrent(&mut store, async move |store| {
+                    StartFn::P3(command) => {
+                        let result = store
+                            .run_concurrent(async |store| {
                                 command.wasi_cli_run().call_run(store).await
                             })
                             .await;
@@ -201,13 +201,13 @@ impl WasmLauncher {
     ) -> wasmtime::Result<StartFn> {
         let mut linker = component::Linker::new(&self.engine);
         let instance = linker.instantiate_async(&mut *store, component).await?;
-        wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
-        wasmtime_wasi::p3::add_to_linker(&mut linker)?;
+        p2::add_to_linker_async(&mut linker)?;
+        p3::add_to_linker(&mut linker)?;
 
-        if let Ok(command) = wasmtime_wasi::p3::bindings::Command::new(&mut *store, &instance) {
-            Ok(StartFn::P3(instance, command))
+        if let Ok(command) = p3::bindings::Command::new(&mut *store, &instance) {
+            Ok(StartFn::P3(command))
         } else {
-            let command = wasmtime_wasi::p2::bindings::Command::new(&mut *store, &instance)?;
+            let command = p2::bindings::Command::new(&mut *store, &instance)?;
             Ok(StartFn::P2(command))
         }
     }
