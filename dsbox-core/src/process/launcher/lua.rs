@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::process::command::ProcessCommand;
@@ -83,7 +83,7 @@ impl LuaLauncher {
         event_sender: Sender<ProcessEvent>,
         name: String,
         core_name: String,
-    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    ) -> tokio::io::Result<JoinHandle<()>> {
         log::trace!("launching lua node `{}`, args: {args:?}", file.display());
         let app_data = LuaAppData {
             sender: event_sender,
@@ -92,15 +92,13 @@ impl LuaLauncher {
             core_name,
         };
 
-        let (finished_tx, finished_rx) = oneshot::channel();
         let lua_thread = self.launch_lua(
             file.to_path_buf(),
             args,
             allow_os_libs,
             app_data,
-            finished_tx,
         );
-        Ok((lua_thread, finished_rx))
+        Ok(lua_thread)
     }
 
     // runs the given lua script a separate thread, because we cannot pre-emptively interrupt them
@@ -110,7 +108,6 @@ impl LuaLauncher {
         args: Vec<String>,
         allow_os_libs: bool,
         app_data: LuaAppData,
-        finished: oneshot::Sender<()>,
     ) -> JoinHandle<()> {
         let path = self.luarocks_path.clone();
         let cpath = self.luarocks_cpath.clone();
@@ -119,7 +116,6 @@ impl LuaLauncher {
             let lua = Self::setup_lua(&file, &args, allow_os_libs, path, cpath, app_data)
                 .expect("failed to setup lua");
             rt.block_on(Self::run_lua(lua, &file));
-            finished.send(()).ok();
         })
     }
 
@@ -197,7 +193,7 @@ impl LuaLauncher {
         } else {
             Lua::new_with(libs, LuaOptions::new())?
         };
-        if allow_os_libs {}
+
         lua.set_app_data(app_data);
         let args_table = lua.create_table()?;
         for arg in args {
@@ -215,7 +211,6 @@ impl LuaLauncher {
         mod_dsbox.set("clock", lua.create_function(lua_clock)?)?;
         mod_dsbox.set("sleep", lua.create_function(lua_sleep)?)?;
         mod_dsbox.set("exit", lua.create_async_function(lua_exit)?)?;
-        mod_dsbox.set("__exit_metatable", lua.create_table()?)?;
         let message_class = lua.create_table()?;
         message_class.set("new", lua.create_function(message_new)?)?;
         message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
@@ -226,12 +221,12 @@ impl LuaLauncher {
         lua.globals()
             .set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
 
+        lua.register_module("dsbox", mod_dsbox)?;
+
         // for some reason the borrow checker does not like having the local variables `package` and `preload`
         // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
         {
             let package: Table = lua.globals().get("package")?;
-            let loaded: Table = package.get("loaded")?;
-            loaded.set("dsbox", mod_dsbox)?;
 
             macro_rules! join_path {
                 ($($p:expr),*) => {{

@@ -1,26 +1,33 @@
-//! Transparent handling of processes, both native, compiled to Webassembly and in the form of a lua script.
-
-use tokio::sync::mpsc::{Receiver, UnboundedSender};
+use crate::command::ExecutableCommand;
+use crate::process::event::ProcessEventOrExit;
+use crate::process::runner::{CommandSender, EventReceiver};
+use crate::process::{Process, ProcessCommand, ProcessEvent};
 use tokio::task::JoinHandle;
 
-pub use crate::process::command::ProcessCommand;
-pub use crate::process::event::ProcessEvent;
-
-mod command;
-mod event;
-pub mod launcher;
-mod runner;
-
-/// Handle to a running process
-pub struct Process {
-    sender: Option<UnboundedSender<ProcessCommand>>,
-    receiver: Receiver<ProcessEvent>,
-    join_handle: Option<JoinHandle<()>>,
+pub struct RunningHandle {
+    sender: Option<CommandSender>,
+    receiver: EventReceiver,
+    join_handle: JoinHandle<i32>,
     exit_code: Option<i32>,
-    pub command: crate::command::ExecutableCommand,
+    command: ExecutableCommand,
 }
 
-impl Process {
+impl RunningHandle {
+    pub fn new(
+        sender: CommandSender,
+        receiver: EventReceiver,
+        handle: JoinHandle<i32>,
+        command: ExecutableCommand,
+    ) -> Self {
+        Self {
+            sender: Some(sender),
+            receiver,
+            join_handle: handle,
+            exit_code: None,
+            command,
+        }
+    }
+
     /// Send a [`ProcessCommand`] to the process.
     pub fn send(&self, value: ProcessCommand) -> bool {
         if let Some(sender) = &self.sender {
@@ -30,12 +37,17 @@ impl Process {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<ProcessEvent> {
-        let event = self.receiver.recv().await?;
-        if let ProcessEvent::Exited(exit_code) = &event {
-            self.exit_code = Some(*exit_code);
+    pub async fn recv(&mut self) -> Option<ProcessEventOrExit> {
+        tokio::select! {
+            exit_code = &mut self.join_handle, if self.exit_code.is_none() => {
+                let exit_code = exit_code.unwrap_or(1);
+                self.exit_code = Some(exit_code);
+                Some(ProcessEventOrExit::Exited(exit_code))
+            }
+            event = self.receiver.recv() => {
+                Some(ProcessEventOrExit::Event(event?))
+            }
         }
-        Some(event)
     }
 
     /// This drops the `command_sender`, so that threads waiting for [`ProcessCommand`]s from the
@@ -49,11 +61,9 @@ impl Process {
 
     /// This waits for the tasks that handle the processes IO to finish
     pub async fn terminate(&mut self) {
-        if let Some(join_handle) = self.join_handle.take() {
-            self.begin_shutdown();
-            self.receiver.close();
-            join_handle.await.ok();
-        }
+        self.begin_shutdown();
+        self.receiver.close();
+        self.exit_code = Some((&mut self.join_handle).await.unwrap_or(1));
     }
 
     /// Returns `true` if the process has stopped running and all messages have been received
@@ -61,12 +71,8 @@ impl Process {
         if !self.receiver.is_empty() {
             return false;
         }
-        self.join_handle
-            .as_ref()
-            .map(|h| h.is_finished())
-            .unwrap_or(true)
+        self.join_handle.is_finished()
     }
-
     /// returns the exit code of the process, if it has exited.
     /// The exit code might be `Some` while [`Process::has_finished`] returns false
     /// if the process has exited, but there are still process events to receive.

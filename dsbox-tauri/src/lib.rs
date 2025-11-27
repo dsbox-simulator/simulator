@@ -1,4 +1,7 @@
+use dsbox_core::core::Core;
+use crate::dsbox::Commands;
 use tauri::Manager;
+use tokio::sync::RwLock;
 pub mod cli;
 mod dsbox;
 mod util;
@@ -9,20 +12,27 @@ pub fn run(args: cli::Cli) {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .skip_logger()
-                        .build(),
-                )?;
+                app.handle()
+                    .plugin(tauri_plugin_log::Builder::default().skip_logger().build())?;
             }
-            app.manage(dsbox::DsboxState::new(args));
+            let test_command = args.test_command.map(Core::split_command)
+                .unwrap_or_default();
+            let server_command = args.server_command.map(Core::make_command)
+                .unwrap_or_default();
+            app.manage(RwLock::new(dsbox::DsboxState::new(
+                Commands {
+                    test_command,
+                    server_command,
+                },
+                args.lua_unsafe,
+            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            dsbox::subscribe_events,
             dsbox::restart,
+            dsbox::subscribe_events,
             dsbox::break_,
             dsbox::step,
             dsbox::resume,

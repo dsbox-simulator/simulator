@@ -75,6 +75,12 @@ impl Network {
         }
     }
 
+    /// Removes all messages that match the given predicate
+    pub fn retain<P>(&mut self, mut predicate: P)
+        where P: FnMut(&Message) -> bool {
+        self.messages_in_transit.retain(|(_, _, m)| predicate(m));
+    }
+
     /// Returns [`Ok`] with the index of the [`Message`] in the queue that has the given timestamp, if it exists.
     /// Otherwise, Returns [`Err`] with the index in the queue where a [`Message`] with the given timestamp should be inserted.
     fn message_by_timestamp(&self, logical_timestamp: usize) -> Result<usize, usize> {

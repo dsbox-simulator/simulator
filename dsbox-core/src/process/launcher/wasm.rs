@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use tokio::io::{Error, ReadHalf, SimplexStream, WriteHalf};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wasmtime::component::Component;
 use wasmtime::{
@@ -14,7 +13,7 @@ use wasmtime_wasi::cli::{AsyncStdinStream, AsyncStdoutStream};
 use wasmtime_wasi::p1::WasiP1Ctx;
 use wasmtime_wasi::{WasiCtxBuilder, p2, p3};
 
-use crate::process::io_helper::process_io_helper;
+use crate::process::launcher::io_helper::process_io_helper;
 use crate::process::{ProcessCommand, ProcessEvent};
 
 /// contains some state for launching Webassembly processes.
@@ -63,13 +62,13 @@ impl WasmLauncher {
     /// Launches a new Webassembly process from the given `path`. The Webassembly module gets passed
     /// three [`DuplexStream`]s to be used for its `stdin`, `stdout` and `stderr`.
     /// This function is only a helper to convert any [`wasmtime::Error`] into a [`std::io::Error`] if necessary before returning.
-    pub(super) async fn launch(
+    pub(in crate::process) async fn launch(
         &mut self,
         path: &Path,
         args: &[String],
         command_receiver: UnboundedReceiver<ProcessCommand>,
         event_sender: Sender<ProcessEvent>,
-    ) -> tokio::io::Result<(JoinHandle<()>, oneshot::Receiver<()>)> {
+    ) -> tokio::io::Result<JoinHandle<()>> {
         let (wasi_stdin, stdin) = tokio::io::simplex(1024);
         let (stdout, wasi_stdout) = tokio::io::simplex(1024);
         let (stderr, wasi_stderr) = tokio::io::simplex(1024);
@@ -112,22 +111,17 @@ impl WasmLauncher {
             exit_code
         };
 
-        let (finished_tx, finished_rx) = oneshot::channel();
-        Ok((
-            tokio::task::spawn(async move {
-                process_io_helper(
-                    event_sender,
-                    command_receiver,
-                    stdin,
-                    stdout,
-                    stderr,
-                    wait_child,
-                    finished_tx,
-                )
-                .await
-            }),
-            finished_rx,
-        ))
+        Ok(tokio::task::spawn(async move {
+            process_io_helper(
+                event_sender,
+                command_receiver,
+                stdin,
+                stdout,
+                stderr,
+                wait_child,
+            )
+            .await
+        }))
     }
 
     /// Helper function to actually launch a Webassembly process. See ['WasmLauncher::launch'].

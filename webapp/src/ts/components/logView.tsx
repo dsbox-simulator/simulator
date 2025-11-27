@@ -5,7 +5,6 @@ import LogMessage from "./logMessage";
 import classNames from "classnames";
 
 export default function LogView(props: {
-    nodes: NodeInfo[],
     logs: LogInfo[],
     highlighted: LogInfo | null,
     setHighlighted: (log: LogInfo | null) => void
@@ -30,14 +29,12 @@ export default function LogView(props: {
     </div>;
 }
 
-function LogTable({nodes, logs, ...props}: {
-    nodes: NodeInfo[],
+function LogTable({ logs, ...props}: {
     logs: LogInfo[],
     highlighted: LogInfo | null,
     setHighlighted: (log: LogInfo | null) => void
     wrapLines: boolean
 }) {
-    const nodesById = useMemo(() => new Map<number, NodeInfo>(nodes.map(n => [n.id, n])), [nodes]);
     return <table className="table table-hover table-sm font-monospace">
         <thead>
         <tr>
@@ -49,23 +46,21 @@ function LogTable({nodes, logs, ...props}: {
         <tbody>
         {logs.map((log: LogInfo) => <LogRow key={log.timestamp.logical}
                                             log={log}
-                                            nodesById={nodesById}
                                             {...props}/>)}
         </tbody>
     </table>;
 }
 
-function LogRow({log, highlighted, setHighlighted, nodesById, wrapLines}: {
+function LogRow({log, highlighted, setHighlighted, wrapLines}: {
     log: LogInfo,
     highlighted: LogInfo | null,
     setHighlighted: (log: LogInfo | null) => void,
-    nodesById: Map<number, NodeInfo>,
     wrapLines: boolean
 }) {
     return <tr className={classNames({"table-secondary": log.timestamp.logical === highlighted?.timestamp.logical})}
                onMouseEnter={() => setHighlighted(log)} onMouseLeave={() => setHighlighted(null)}>
         <td>{log.timestamp.logical}</td>
-        <td>{nodesById.get(log.node)?.name}</td>
+        <td>{log.node}</td>
         <td className="w-100"><LogMessage log={log.message} wrapLines={wrapLines}/></td>
     </tr>
 }

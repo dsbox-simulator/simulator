@@ -47,4 +47,11 @@ impl TimerManager {
             std::future::pending().await
         }
     }
+
+    pub fn retain<P>(&mut self, predicate: P)
+    where
+        P: FnMut(&Timer) -> bool,
+    {
+        self.timers.retain(predicate);
+    }
 }

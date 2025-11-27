@@ -71,7 +71,7 @@ export function isDropMessage(data: EventData): data is DropMessage {
 
 export interface NodeDisconnected {
     type: "node_disconnected";
-    id: number;
+    name: string;
 }
 
 export function isNodeDisconnected(data: EventData): data is NodeDisconnected {
@@ -80,7 +80,6 @@ export function isNodeDisconnected(data: EventData): data is NodeDisconnected {
 
 export interface NodeLaunched {
     type: "node_launched";
-    id: number;
     name: string;
     commandline: string;
 }
@@ -91,7 +90,7 @@ export function isNodeLaunched(data: EventData): data is NodeLaunched {
 
 export interface Log {
     type: "log";
-    id: number;
+    node: string;
     message: LogMessage;
 }
 

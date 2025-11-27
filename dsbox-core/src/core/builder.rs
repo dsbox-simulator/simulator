@@ -1,13 +1,13 @@
 use crate::core::Core;
-use libproto::system::Command;
+use crate::command::ExecutableCommand;
 
 const DEFAULT_CORE_NAME: &'static str = "core";
 const DEFAULT_TEST_NODE_NAME: &'static str = "test";
 
 /// A builder for a [`Core`].
 pub struct Builder {
-    pub(super) test_command: Command,
-    pub(super) server_command: Command,
+    pub(super) test_command: ExecutableCommand,
+    pub(super) server_command: ExecutableCommand,
     pub(super) interactive: bool,
     pub(super) allow_lua_unsafe: bool,
     pub(super) omit_test_register: bool,
@@ -17,7 +17,7 @@ pub struct Builder {
 
 impl Builder {
     /// Create a new builder with the specified commands for the test and server nodes
-    pub(super) fn new(test_command: Command, server_command: Command) -> Self {
+    pub(super) fn new(test_command: ExecutableCommand, server_command: ExecutableCommand) -> Self {
         Self {
             test_command,
             server_command,
@@ -30,13 +30,13 @@ impl Builder {
     }
 
     /// change the command for the test node
-    pub fn test_command(mut self, test_command: Command) -> Self {
+    pub fn test_command(mut self, test_command: ExecutableCommand) -> Self {
         self.test_command = test_command;
         self
     }
 
     /// change the command for the server nodes
-    pub fn server_command(mut self, server_command: Command) -> Self {
+    pub fn server_command(mut self, server_command: ExecutableCommand) -> Self {
         self.server_command = server_command;
         self
     }

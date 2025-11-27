@@ -70,13 +70,12 @@ export default function App({wsPath, inTauri}: { wsPath: string, inTauri: boolea
             </div>
             <div className="messages-logs">
                 <MessageView messages={messages}
-                             filterNodes={new Set(nodes.map(n => n.name))}
+                             filterNodes={new Set(nodes.keys())}
                              highlighted={isMessage(highlighted) ? highlighted : null}
                              setHighlighted={setHighlighted}
                              onDeliver={m => store.deliver(m)}
                              onDrop={m => store.drop(m)}/>
                 <LogView
-                    nodes={nodes}
                     logs={logs}
                     highlighted={isLog(highlighted) ? highlighted : null}
                     setHighlighted={setHighlighted}/>

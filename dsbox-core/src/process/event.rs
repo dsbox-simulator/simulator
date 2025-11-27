@@ -11,8 +11,20 @@ pub enum ProcessEvent {
     Message(Message),
     /// A log line was written to the processes `stderr`.
     Log(String),
-    /// The process exited
-    Exited(i32),
     /// Something was written to the processes `stdout` that could not be deserialized into a [`Message`]
     SerializeError { raw_message: String, error: String },
+}
+
+/// Describes what happened in the process or that the process has exited.
+/// After a [`ProcessEventOrExit::Exited`], more process events may arrive
+/// if they were still queued up
+///
+/// The reason this is split into a separate enum is that a process runner
+/// may send [`ProcessEvent`]s to the core, but can only signal the exit (with an exit code)
+/// by returning from the [`crate::process::runner::Runner::run`] implementation
+pub(crate) enum ProcessEventOrExit {
+    /// an event happened (a message, log message, etc.)
+    Event(ProcessEvent),
+    /// The process exited
+    Exited(i32),
 }

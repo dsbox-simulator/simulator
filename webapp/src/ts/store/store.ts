@@ -7,14 +7,13 @@ import TauriApi from "../api/tauriApi";
 import Api from "../api/api";
 
 export interface NodeInfo {
-    id: number;
     name: string;
     commandline: string;
     running: boolean;
 }
 
 export interface LogInfo {
-    node: number,
+    node: string,
     timestamp: Timestamp,
     message: LogMessage,
 }
@@ -37,7 +36,7 @@ export function isMessage(message: MessageInfo | LogInfo | null): message is Mes
 
 export default class Store {
     private readonly api: Api;
-    private nodes: NodeInfo[] = [];
+    private nodes: Map<string, NodeInfo> = new Map<string, NodeInfo>();
     private logs: LogInfo[] = [];
     private messages: MessageInfo[] = [];
     private emitter: EventEmitter = new EventEmitter();
@@ -58,7 +57,7 @@ export default class Store {
         });
         this.api.onReset(() => {
             this.messages = [];
-            this.nodes = [];
+            this.nodes = new Map<string, NodeInfo>();
             this.logs = [];
             emitDebounced("nodes_changed");
             emitDebounced("log_changed");
@@ -71,6 +70,7 @@ export default class Store {
                 message: event.data.msg,
                 dropped: false
             }];
+            console.log("got message", event.data.msg);
             emitDebounced("messages_changed");
         });
         this.api.onDeliverMessage(event => {
@@ -106,15 +106,22 @@ export default class Store {
             }
         });
         this.api.onNodeLaunched(event => {
-            this.nodes = [...this.nodes, {...event.data, running: true}];
+            console.log("node launched", event.data);
+            this.nodes = new Map(this.nodes.entries())
+            this.nodes.set(event.data.name, {...event.data, running: true});
             emitDebounced("nodes_changed");
         });
         this.api.onNodeDisconnected(event => {
-            this.nodes = this.nodes.map(node => node.id == event.data.id ? {...node, running: false} : node);
+            this.nodes = new Map(this.nodes.entries())
+            this.nodes.get(event.data.name)!.running = false;
             emitDebounced("nodes_changed");
         });
         this.api.onLog(event => {
-            this.logs = [...this.logs, {timestamp: event.timestamp, message: event.data.message, node: event.data.id}];
+            this.logs = [...this.logs, {
+                timestamp: event.timestamp,
+                message: event.data.message,
+                node: event.data.node
+            }];
             emitDebounced("log_changed");
         })
     }
@@ -127,7 +134,7 @@ export default class Store {
         }, snapshot);
     }
 
-    public useNodes(): NodeInfo[] {
+    public useNodes(): Map<string, NodeInfo> {
         return this.useStore("nodes_changed", () => this.nodes);
     }
 

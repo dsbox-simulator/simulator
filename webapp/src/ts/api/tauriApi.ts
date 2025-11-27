@@ -21,11 +21,7 @@ export default class TauriApi implements Api {
     private tauri_store: LazyStore = new LazyStore(".dsbox_storage.json");
 
     public constructor() {
-        const onEvent = new Channel<Event<EventData>>;
-        onEvent.onmessage = this.handleEvent.bind(this);
-        invoke('subscribe_events', {onEvent})
-            .then(() => {
-            });
+        this.subscribeEvents();
     }
 
     public onConnect(listener: () => void): void {
@@ -35,7 +31,15 @@ export default class TauriApi implements Api {
     public onDisconnect(_: () => void): void {
     }
 
-    handleEvent(event: Event<EventData>) {
+    private subscribeEvents(): void {
+        const onEvent = new Channel<Event<EventData>>;
+        onEvent.onmessage = this.handleEvent.bind(this);
+        invoke('subscribe_events', {onEvent})
+            .then(() => {
+            });
+    }
+
+    private handleEvent(event: Event<EventData>) {
         this.emitter.emit(`event:${event.data.type}`, {detail: event});
     }
 
@@ -73,8 +77,7 @@ export default class TauriApi implements Api {
 
     public restart(testCommand?: Command, serverCommand?: Command) {
         invoke("restart", {testCommand, serverCommand})
-            .then(() => {
-            });
+            .then(() => this.subscribeEvents());
     }
 
     public break() {

@@ -16,37 +16,39 @@
 //! existing server processes and waits for them to exit.
 //! It also clears all existing server and test node names, as well as all running [`MonitorSession`]s.
 
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
-use std::ops::{Add, RangeBounds};
-use std::slice::SliceIndex;
+use std::collections::HashMap;
+use std::ops::Add;
 
 use async_channel::{Receiver, Sender};
+use enumflags2::BitFlags;
 use tokio::time::{Duration, Instant};
 
 use libproto::init::Init;
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
-    BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Register,
+    Alias, BeginMonitor, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Register,
     Reset, ResetFinished,
 };
 use libproto::{Message, Payload};
 use node::Node;
 
+use crate::command::ExecutableCommand;
+use crate::capabilities::Capability;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
 use crate::core::node::NodeId;
-use crate::core::node_list::{NodeList, NodeRef};
+use crate::core::node_manager::NodeManager;
 use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerKind, TimerManager};
 use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
-use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
+use crate::process::{Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
-use crate::Command;
 pub use builder::Builder;
+use libproto::system::control::{Break, Control, SubscribeEvents};
 use network::Network;
+use crate::process::launcher::Launcher;
 
 mod builder;
 pub mod error;
@@ -54,7 +56,7 @@ pub mod event;
 mod monitor;
 mod network;
 mod node;
-mod node_list;
+mod node_manager;
 pub mod remote_control;
 mod timer_manager;
 mod version;
@@ -69,8 +71,8 @@ pub struct Core {
     /// Is automatically reset after a `reset` command is received
     timestamp_source: TimestampSource,
     /// Manages all nodes that are participating in the simulation
-    nodes: NodeList,
-    /// the [`NodeId`] of the test node (probably `NodeId(0)`) most of the time
+    nodes: NodeManager,
+    /// the [`NodeId`] of the test node
     test_node_id: NodeId,
     /// the name of the test node
     test_node_name: String,
@@ -82,10 +84,8 @@ pub struct Core {
     core_name: String,
     /// launches new processes
     launcher: Launcher,
-    /// Command string from which the test process was launched
-    test_command: Command,
-    /// Command string from which server processes are launched.
-    server_command: Command,
+    /// registry of commands, that can be launched through [`Launch`] Messages, and their capabilities
+    commands: HashMap<String, (ExecutableCommand, BitFlags<Capability>)>,
     /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
     interactive: bool,
     /// The core expects each test to immediately send a `register` message
@@ -109,17 +109,6 @@ pub struct Core {
     network: Network,
     /// a manager for outstanding timers
     timer_manager: TimerManager,
-    /// queue of [`Launch`] messages to be launched at some later point
-    /// (used to prevent recursion in the async [`dispatch`](Core::dispatch) fn because launching a node
-    /// requires dispatching an init message to that node)
-    launch_queue: VecDeque<Launch>,
-    /// map of `NodeId`s that have exited and their exit code. When these nodes have all their
-    /// outstanding messages delivered, the core sends an `"exited"` message to the test, if requested.
-    exit_set: HashMap<NodeId, i32>,
-    /// when the test sends a reset message, some stuff has to be finished/cleaned up before
-    /// the new nodes may be launched,
-    /// so we set this flag while we wait for everything to become ready
-    reset_flag: Option<CoreReset>,
 }
 
 /// The execution state for a [`Core`]
@@ -133,21 +122,6 @@ enum CoreState {
     Stepping,
 }
 
-/// A flag used to shut down or reset the core
-#[derive(Copy, Clone, Eq, PartialEq)]
-enum CoreReset {
-    Shutdown,
-    Reset,
-}
-
-/// when launching a node, this is a convenient way to specify which command string should be used
-#[derive(Copy, Clone)]
-enum LaunchCommand {
-    /// launch a new test process
-    Test,
-    /// launch a new server process
-    Server,
-}
 
 impl From<Builder> for Core {
     fn from(builder: Builder) -> Self {
@@ -155,14 +129,30 @@ impl From<Builder> for Core {
         let (event_sender, event_receiver) = async_channel::unbounded();
         Self {
             timestamp_source: TimestampSource::new(),
-            nodes: NodeList::new(),
-            test_node_id: NodeId(0),
+            nodes: NodeManager::new(),
+            // TODO: Core::test_node_id should not be needed anymore in the future
+            test_node_id: unsafe { std::mem::transmute(0usize) },
             test_node_name: builder.test_node_name,
             test_exit_code: 0,
             core_name: builder.core_name,
             launcher: Launcher::new(builder.allow_lua_unsafe),
-            test_command: builder.test_command,
-            server_command: builder.server_command,
+            commands: HashMap::from([
+                (
+                    "test".to_owned(),
+                    (
+                        builder.test_command,
+                        BitFlags::<Capability>::default()
+                            | Capability::LaunchNodes
+                            | Capability::LaunchAlias
+                            | Capability::Monitor
+                            | Capability::Reset,
+                    ),
+                ),
+                (
+                    "server".to_owned(),
+                    (builder.server_command, BitFlags::<Capability>::default()),
+                ),
+            ]),
             interactive: builder.interactive,
             omit_test_register: builder.omit_test_register,
             state: if builder.interactive {
@@ -177,37 +167,18 @@ impl From<Builder> for Core {
             monitor_sessions: Vec::new(),
             network: Network::new(),
             timer_manager: TimerManager::new(),
-            launch_queue: VecDeque::new(),
-            exit_set: HashMap::new(),
-            reset_flag: None,
         }
     }
 }
 
 impl Core {
     /// returns a new [`Builder`] for configuring and building a new [`Core`]
-    pub fn builder(test_command: Command, server_command: Command) -> Builder {
+    pub fn builder(test_command: ExecutableCommand, server_command: ExecutableCommand) -> Builder {
         Builder::new(test_command, server_command)
     }
 
-    async fn restart(&mut self, re_init: bool) -> Result<(), CoreError> {
-        if re_init {
-            self.terminate_now(..).await;
-            self.timestamp_source = TimestampSource::new();
-            self.nodes = NodeList::new();
-            self.state = if self.interactive {
-                CoreState::Paused
-            } else {
-                CoreState::Running
-            };
-            self.monitor_sessions = Vec::new();
-            self.network = Network::new();
-            self.timer_manager = TimerManager::new();
-            self.launch_queue = VecDeque::new();
-            self.reset_flag = None;
-        }
-
-        if self.test_command.program != "" {
+    async fn setup(&mut self) -> Result<(), CoreError> {
+        if self.commands.get("test").unwrap().0.program != "" {
             // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
             // is re-started
             self.event_sender
@@ -215,7 +186,7 @@ impl Core {
                 .await
                 .ok();
 
-            self.test_node_id = self.launch_test_node().await?;
+            self.test_node_id = self.launch_test_node(self.test_node_name.clone()).await?;
         }
         Ok(())
     }
@@ -234,61 +205,35 @@ impl Core {
     /// after [`Core::run`] returns.
     pub async fn run(mut self) -> i32 {
         // launch test node/publish initial reset event
-        if let Err(e) = self.restart(false).await {
+        if let Err(e) = self.setup().await {
             self.log_core_error(e).await;
             return -1;
         }
-        let mut deadline = None;
         loop {
-            let mut num_running = 0;
-            let mut num_servers = 0;
-            for node in self.nodes.iter_mut().filter_map(NodeRef::as_node_mut) {
-                if node.has_finished() {
-                    continue;
-                }
-                num_running += 1;
-                if !node.is_test {
-                    num_servers += 1;
-                }
-            }
+            let num_running = self.nodes.iter().filter(|n| !n.has_finished()).count();
 
-            if !self.interactive && num_running == 0 {
-                // in cli mode, finish automatically when all nodes have shut down
+            if num_running == 0 && self.network.is_empty() {
+                // finish automatically when all nodes have shut down and all messages
+                // have been delivered
                 break;
             }
 
-            let dont_block = deadline.is_some() || !self.launch_queue.is_empty();
-
-            if let Err(e) = self.step(dont_block, num_running).await {
+            if let Err(e) = self.step(num_running).await {
                 self.log_core_error(e).await;
-            }
-            if let Some(launch) = self.launch_queue.pop_front() {
-                self.launch_single(launch).await;
-            } else if self.reset_flag.is_some() && self.network.is_empty() {
-                if deadline.is_none() {
-                    deadline = Some(Instant::now() + Duration::from_secs(1));
-                } else if num_servers == 0 || Instant::now() > deadline.unwrap() {
-                    deadline = None;
-                    let shutdown = self.reset_flag.take().unwrap() == CoreReset::Shutdown;
-                    self.reset(shutdown).await;
-                    if shutdown {
-                        break;
-                    };
-                }
             }
         }
         self.test_exit_code
     }
 
     fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
-        if !matches!(self.state, CoreState::Paused) {
+        if self.state != CoreState::Paused {
             self.network.remove_oldest()
         } else {
             None
         }
     }
 
-    async fn step(&mut self, dont_block: bool, num_running: usize) -> Result<(), CoreError> {
+    async fn step(&mut self, num_running: usize) -> Result<(), CoreError> {
         // TODO: if processes spam messages and never receive any, they can force the receiving
         //       queues to fill up, which will waste a lot of RAM and possibly de-stabilize the system
         //       possible solution: before picking up a message from a process, check if the other
@@ -301,11 +246,6 @@ impl Core {
                 self.state = CoreState::Paused;
             }
         } else {
-            let timeout = async move {
-                if dont_block {
-                    tokio::time::sleep(Duration::from_millis(10)).await
-                }
-            };
             tokio::select! {
                 biased;
                 remote_command = self.remote_receiver.recv() => {
@@ -320,7 +260,6 @@ impl Core {
                 timer = self.timer_manager.wait_next() => {
                     self.handle_timer_expired(timer).await?;
                 }
-                _ = timeout, if dont_block => {}
             }
         }
         Ok(())
@@ -330,13 +269,13 @@ impl Core {
     async fn handle_process_event(
         &mut self,
         timestamp: Timestamp,
-        node_id: NodeId,
+        source_id: NodeId,
         process_event: ProcessEvent,
     ) -> Result<bool, CoreError> {
         log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
-                self.dispatch(Some(node_id), timestamp, message).await?;
+                self.dispatch(Some(source_id), timestamp, message).await?;
                 Ok(false)
             }
             ProcessEvent::Log(log) => {
@@ -344,20 +283,15 @@ impl Core {
                     text: log,
                     marker: None,
                 };
-                self.log(timestamp, node_id, log_message).await;
+                self.log(timestamp, source_id, None, log_message).await;
                 Ok(true)
             }
             ProcessEvent::Exited(exit_code) => {
-                self.process_exited(timestamp, node_id, exit_code).await?;
-                if self.nodes.resolve_alias(node_id).is_test {
-                    // test process exited: shut down all processes gracefully
-                    self.test_exit_code = exit_code;
-                    self.begin_shutdown(..);
-                }
+                self.process_exited(timestamp, source_id, exit_code).await?;
                 Ok(true)
             }
             ProcessEvent::SerializeError { raw_message, error } => Err(CoreError::SerializeError {
-                source: self.nodes.resolve_alias(node_id).commandline(),
+                source: self.nodes[source_id].commandline(),
                 raw_message,
                 error,
             }),
@@ -365,10 +299,10 @@ impl Core {
     }
 
     fn ensure_registered(&self, node_id: NodeId) -> Result<(), CoreError> {
-        let node = self.nodes.resolve_alias(node_id);
+        let node = &self.nodes[node_id];
         if node.requires_registration {
             Err(CoreError::MissingRegistration {
-                source: node.name.clone(),
+                name: node.name.clone(),
             })
         } else {
             Ok(())
@@ -385,12 +319,11 @@ impl Core {
         log::trace!("dispatching message {}", message.to_json());
 
         if let Some(source_id) = source {
-            let source_ref = &self.nodes[source_id];
-            if !self.nodes.alias_same_node(source_ref, &message.src) {
-                let aliases = self.nodes.aliases_of(source_ref);
+            if !self.nodes.has_alias(source_id, &message.src) {
+                let aliases = self.nodes.aliases_of(source_id);
                 let got = message.src.clone();
                 return Err(CoreError::DispatchError {
-                    name: source_ref.name().to_owned(),
+                    name: self.nodes[source_id].name.clone(),
                     message,
                     kind: DispatchErrorKind::SourceNameMismatch(got, aliases),
                 });
@@ -430,9 +363,7 @@ impl Core {
         message: Message,
     ) -> Result<(), CoreError> {
         log::trace!("deliver {message:?}");
-        let result = if let Some(destination_id) =
-            self.nodes.lookup_and_resolve(&message.dest).map(|n| n.id)
-        {
+        let result = if let Some(destination_id) = self.nodes.lookup(&message.dest) {
             let timestamp = self.timestamp_source.now();
             self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
                 .await;
@@ -440,9 +371,7 @@ impl Core {
                 .send(Event::deliver_message(timestamp, sent_timestamp.logical))
                 .await
                 .ok();
-            self.nodes
-                .resolve_alias_mut(destination_id)
-                .send(ProcessCommand::Deliver(message));
+            self.nodes[destination_id].send(ProcessCommand::Deliver(message));
             Ok(())
         } else {
             Err(CoreError::DispatchError {
@@ -452,7 +381,7 @@ impl Core {
             })
         };
         if let Some(source_id) = source_id {
-            self.maybe_notify_exited(source_id).await;
+            self.check_exited(source_id).await;
         }
         result
     }
@@ -468,7 +397,10 @@ impl Core {
     ) {
         for session in &self.monitor_sessions {
             if session.matches(&message) {
-                let monitor_node = self.nodes.lookup_and_resolve(session.source()).unwrap();
+                // TODO: only deliver monitor messages if the message source and destination node
+                //       was launched by the sessions source node?
+                let monitor_node = self.nodes.lookup(session.source()).unwrap();
+                let monitor_node = &self.nodes[monitor_node];
                 // monitor events are not dispatched via the network. Instead, they are delivered directly
                 // to the target node. Among other reasons, this de-clutters the message log (monitor events
                 // should not be the target of any kind of debugging/visualization)
@@ -524,13 +456,13 @@ impl Core {
         timestamp: Timestamp,
         message: Message,
     ) -> Result<(), CoreError> {
-        macro_rules! assert_is_test {
-            () => {
+        macro_rules! assert_has_capability {
+            ($msg_ty:path) => {
                 if let Some(source_id) = source {
-                    let source_node = self.nodes.resolve_alias(source_id);
-                    if !source_node.is_test {
+                    let source_node = &self.nodes[source_id];
+                    if !source_node.has_capability(<$msg_ty as Payload>::TYPE) {
                         return Err(CoreError::IllegalCoreMessage {
-                            source: source_node.commandline(),
+                            name: message.src.clone(),
                             message,
                         });
                     }
@@ -552,27 +484,23 @@ impl Core {
                 Ok(())
             }
             LogMessage::TYPE => {
+                let source_name = message.src.clone();
                 let message = message.payload::<LogMessage>().unwrap();
                 let Some(source_id) = source else {
                     panic!(
                         "tried to send log message without a source (i.e. the core sent it to the core?)"
                     );
                 };
-                self.log(timestamp, source_id, message).await;
-                Ok(())
-            }
-            Break::TYPE => {
-                if self.interactive {
-                    self.state = CoreState::Paused;
-                }
+                self.log(timestamp, source_id, Some(source_name), message)
+                    .await;
                 Ok(())
             }
             Register::TYPE => {
                 if let Some(source_id) = source {
-                    let node = self.nodes.resolve_alias_mut(source_id);
+                    let node = &mut self.nodes[source_id];
                     if !node.requires_registration {
                         return Err(CoreError::UnexpectedRegistration {
-                            source: node.name.clone(),
+                            name: node.name.clone(),
                         });
                     } else {
                         node.requires_registration = false;
@@ -581,21 +509,36 @@ impl Core {
                 Ok(())
             }
             Reset::TYPE => {
-                assert_is_test!();
-                if self.reset_flag.is_none() {
-                    self.reset_flag = Some(CoreReset::Reset);
-                }
-                self.begin_shutdown(1..);
+                assert_has_capability!(Reset);
+                let source_id = source.expect("the core tried to send itself a reset message");
+                self.terminate(|n| n.launched_by == Some(source_id)).await;
+                let removed_aliases = self.nodes.remove_aliases_of(source_id);
+                self.cleanup_aliases(removed_aliases);
+                let node = &self.nodes[source_id];
+                node.send(ProcessCommand::Deliver(Message::new(
+                    &self.core_name,
+                    &node.name,
+                    None,
+                    ResetFinished {},
+                )));
                 Ok(())
             }
             Launch::TYPE => {
-                assert_is_test!();
-                self.launch_queue
-                    .push_back(message.payload::<Launch>().unwrap());
+                assert_has_capability!(Launch);
+                let source_id = source.expect("the core tried to send itself a launch message");
+                // pin the future here to deal with recursion (launch_single calls dispatch)
+                Box::pin(self.launch_single(message.payload::<Launch>().unwrap(), source_id)).await;
+                Ok(())
+            }
+            Alias::TYPE => {
+                assert_has_capability!(Alias);
+                let source_id = source.expect("the core tried to send itself an alias message");
+                // pin the future here to deal with recursion (create_alias calls dispatch)
+                Box::pin(self.create_alias(source_id, message.payload::<Alias>().unwrap())).await;
                 Ok(())
             }
             BeginMonitor::TYPE => {
-                assert_is_test!();
+                assert_has_capability!(BeginMonitor);
                 let begin_monitor = message.payload::<BeginMonitor>().unwrap();
                 let session = match MonitorSession::new(
                     message.src,
@@ -613,81 +556,100 @@ impl Core {
                 self.monitor_sessions.push(session);
                 Ok(())
             }
-            ty => {
-                let source_id =
-                    source.expect("the core tried to send itself an unknown core message");
-                Err(CoreError::UnknownCoreMessage {
-                    source: self.nodes.resolve_alias(source_id).commandline(),
-                    ty: ty.to_owned(),
-                })
+            Break::TYPE => {
+                assert_has_capability!(Break);
+                if self.interactive {
+                    self.state = CoreState::Paused;
+                }
+                Ok(())
             }
+            Control::TYPE => {
+                assert_has_capability!(Control);
+                todo!()
+            }
+            SubscribeEvents::TYPE => {
+                assert_has_capability!(SubscribeEvents);
+                todo!()
+            }
+            ty => Err(CoreError::UnknownCoreMessage {
+                name: message.src,
+                ty: ty.to_owned(),
+            }),
         }
     }
 
-    /// signals all nodes to begin shutting down (e.g. close stdin handles etc.)
-    fn begin_shutdown<R>(&mut self, range: R)
+    /// shutdown the nodes that match the given predicate and wait a grace period of 1 second before
+    /// removing the node and collecting all garbage (i.e. outstanding messages, aliases, etc.)
+    async fn terminate<P>(&mut self, predicate: P)
     where
-        R: SliceIndex<[NodeRef], Output = [NodeRef]>,
-    {
-        for proc in &mut self.nodes[range] {
-            if let Some(proc) = proc.as_node_mut() {
-                proc.begin_shutdown();
-            }
-        }
-    }
-
-    /// begin shutdown of nodes in given `range` and wait a grace period of 1 second before returning
-    async fn terminate_now<R>(&mut self, range: R)
-    where
-        R: RangeBounds<usize>,
+        P: FnMut(&&mut Node) -> bool,
     {
         let deadline = Instant::now() + Duration::from_secs(1);
-        let shutdowns = self
-            .nodes
-            .drain(range)
-            .filter_map(NodeRef::into_node)
-            .map(|node| node.terminate());
+        let nodes = self.nodes.iter_mut().filter(predicate).collect::<Vec<_>>();
+        let node_ids = nodes.iter().map(|n| n.id).collect::<Vec<_>>();
+        let shutdowns = nodes.into_iter().map(|node| node.terminate());
+
         tokio::time::timeout_at(deadline, futures::future::join_all(shutdowns))
             .await
             .ok();
+
+        for node_id in node_ids {
+            self.cleanup_node(node_id)
+        }
     }
 
-    /// launches a single new server
-    async fn launch_single(&mut self, launch: Launch) {
-        let error = if launch.as_test {
-            let (alias_id, node) = self.nodes.add_alias(self.test_node_id, launch.name.clone());
-            self.event_sender
-                .send(Event::node_launched(
-                    self.timestamp_source.now(),
-                    alias_id,
-                    launch.name.clone(),
-                    node.commandline(),
-                ))
-                .await
-                .ok();
-            None
-        } else {
-            let launch_result = self
-                .launch_server_node(launch.name, launch.request_exited_message)
-                .await;
-            match launch_result {
-                Ok(node) => {
-                    let id = node.id;
-                    let name = node.name.clone();
-                    let commandline = node.commandline();
-                    self.event_sender
-                        .send(Event::node_launched(
-                            self.timestamp_source.now(),
-                            id,
-                            name,
-                            commandline,
-                        ))
-                        .await
-                        .ok();
-                    None
-                }
-                Err(e) => Some(e.to_string()),
+    fn cleanup_node(&mut self, cleanup_id: NodeId) {
+        self.cleanup_aliases(self.nodes.aliases_of(cleanup_id));
+
+        // remove the node and all its aliases
+        self.nodes.remove(cleanup_id);
+
+        // remove all active timers for that node
+        self.timer_manager.retain(|timer| match &timer.kind {
+            TimerKind::TimerService { .. } => true,
+            TimerKind::ExpectRegistry { node_id } => *node_id != cleanup_id,
+        })
+    }
+
+    fn cleanup_aliases<S: AsRef<str>>(&mut self, aliases: impl AsRef<[S]>) {
+        let aliases = aliases.as_ref();
+        // remove (drop) all messages from and to the removed node
+        self.network.retain(|msg| {
+            aliases.iter().all(|alias| {
+                let alias = alias.as_ref();
+                alias != msg.src && alias != msg.dest
+            })
+        });
+
+        // remove all monitor sessions active for this node
+        self.monitor_sessions
+            .retain(|s| aliases.iter().all(|alias| alias.as_ref() != s.source()));
+
+        // remove all active timers for that node
+        self.timer_manager.retain(|timer| match &timer.kind {
+            TimerKind::TimerService { name, .. } => {
+                aliases.iter().all(|alias| alias.as_ref() != name)
             }
+            TimerKind::ExpectRegistry { .. } => true,
+        })
+    }
+
+    /// creates an alias for a server
+    async fn create_alias(&mut self, for_id: NodeId, alias: Alias) {
+        let error = match self.nodes.add_alias(for_id, alias.name.clone()) {
+            Ok(Some(node)) => {
+                self.event_sender
+                    .send(Event::node_launched(
+                        self.timestamp_source.now(),
+                        alias.name,
+                        node.commandline(),
+                    ))
+                    .await
+                    .ok();
+                None
+            }
+            Ok(None) => None,
+            Err(_) => Some(CoreError::DuplicateNodeName { name: alias.name }.to_string()),
         };
         let ts = self.timestamp_source.now();
         self.dispatch(
@@ -695,7 +657,7 @@ impl Core {
             ts,
             Message::new(
                 &self.core_name,
-                &self.test_node_name,
+                &self.nodes[for_id].name,
                 None,
                 LaunchFinished { error },
             ),
@@ -704,50 +666,59 @@ impl Core {
         .expect("sending launch_finished message");
     }
 
-    /// Resets the [`Core`] and sets up a new test run
-    async fn reset(&mut self, shutdown: bool) {
-        if shutdown {
-            self.terminate_now(0..).await;
-        } else {
-            self.terminate_now(1..).await;
-        }
-
-        self.monitor_sessions.clear();
-        if !shutdown {
-            // send the "ResetFinished" event to the test node with the old timestamp source
-            let ts = self.timestamp_source.now();
-            self.dispatch(
-                None,
-                ts,
-                Message::new(
-                    &self.core_name,
-                    &self.test_node_name,
-                    None,
-                    ResetFinished {},
-                ),
+    /// launches a single new server
+    async fn launch_single(&mut self, launch: Launch, launched_by: NodeId) {
+        let launch_result = self
+            .launch_server_node(
+                launch.name,
+                launch.command_name,
+                launched_by,
+                launch.request_exited_message,
             )
-            .await
-            .expect("sending reset_finished message");
-
-            // reset the timestamps to restart at 0
-            self.timestamp_source = TimestampSource::new();
-
-            self.event_sender
-                .send(Event::reset(self.timestamp_source.now()))
-                .await
-                .ok();
-        }
+            .await;
+        let error = match launch_result {
+            Ok(node) => {
+                let name = node.name.clone();
+                let commandline = node.commandline();
+                self.event_sender
+                    .send(Event::node_launched(
+                        self.timestamp_source.now(),
+                        name,
+                        commandline,
+                    ))
+                    .await
+                    .ok();
+                None
+            }
+            Err(e) => Some(e.to_string()),
+        };
+        let ts = self.timestamp_source.now();
+        self.dispatch(
+            None,
+            ts,
+            Message::new(
+                &self.core_name,
+                &self.nodes[launched_by].name,
+                None,
+                LaunchFinished { error },
+            ),
+        )
+        .await
+        .expect("sending launch_finished message");
     }
 
     /// launches a new node with its corresponding process and middleware processes
     async fn launch_server_node(
         &mut self,
         name: String,
+        command_name: String,
+        launched_by: NodeId,
         exited_message_requested: bool,
     ) -> Result<&mut Node, CoreError> {
         let node = self
             .launch(
-                LaunchCommand::Server,
+                &command_name,
+                Some(launched_by),
                 false,
                 exited_message_requested,
                 name.clone(),
@@ -771,26 +742,21 @@ impl Core {
             ),
         )
         .await?;
-        Ok(self.nodes.resolve_alias_mut(node_id))
+        Ok(&mut self.nodes[node_id])
     }
 
-    async fn launch_test_node(&mut self) -> Result<NodeId, CoreError> {
+    async fn launch_test_node(&mut self, name: impl Into<String>) -> Result<NodeId, CoreError> {
+        let name = name.into();
         let node_id = self
-            .launch(
-                LaunchCommand::Test,
-                true,
-                false,
-                self.test_node_name.clone(),
-            )
+            .launch("test", None, !self.omit_test_register, false, name.clone())
             .await?
             .id;
-        let node = self.nodes.resolve_alias(node_id);
+        let node = &self.nodes[node_id];
         let commandline = node.commandline();
         self.event_sender
             .send(Event::node_launched(
                 self.timestamp_source.now(),
-                node_id,
-                self.test_node_name.clone(),
+                name.clone(),
                 commandline,
             ))
             .await
@@ -802,10 +768,10 @@ impl Core {
             timestamp,
             Message::new(
                 &self.core_name,
-                &self.test_node_name,
+                &name,
                 None,
                 Init {
-                    name: self.test_node_name.clone(),
+                    name: name.clone(),
                     core_name: self.core_name.clone(),
                     core_version: version::current(),
                     is_test: true,
@@ -819,20 +785,31 @@ impl Core {
     /// launches a new process and creates the corresponding node
     async fn launch(
         &mut self,
-        command: LaunchCommand,
-        is_test: bool,
+        command_name: &str,
+        launched_by: Option<NodeId>,
+        requires_registration: bool,
         exited_message_requested: bool,
         name: String,
     ) -> Result<&mut Node, CoreError> {
-        let proc = self.launch_proc(command, is_test, name.clone()).await?;
-        let requires_registration = is_test && !self.omit_test_register;
-        let node = self.nodes.add(Node::new(
-            name,
-            is_test,
-            exited_message_requested,
-            requires_registration,
-            proc,
-        ));
+        let (command, capabilities) = self
+            .commands
+            .get(command_name)
+            .ok_or_else(|| CoreError::UnknownCommand {
+                command_name: command_name.to_string(),
+            })?
+            .clone();
+        let proc = self.launch_proc(command, name.clone()).await?;
+        let node = self
+            .nodes
+            .add(Node::new(
+                name.clone(),
+                launched_by,
+                capabilities,
+                exited_message_requested,
+                requires_registration,
+                proc,
+            ))
+            .map_err(|_| CoreError::DuplicateNodeName { name })?;
         let commandline = node.commandline();
         log::info!("[{}] command `{commandline}` launched", node.name);
         if requires_registration {
@@ -844,18 +821,9 @@ impl Core {
         Ok(node)
     }
 
-    async fn launch_proc(
-        &mut self,
-        command: LaunchCommand,
-        is_test: bool,
-        name: String,
-    ) -> Result<Process, CoreError> {
-        let command = match command {
-            LaunchCommand::Test => &self.test_command,
-            LaunchCommand::Server => &self.server_command,
-        };
+    async fn launch_proc(&mut self, command: ExecutableCommand, name: String) -> Result<Process, CoreError> {
         self.launcher
-            .launch(command.clone(), is_test, name, self.core_name.clone())
+            .launch(command.clone(), name, self.core_name.clone())
             .await
             .map_err(|e| CoreError::LaunchFailed {
                 command: command.to_string(),
@@ -864,9 +832,15 @@ impl Core {
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
-    async fn log(&self, timestamp: Timestamp, source_id: NodeId, message: LogMessage) {
+    async fn log(
+        &self,
+        timestamp: Timestamp,
+        source_id: NodeId,
+        override_name: Option<String>,
+        message: LogMessage,
+    ) {
         let node = &self.nodes[source_id];
-        let resolved = self.nodes.resolve_alias(source_id);
+        let source_name = override_name.unwrap_or_else(|| node.name.clone());
         if let Some(marker) = &message.marker {
             let (color, reset) = if let Some(color) = marker.color {
                 (log_marker_ansi_color(color), log_color::RESET)
@@ -875,21 +849,16 @@ impl Core {
             };
             log::info!(
                 "[{}][{}]: {color}[{}] {}{reset}",
-                resolved.commandline(),
-                node.name(),
+                source_name,
+                node.name.clone(),
                 marker.label,
                 message.text
             );
         } else {
-            log::info!(
-                "[{}][{}]: {}",
-                resolved.commandline(),
-                node.name(),
-                message.text
-            );
+            log::info!("[{}][{}]: {}", source_name, node.name.clone(), message.text);
         }
         self.event_sender
-            .send(Event::log(timestamp, source_id, message))
+            .send(Event::log(timestamp, node.name.clone(), message))
             .await
             .ok();
     }
@@ -900,7 +869,7 @@ impl Core {
         self.event_sender
             .send(Event::log(
                 self.timestamp_source.now(),
-                self.test_node_id,
+                self.core_name.clone(),
                 LogMessage {
                     text: message,
                     marker: Some(LogMarker {
@@ -924,69 +893,83 @@ impl Core {
         source_id: NodeId,
         exit_code: i32,
     ) -> Result<(), CoreError> {
+        // shutdown all nodes that were launched by this node
+        for node in self
+            .nodes
+            .iter_mut()
+            .filter(|node| node.launched_by == Some(source_id))
+        {
+            node.begin_shutdown();
+        }
+
+        let node = &self.nodes[source_id];
         self.event_sender
-            .send(Event::node_disconnected(timestamp, source_id))
+            .send(Event::node_disconnected(timestamp, node.name.clone()))
             .await
             .ok();
-        let node = self.nodes.resolve_alias(source_id);
         log::info!(
             "[{}] command `{}` exited with code {exit_code}",
             node.name,
             node.commandline()
         );
 
-        self.exit_set.insert(source_id, exit_code);
-        self.maybe_notify_exited(source_id).await;
+        if source_id == self.test_node_id {
+            self.test_exit_code = exit_code;
+        }
+
+        self.check_exited(source_id).await;
         Ok(())
     }
 
-    /// checks if the given node has all remaining message delivered and sends an
-    /// exit notification to the test node
-    async fn maybe_notify_exited(&mut self, node_id: NodeId) {
-        let exit_code = match self.exit_set.entry(node_id) {
-            Entry::Occupied(entry) => {
-                if self.network.has_remaining_messages(node_id) {
-                    return;
-                }
-                entry.remove()
-            }
-            Entry::Vacant(_) => return,
-        };
+    /// checks if the given node has exited and all remaining message delivered, sends an exit
+    /// notification to the test node, if requested, and collects garbage for that node
+    async fn check_exited(&mut self, node_id: NodeId) {
+        let node = &mut self.nodes[node_id];
+        if !node.has_finished() {
+            return;
+        }
+        if self.network.has_remaining_messages(node_id) {
+            return;
+        }
 
-        let node = self.nodes.resolve_alias(node_id);
+        let node = &self.nodes[node_id];
         if node.exited_message_requested {
             let timestamp = self.timestamp_source.now();
+            let Some(launched_by) = node.launched_by.and_then(|id| self.nodes.get(id)) else {
+                return;
+            };
             // box the future to because of recursing in an async function
             let future = self.dispatch(
                 None,
                 timestamp,
                 Message::new(
                     &self.core_name,
-                    &self.test_node_name,
+                    &launched_by.name,
                     None,
                     Exited {
                         name: node.name.clone(),
-                        exit_code,
+                        exit_code: node.exit_code().unwrap(),
                     },
                 ),
             );
             Box::pin(future).await.unwrap();
         }
+        self.cleanup_node(node_id);
     }
 
     /// split a string into the program and args
     /// for now, it just splits the string using the space character,
     /// taking the first element as the program and the remaining elements as the args
-    pub fn split_command(command: impl AsRef<str>) -> Command {
+    pub fn split_command(command: impl AsRef<str>) -> ExecutableCommand {
         Self::make_command(command.as_ref().split(" ").map(|s| s.to_string()))
     }
 
     /// make a command from an iterator of strings. The first element becomes the program,
     /// the remaining elements become the args
-    pub fn make_command(command: impl IntoIterator<Item = String>) -> Command {
+    pub fn make_command(command: impl IntoIterator<Item = String>) -> ExecutableCommand {
         let mut command = command.into_iter();
         let program = command.next().unwrap_or_default();
         let args = command.collect::<Vec<_>>();
-        Command { program, args }
+        ExecutableCommand { program, args }
     }
 }

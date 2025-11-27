@@ -11,7 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::node::NodeId;
 use libproto::services::LogMessage;
 use libproto::Message;
 
@@ -56,12 +55,10 @@ pub enum EventData {
     /// Emitted after a process exited
     NodeDisconnected {
         /// the id of the process that exited. See [`NodeId`]
-        id: NodeId,
+        name: String,
     },
     /// Emitted after a process is started
     NodeLaunched {
-        /// the id of the process that started. See [`NodeId`]
-        id: NodeId,
         /// the name of the node
         name: String,
         /// the commandline (executable + arguments) that was used to launch the process
@@ -69,8 +66,8 @@ pub enum EventData {
     },
     /// Emitted when a node logs a line
     Log {
-        /// the id of the process that logged a line. See [`NodeId`]
-        id: NodeId,
+        /// the name of the node that logged a line
+        node: String,
         /// the log message and possible marker
         message: LogMessage,
     },
@@ -105,14 +102,12 @@ impl Event {
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
     pub fn node_launched(
         timestamp: Timestamp,
-        id: NodeId,
         name: String,
         commandline: String,
     ) -> Self {
         Self::new(
             timestamp,
             EventData::NodeLaunched {
-                id,
                 name,
                 commandline,
             },
@@ -120,12 +115,12 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_disconnected(timestamp: Timestamp, id: NodeId) -> Self {
-        Self::new(timestamp, EventData::NodeDisconnected { id })
+    pub fn node_disconnected(timestamp: Timestamp, name: String) -> Self {
+        Self::new(timestamp, EventData::NodeDisconnected { name })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
-    pub fn log(timestamp: Timestamp, id: NodeId, message: LogMessage) -> Self {
-        Self::new(timestamp, EventData::Log { id, message })
+    pub fn log(timestamp: Timestamp, name: String, message: LogMessage) -> Self {
+        Self::new(timestamp, EventData::Log { node: name, message })
     }
 }

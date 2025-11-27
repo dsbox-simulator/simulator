@@ -7,7 +7,6 @@ use tokio::io::{
 };
 use tokio::select;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::oneshot;
 
 use libproto::Message;
 
@@ -20,7 +19,6 @@ pub async fn process_io_helper<I, O, E, C>(
     stdout: O,
     stderr: E,
     child: C,
-    finished: oneshot::Sender<()>,
 ) where
     I: AsyncWrite + Unpin,
     O: AsyncRead + Unpin,
@@ -29,23 +27,21 @@ pub async fn process_io_helper<I, O, E, C>(
 {
     let mut stdout_closed = false;
     let mut stderr_closed = false;
-    let mut finished = Some(finished);
     let mut stdin = Some(BufWriter::new(stdin));
     let mut stdout = BufReader::new(stdout).lines();
     let mut stderr = BufReader::new(stderr).lines();
     let mut child = pin!(child);
-    while finished.is_some() || !stdout_closed || !stderr_closed || stdin.is_some() {
+    loop {
         select! {
             stdout_line = stdout.next_line(), if !stdout_closed => {
                 let Ok(Some(line)) = stdout_line else { stdout_closed = true; continue; };
-                let send_result = match Message::from_json(&line) {
-                    Ok(message) => event_sender.send(ProcessEvent::Message(message)).await,
+                match Message::from_json(&line) {
+                    Ok(message) => event_sender.send(ProcessEvent::Message(message)).await.ok(),
                     Err(error) => event_sender.send(ProcessEvent::SerializeError {
                         raw_message: line.clone(),
                         error: error.to_string(),
-                    }).await
+                    }).await.ok()
                 };
-                if send_result.is_err() { break; }
             },
             stderr_line = stderr.next_line(), if !stderr_closed => {
                 let Ok(Some(mut log)) = stderr_line else { stderr_closed = true; continue; };
@@ -57,28 +53,28 @@ pub async fn process_io_helper<I, O, E, C>(
                     stderr_closed = true;
                     continue;
                 }
-                if event_sender.send(ProcessEvent::Log(log.to_owned())).await.is_err() {
-                    break;
-                }
+                event_sender.send(ProcessEvent::Log(log.to_owned())).await.ok();
             }
-            command = command_receiver.recv(), if stdin.is_some() => {
+            command = command_receiver.recv() => {
                 let Some(command) = command else {
-                    stdin.take();
+                    // close the stdin handle by taking & dropping it
+                    if let Some(mut stdin) = stdin.take() {
+                        stdin.flush().await.ok();
+                    }
                     continue;
                 };
-                let Some(stdin) = stdin.as_mut() else { continue; };
                 match command {
                     ProcessCommand::Deliver(message) => {
+                        let Some(stdin) = stdin.as_mut() else { continue; };
                         if let Err(error) = write_message(message, stdin).await {
                             log::error!("failed to deliver message to process: {error}");
                         }
                     }
                 }
             },
-            exit_code = &mut child, if finished.is_some() => {
+            exit_code = &mut child => {
                 event_sender.send(ProcessEvent::Exited(exit_code)).await.ok();
-                finished.take().unwrap().send(()).ok();
-                stdin.take();
+                break;
             },
         }
     }

@@ -15,7 +15,7 @@ interface Color {
 }
 
 interface Event {
-    node: number
+    node_index: number
     logicalClock: number,
     label?: string,
     color: string,
@@ -23,8 +23,8 @@ interface Event {
 }
 
 interface Communication {
-    from: number,
-    to: number,
+    from_index: number,
+    to_index: number,
     sentLogicalClock: number,
     receivedLogicalClock: number,
     color: string,
@@ -42,33 +42,37 @@ interface LamportDiagramProps {
     eventRadius?: number,
 }
 
-function toLamportProps(nodes: NodeInfo[],
+function toLamportProps(nodes: Map<string, NodeInfo>,
                         messages: MessageInfo[],
                         highlighted: MessageInfo | LogInfo | null,
                         logs: LogInfo[]): [LamportDiagramProps, Map<string, Color>] {
-    const nodeNames = [...nodes.map(n => n.name)];
+    const nodeNames = [];
+    const nodeIndices = new Map<string, number>();
+    for (const node of nodes.values()) {
+        nodeIndices.set(node.name, nodeNames.length);
+        nodeNames.push(node.name);
+    }
+
     const colorMap = new Map<string, Color>();
-    const nodesByName = new Map<string, number>(nodeNames.map((n, i) => [n, i]));
-    const nodesById = new Map<number, number>(nodes.map((n, i) => [n.id, i]));
     const events: Event[] = [];
     const communications: Communication[] = [];
     const highlights: { event?: number, communication?: number }[] = [];
     for (const message of messages) {
         const isHighlighted = isMessage(highlighted) && message.sentAt === highlighted.sentAt;
-        const sender = nodesByName.get(message.message.src);
-        const receiver = nodesByName.get(message.message.dest);
+        const sender = nodeIndices.get(message.message.src);
+        const receiver = nodeIndices.get(message.message.dest);
         if (sender === undefined || receiver === undefined) continue;
         events.push({
-            node: sender,
+            node_index: sender,
             logicalClock: message.sentAt.logical,
             data: message,
             color: message.dropped ? "red" : "white",
         });
         if (message.deliveredAt !== null) {
-            const receiver = nodesByName.get(message.message.dest);
+            const receiver = nodeIndices.get(message.message.dest);
             if (receiver === undefined) continue;
             events.push({
-                node: receiver,
+                node_index: receiver,
                 logicalClock: message.deliveredAt.logical,
                 data: message,
                 color: "white",
@@ -80,8 +84,8 @@ function toLamportProps(nodes: NodeInfo[],
             }
 
             communications.push({
-                from: sender,
-                to: receiver,
+                from_index: sender,
+                to_index: receiver,
                 sentLogicalClock: message.sentAt.logical,
                 receivedLogicalClock: message.deliveredAt.logical,
                 color: color.color,
@@ -98,10 +102,10 @@ function toLamportProps(nodes: NodeInfo[],
     }
     for (const log of logs) {
         const isHighlighted = isLog(highlighted) && log.timestamp.logical == highlighted.timestamp.logical;
-        const node = nodesById.get(log.node);
+        const node = nodeIndices.get(log.node);
         if (node === undefined) continue;
         events.push({
-            node,
+            node_index: node,
             data: log,
             logicalClock: log.timestamp.logical,
             label: log.message.marker?.label,
@@ -120,7 +124,7 @@ function toLamportProps(nodes: NodeInfo[],
 }
 
 export default function LamportDiagram({nodes, messages, highlighted, setHighlighted, logs}: {
-    nodes: NodeInfo[],
+    nodes: Map<string, NodeInfo>,
     messages: MessageInfo[],
     highlighted: MessageInfo | LogInfo | null,
     setHighlighted: (highlighted: MessageInfo | LogInfo | null) => void,
@@ -229,8 +233,8 @@ function LamportDiagramImpl({
                     <g stroke="currentColor">
                         {communications.map((comm, index) => {
                             const highlighted = highlights.find(h => h.communication === index) !== undefined;
-                            const sentP = timelinePos(comm.from, comm.sentLogicalClock);
-                            const receivedP = timelinePos(comm.to, comm.receivedLogicalClock);
+                            const sentP = timelinePos(comm.from_index, comm.sentLogicalClock);
+                            const receivedP = timelinePos(comm.to_index, comm.receivedLogicalClock);
                             const fullSegment = new Segment(sentP, receivedP);
                             // inset the arrow segment by the radius of the event markers + the end marker arrow
                             const arrowSegment = new Segment(
@@ -252,7 +256,7 @@ function LamportDiagramImpl({
                     <g stroke="currentColor" fill="white">
                         {events.map((event, index) =>
                             <EventLabel key={event.logicalClock} event={event}
-                                        pos={timelinePos(event.node, event.logicalClock)}
+                                        pos={timelinePos(event.node_index, event.logicalClock)}
                                         radius={eventRadius}
                                         highlighted={highlights.find(h => h.event === index) !== undefined}
                                         hover={hover}/>)}

@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "dsbox"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "clap",
@@ -1319,12 +1319,14 @@ dependencies = [
 
 [[package]]
 name = "dsbox-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "bstr",
  "chrono",
+ "enumflags2",
  "futures",
+ "libc",
  "libproto",
  "log",
  "mlua",

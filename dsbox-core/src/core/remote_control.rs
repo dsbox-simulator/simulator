@@ -1,9 +1,8 @@
 //! Commands used to control the execution of the simulation
 
-use crate::Command;
 use crate::core::error::CoreError;
 use crate::core::event::Event;
-use crate::core::{Core, CoreReset, CoreState};
+use crate::core::{Core, CoreState};
 
 /// A command for the [`Core`] to control its execution
 #[derive(Debug)]
@@ -18,12 +17,6 @@ pub enum RemoteCommand {
     Deliver(usize),
     /// drops a message form the network with the given sent timestamp
     Drop(usize),
-    /// restart the core entirely from the beginning, potentially giving new
-    /// test and launch commands.
-    Restart {
-        test_command: Option<Command>,
-        server_command: Option<Command>,
-    },
     /// instructs the core to shut down
     Shutdown,
 }
@@ -40,21 +33,9 @@ impl Core {
                 self.deliver_by_timestamp(sent_timestamp).await?
             }
             RemoteCommand::Drop(sent_timestamp) => self.drop_by_timestamp(sent_timestamp).await,
-            RemoteCommand::Restart {
-                test_command,
-                server_command,
-            } => {
-                if let Some(test_command) = test_command {
-                    self.test_command = test_command;
-                }
-                if let Some(server_command) = server_command {
-                    self.server_command = server_command;
-                }
-                self.restart(true).await?;
-            }
             RemoteCommand::Shutdown => {
-                self.begin_shutdown(0..);
-                self.reset_flag = Some(CoreReset::Shutdown);
+                // terminate all nodes
+                self.terminate(|_| true).await;
             }
         }
         Ok(())

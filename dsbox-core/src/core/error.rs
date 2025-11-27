@@ -19,14 +19,33 @@ pub enum CoreError {
         /// the specific error that prevented dispatching.
         kind: DispatchErrorKind,
     },
-    /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message) was sent by a non-test node.
-    IllegalCoreMessage { source: String, message: Message },
+    /// A core [`Message`] (i.e. a [`Launch`](libproto::system::Launch) message or a [`BeginMonitor`](libproto::system::BeginMonitor) message)
+    /// was sent by a node without the required capability.
+    IllegalCoreMessage {
+        name: String,
+        message: Message,
+    },
     /// A test program has failed to send the initial `register` message, indicating that it might not be a test program at all
-    MissingRegistration { source: String },
+    MissingRegistration {
+        name: String,
+    },
     /// A non-test program has sent a `register` message, indicating that it might actually be a test program
-    UnexpectedRegistration { source: String },
+    UnexpectedRegistration {
+        name: String,
+    },
     /// A core [`Message`] could not be handled, because it's type is unknown.
-    UnknownCoreMessage { source: String, ty: String },
+    UnknownCoreMessage {
+        name: String,
+        ty: String,
+    },
+    /// A node with an already existing name was attempted to be launched
+    DuplicateNodeName {
+        name: String,
+    },
+    /// A command name was not found in the list of registered commands
+    UnknownCommand {
+        command_name: String,
+    },
     /// An error occurred trying to launch a process.
     LaunchFailed {
         command: String,
@@ -65,27 +84,33 @@ impl Display for CoreError {
                     message.to_json()
                 )
             }
-            CoreError::IllegalCoreMessage { source, message } => {
+            CoreError::IllegalCoreMessage { name, message } => {
                 write!(
                     f,
-                    "non-test process `{source}` tried to send core message: {}",
+                    "node `{name}` tried to send a system message without the required capability: {}",
                     message.to_json()
                 )
             }
-            CoreError::MissingRegistration { source } => {
+            CoreError::MissingRegistration { name } => {
                 write!(
                     f,
-                    "process `{source}` has failed to register as a test. Are you sure you have specified the correct test program?"
+                    "node `{name}` has failed to send a registration message. Are you sure you have specified the correct command?"
                 )
             }
-            CoreError::UnexpectedRegistration { source } => {
+            CoreError::UnexpectedRegistration { name } => {
                 write!(
                     f,
-                    "process `{source}` has attempted to register as a test. Are you sure you have specified the correct server program?"
+                    "node `{name}` has attempted to send a registration message. Are you sure you have specified the correct command?"
                 )
             }
-            CoreError::UnknownCoreMessage { source, ty } => {
-                write!(f, "unknown system message from `{source}`: {ty}")
+            CoreError::UnknownCoreMessage { name, ty } => {
+                write!(f, "unknown system message from node `{name}`: {ty}")
+            }
+            CoreError::DuplicateNodeName { name } => {
+                write!(f, "a node with name `{name}` already exists")
+            }
+            CoreError::UnknownCommand { command_name } => {
+                write!(f, "a command with name `{command_name}` was not registered")
             }
             CoreError::LaunchFailed {
                 command,
@@ -117,7 +142,7 @@ impl Display for DispatchErrorKind {
                 if expected.len() == 1 {
                     write!(
                         f,
-                        "source name does not match source id, expected one `{:?}`, got `{:?}`",
+                        "source name does not match source id, expected `{:?}`, got `{:?}`",
                         expected[0], got
                     )
                 } else {

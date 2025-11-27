@@ -1,3 +1,3 @@
-pub fn current() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+pub fn current() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
 }
