@@ -19,7 +19,6 @@
 use std::collections::HashMap;
 use std::ops::Add;
 
-use async_channel::{Receiver, Sender};
 use enumflags2::BitFlags;
 use tokio::time::{Duration, Instant};
 
@@ -35,31 +34,29 @@ use node::Node;
 use crate::capabilities::Capability;
 use crate::command::RunnerCommand;
 use crate::core::error::{CoreError, DispatchErrorKind};
-use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
 use crate::core::node::NodeId;
 use crate::core::node_manager::NodeManager;
-use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerKind, TimerManager};
 use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
 use crate::process::RunnerManger;
 use crate::process::RunningHandle;
 use crate::process::{ProcessCommand, ProcessEvent, ProcessEventOrExit};
-use crate::timestamp::{Timestamp, TimestampSource};
 pub use builder::Builder;
-use libproto::system::control::{Break, Control, SubscribeEvents};
+use libproto::system::control::{Break, Control};
+use libproto::system::event::{Event, PublishEvent, SubscribeEvents, Timestamp};
 use network::Network;
+use timestamp_source::TimestampSource;
 
 mod builder;
 pub mod error;
-pub mod event;
 mod monitor;
 mod network;
 mod node;
 mod node_manager;
-pub mod remote_control;
 mod timer_manager;
+mod timestamp_source;
 mod version;
 
 /// The core of the simulation
@@ -86,16 +83,10 @@ pub struct Core {
     /// source for logical timestamps within a single run.
     /// Is automatically reset after a `reset` command is received
     timestamp_source: TimestampSource,
-    /// Receives [`RemoteCommand`]s for controlling this [`Core`]
-    remote_receiver: Receiver<RemoteCommand>,
-    /// is cloned and given to whoever wants to remote control this [`Core`].
-    remote_sender: Sender<RemoteCommand>,
-    /// [`Event`]s are sent into this channel,
-    event_sender: Sender<Event>,
-    /// is cloned and given to whoever wants to subscribe to events from this [`Core`]
-    event_receiver: Receiver<Event>,
     /// list of all active [`MonitorSession`]s
     monitor_sessions: Vec<MonitorSession>,
+    /// list of all nodes that have subscribed to events
+    event_subscribers: Vec<NodeId>,
     /// the [`Network`] contains all [`Message`]s that are sent, but not yet delivered
     network: Network,
     /// a manager for outstanding timers
@@ -122,8 +113,6 @@ enum CoreState {
 
 impl From<Builder> for Core {
     fn from(builder: Builder) -> Self {
-        let (remote_sender, remote_receiver) = async_channel::bounded(1);
-        let (event_sender, event_receiver) = async_channel::unbounded();
         Self {
             core_name: builder.core_name,
             commands: builder.commands,
@@ -137,10 +126,7 @@ impl From<Builder> for Core {
             } else {
                 CoreState::Running
             },
-            remote_sender,
-            remote_receiver,
-            event_sender,
-            event_receiver,
+            event_subscribers: Vec::new(),
             monitor_sessions: Vec::new(),
             network: Network::new(),
             timer_manager: TimerManager::new(),
@@ -157,10 +143,8 @@ impl Core {
     async fn setup(&mut self) -> Result<(), CoreError> {
         // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
         // is re-started
-        self.event_sender
-            .send(Event::reset(self.timestamp_source.now()))
-            .await
-            .ok();
+        let timestamp = self.timestamp_source.now();
+        self.publish_event(Event::reset(timestamp)).await;
 
         for init in std::mem::take(&mut self.launch_initial) {
             self.launch(
@@ -173,16 +157,6 @@ impl Core {
             .await?;
         }
         Ok(())
-    }
-
-    /// Returns a new [`Sender`] for sending [`RemoteCommand`]s to the [`Core`]
-    pub fn remote_control(&self) -> Sender<RemoteCommand> {
-        self.remote_sender.clone()
-    }
-
-    /// Returns a new [`ProtocolSubscriber`] for listening to events from the [`Core`]
-    pub fn subscribe_events(&self) -> Receiver<Event> {
-        self.event_receiver.clone()
     }
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
@@ -231,9 +205,6 @@ impl Core {
         } else {
             tokio::select! {
                 biased;
-                remote_command = self.remote_receiver.recv() => {
-                    self.handle_command(remote_command.unwrap()).await?;
-                }
                 process_event_or_exit = self.nodes.recv_any(), if num_running > 0 => {
                     if let Some((event, node_id)) = process_event_or_exit {
                         let ts = self.timestamp_source.now();
@@ -332,10 +303,8 @@ impl Core {
             source = self.nodes.lookup(&message.src);
         }
 
-        self.event_sender
-            .send(Event::send_message(timestamp, message.clone()))
-            .await
-            .ok();
+        self.publish_event(Event::send_message(timestamp, message.clone()))
+            .await;
 
         if message.dest == self.core_name {
             // handle messages to the core immediately, circumventing the network
@@ -365,10 +334,8 @@ impl Core {
             let timestamp = self.timestamp_source.now();
             self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
                 .await;
-            self.event_sender
-                .send(Event::deliver_message(timestamp, sent_timestamp.logical))
-                .await
-                .ok();
+            self.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical))
+                .await;
             self.nodes[destination_id].send(ProcessCommand::Deliver(message));
             Ok(())
         } else {
@@ -636,14 +603,10 @@ impl Core {
     async fn create_alias(&mut self, for_id: NodeId, alias: Alias) {
         let error = match self.nodes.add_alias(for_id, alias.name.clone()) {
             Ok(Some(node)) => {
-                self.event_sender
-                    .send(Event::node_launched(
-                        self.timestamp_source.now(),
-                        alias.name,
-                        node.commandline().to_owned(),
-                    ))
-                    .await
-                    .ok();
+                let timestamp = self.timestamp_source.now();
+                let commandline = node.commandline().to_owned();
+                self.publish_event(Event::node_launched(timestamp, alias.name, commandline))
+                    .await;
                 None
             }
             Ok(None) => None,
@@ -678,14 +641,9 @@ impl Core {
             Ok(node) => {
                 let name = node.name.clone();
                 let commandline = node.commandline().to_owned();
-                self.event_sender
-                    .send(Event::node_launched(
-                        self.timestamp_source.now(),
-                        name,
-                        commandline,
-                    ))
-                    .await
-                    .ok();
+                let timestamp = self.timestamp_source.now();
+                self.publish_event(Event::node_launched(timestamp, name, commandline))
+                    .await;
                 None
             }
             Err(e) => Some(e.to_string()),
@@ -822,29 +780,27 @@ impl Core {
         } else {
             log::info!("[{}][{}]: {}", source_name, node.name.clone(), message.text);
         }
-        self.event_sender
-            .send(Event::log(timestamp, node.name.clone(), message))
-            .await
-            .ok();
+        let name = node.name.clone();
+        self.publish_event(Event::log(timestamp, name, message))
+            .await;
     }
 
     async fn log_core_error(&mut self, error: CoreError) {
         let message = format!("simulation core error:\n{error}");
         log::error!("{message}");
-        self.event_sender
-            .send(Event::log(
-                self.timestamp_source.now(),
-                self.core_name.clone(),
-                LogMessage {
-                    text: message,
-                    marker: Some(LogMarker {
-                        label: "ERR".to_string(),
-                        color: Some(LogMarkerColor::Red),
-                    }),
-                },
-            ))
-            .await
-            .ok();
+        let timestamp = self.timestamp_source.now();
+        self.publish_event(Event::log(
+            timestamp,
+            self.core_name.clone(),
+            LogMessage {
+                text: message,
+                marker: Some(LogMarker {
+                    label: "ERR".to_string(),
+                    color: Some(LogMarkerColor::Red),
+                }),
+            },
+        ))
+        .await;
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
@@ -868,10 +824,9 @@ impl Core {
         }
 
         let node = &self.nodes[source_id];
-        self.event_sender
-            .send(Event::node_disconnected(timestamp, node.name.clone()))
-            .await
-            .ok();
+        let name = node.name.clone();
+        self.publish_event(Event::node_disconnected(timestamp, name))
+            .await;
         log::info!(
             "[{}] command `{}` exited with code {exit_code}",
             node.name,
@@ -880,6 +835,23 @@ impl Core {
 
         self.check_exited(source_id).await;
         Ok(())
+    }
+
+    async fn publish_event(&self, event: Event) {
+        for node in self.event_subscribers.iter().copied() {
+            // monitor events are not dispatched via the network. Instead, they are delivered directly
+            // to the target node. Among other reasons, this de-clutters the message log (monitor events
+            // should not be the target of any kind of debugging/visualization)
+            let node = &self.nodes[node];
+            node.send(ProcessCommand::Deliver(Message::new(
+                &self.core_name,
+                &node.name,
+                None,
+                PublishEvent {
+                    event: event.clone(),
+                },
+            )));
+        }
     }
 
     /// checks if the given node has exited and all remaining message delivered, sends an exit

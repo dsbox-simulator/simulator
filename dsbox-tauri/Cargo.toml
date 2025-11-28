@@ -24,7 +24,6 @@ env_logger = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-log = { workspace = true }
 tokio = { workspace = true }
-async-channel = { workspace = true }
 dsbox-core = { workspace = true }
 clap = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

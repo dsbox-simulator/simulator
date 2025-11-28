@@ -26,7 +26,3 @@ pub enum Control {
     Shutdown,
 }
 
-/// Sent from a node to the core in order to receive a complete protocol of every event
-/// happening in the core
-#[derive(Payload, Serialize, Deserialize)]
-pub struct SubscribeEvents {}

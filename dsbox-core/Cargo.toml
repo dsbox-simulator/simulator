@@ -12,7 +12,6 @@ tokio = { workspace = true, features = ["full"] }
 chrono = { workspace = true }
 regex = { workspace = true }
 futures = { workspace = true }
-async-channel = { workspace = true }
 enumflags2 = { workspace = true }
 
 mlua = { workspace = true, optional = true }

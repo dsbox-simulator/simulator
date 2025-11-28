@@ -7,14 +7,25 @@
 //! - log lines that are written by nodes
 //!
 //! Other events may be added in the future.
-//! These events are published by a running [`Core`](super::Core).
+//! These events are published by a running core.
 
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use crate::Payload;
+use crate::services::LogMessage;
+use crate::Message;
 
-use libproto::services::LogMessage;
-use libproto::Message;
+/// Sent from a node to the core in order to receive a complete protocol of every event
+/// happening in the core
+#[derive(Payload, Serialize, Deserialize)]
+pub struct SubscribeEvents {}
 
-use crate::timestamp::Timestamp;
+/// Sent from the core to a node that has subscribed to events via a [`SubscribeEvents`] message
+#[derive(Payload, Serialize, Deserialize)]
+pub struct PublishEvent {
+    #[serde(flatten)]
+    pub event: Event,
+}
 
 /// Describes a single event (in [`Event::data`]) with a timestamp (in [`Event::timestamp`])
 #[derive(Clone, Serialize, Deserialize)]
@@ -122,5 +133,43 @@ impl Event {
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]
     pub fn log(timestamp: Timestamp, name: String, message: LogMessage) -> Self {
         Self::new(timestamp, EventData::Log { node: name, message })
+    }
+}
+
+/// A logical and physical timestamp.
+///
+/// Logical timestamps must always be strictly increasing for each [`Timestamp`] created,
+/// whereas physical timestamps may adhere to whatever [`chrono`] specifies.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct Timestamp {
+    /// the logical timestamp, strictly increasing for each newly created [`Timestamp`].
+    pub logical: usize,
+    /// the physical timestamp, time-zone aware and created with [`Local::now`].
+    pub physical: DateTime<Local>,
+}
+
+impl PartialEq<Self> for Timestamp {
+    fn eq(&self, other: &Self) -> bool {
+        self.logical == other.logical
+    }
+}
+
+impl Eq for Timestamp {}
+
+impl PartialOrd for Timestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.logical.partial_cmp(&other.logical)
+    }
+}
+
+impl Ord for Timestamp {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.logical.cmp(&other.logical)
+    }
+}
+
+impl std::fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.physical)
     }
 }

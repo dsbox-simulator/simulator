@@ -1,6 +1,7 @@
 //! System messages, that the core uses to communicate with nodes.
 
 pub mod control;
+pub mod event;
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};

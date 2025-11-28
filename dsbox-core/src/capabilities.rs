@@ -33,7 +33,7 @@ pub enum Capability {
     ControlCore,
 
     /// Capability to subscribe to all events using a
-    /// [`SubscribeEvents`](libproto::system::control::SubscribeEvents) Message
+    /// [`SubscribeEvents`](libproto::system::event::SubscribeEvents) Message
     SubscribeEvents,
 }
 
@@ -41,7 +41,8 @@ pub fn has_capability(capabilities: BitFlags<Capability>, message_type: impl AsR
         use libproto::system::*;
         use libproto::system::control::*;
         use libproto::Payload;
-        match message_type.as_ref() {
+    use libproto::system::event::SubscribeEvents;
+    match message_type.as_ref() {
                 Break::TYPE => capabilities.contains(Capability::Break),
                 Launch::TYPE => capabilities.contains(Capability::LaunchNodes),
                 Alias::TYPE => capabilities.contains(Capability::LaunchAlias),

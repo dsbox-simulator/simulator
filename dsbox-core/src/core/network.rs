@@ -7,9 +7,8 @@
 use std::collections::VecDeque;
 
 use libproto::Message;
-
+use libproto::system::event::Timestamp;
 use crate::core::node::NodeId;
-use crate::timestamp::Timestamp;
 
 /// holds all [`Message`]s that are in transit, ordered by the timestamp they are sent.
 /// [`Message`]s can be removed in FIFO order, or one-by-one using the logical timestamp as a key
