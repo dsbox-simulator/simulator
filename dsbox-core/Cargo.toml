@@ -22,10 +22,13 @@ wasmtime-wasi = { workspace = true, optional = true }
 libc = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { workspace = true, optional = true }
+windows = { workspace = true }
 bstr = { workspace = true, optional = true }
 
+[target.'cfg(not(windows))'.dependencies]
+shlex = { workspace = true }
+
 [features]
-lua = ["dep:mlua", "dep:windows", "dep:bstr"]
+lua = ["dep:mlua", "dep:bstr"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:libc"]
 default = ["lua"]

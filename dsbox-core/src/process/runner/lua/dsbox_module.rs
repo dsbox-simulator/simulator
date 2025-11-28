@@ -1,4 +1,4 @@
-use super::Exit;
+use super::{Abort, Exit};
 
 use crate::process::runner::lua::appdata::DsboxData;
 use crate::process::{ProcessCommand, ProcessEvent};
@@ -11,7 +11,7 @@ use mlua::{
 use std::sync::Arc;
 use std::time::Duration;
 
-pub fn init_dsbox_module(lua: &Lua, args: Vec<String>) -> Result<()> {
+pub fn init_dsbox_module(lua: &Lua, args: &[String]) -> Result<()> {
     let mod_dsbox = lua.create_table()?;
 
     let args_table = lua.create_table()?;
@@ -80,6 +80,9 @@ fn lua_recv(lua: &Lua, (timeout,): (Option<Number>,)) -> Result<Option<Value>> {
                 message_set_metatable(&lua, message, &message_class)?;
             }
             Ok(Some(value))
+        }
+        ProcessCommand::Abort => {
+            Err(Error::ExternalError(Arc::new(Abort)))
         }
     }
 }

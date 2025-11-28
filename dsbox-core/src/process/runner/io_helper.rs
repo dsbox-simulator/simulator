@@ -1,25 +1,31 @@
+use crate::process::runner::lines_helper::LinesHelper;
+use crate::process::runner::{CommandReceiver, EventSender};
+use crate::process::{ProcessCommand, ProcessEvent};
+use libproto::Message;
 use std::io;
 use std::ops::Add;
 use std::time::Duration;
-use libproto::Message;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::time::Instant;
-use crate::process::{ProcessCommand, ProcessEvent};
-use crate::process::runner::{CommandReceiver, EventSender};
-use crate::process::runner::lines_helper::LinesHelper;
+
+pub trait ChildHandle {
+    fn stdin(&mut self) -> Option<impl AsyncWrite + Unpin + 'static>;
+    fn stdout(&mut self) -> Option<impl AsyncRead + Unpin + 'static>;
+    fn stderr(&mut self) -> Option<impl AsyncRead + Unpin + 'static>;
+
+    fn abort(&mut self);
+    fn wait(&mut self) -> impl Future<Output = i32>;
+}
 
 pub async fn io_helper(
     sender: EventSender,
     mut receiver: CommandReceiver,
-    mut stdin: impl AsyncWrite + Unpin,
-    stdout: impl AsyncRead + Unpin,
-    stderr: impl AsyncRead + Unpin,
-    child: impl Future<Output = i32>,
+    mut child: impl ChildHandle,
 ) -> i32 {
-    let mut stdout = LinesHelper::new(stdout);
-    let mut stderr = LinesHelper::new(stderr);
+    let mut stdout = LinesHelper::new(child.stdout().unwrap());
+    let mut stderr = LinesHelper::new(child.stderr().unwrap());
+    let mut stdin = child.stdin().unwrap();
     let mut exit_code = None;
-    let mut child = std::pin::pin!(child);
 
     while !stdout.is_closed() || !stderr.is_closed() || !receiver.is_closed() || exit_code.is_none()
     {
@@ -31,9 +37,9 @@ pub async fn io_helper(
                 handle_log(stderr_line, &sender, &mut stderr).await
             },
             command = receiver.recv(), if !receiver.is_closed() => {
-                handle_command(command, &mut stdin).await;
+                handle_command(command, &mut stdin, &mut child).await;
             }
-            code = &mut child, if exit_code.is_none() => {
+            code = child.wait(), if exit_code.is_none() => {
                 exit_code = Some(code);
             }
         }
@@ -75,7 +81,11 @@ async fn handle_log<T: AsyncRead + Unpin>(
     sender.send(ProcessEvent::Log(line)).await.ok();
 }
 
-async fn handle_command(command: Option<ProcessCommand>, mut stdin: impl AsyncWrite + Unpin) {
+async fn handle_command(
+    command: Option<ProcessCommand>,
+    mut stdin: impl AsyncWrite + Unpin,
+    child: &mut impl ChildHandle,
+) {
     let Some(command) = command else {
         return;
     };
@@ -85,6 +95,9 @@ async fn handle_command(command: Option<ProcessCommand>, mut stdin: impl AsyncWr
             message.push('\n');
             stdin.write_all(message.as_bytes()).await.ok();
             stdin.flush().await.ok();
+        }
+        ProcessCommand::Abort => {
+            child.abort();
         }
     }
 }

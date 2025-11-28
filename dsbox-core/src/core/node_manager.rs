@@ -1,7 +1,7 @@
 use crate::core::node::{Node, NodeId};
-use crate::process::ProcessEvent;
-use std::collections::HashMap;
+use crate::process::ProcessEventOrExit;
 use std::collections::hash_map::{self, Entry};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::future::Future;
 use std::iter::Map;
@@ -9,7 +9,7 @@ use std::ops::{Index, IndexMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct NodeManager {
+pub(super) struct NodeManager {
     by_name: HashMap<String, NodeId>,
     by_id: HashMap<NodeId, Node>,
 }
@@ -28,10 +28,6 @@ impl NodeManager {
             by_name: HashMap::new(),
             by_id: HashMap::new(),
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.by_id.len()
     }
 
     pub fn add(&mut self, node: Node) -> Result<&mut Node, DuplicateName> {
@@ -92,10 +88,6 @@ impl NodeManager {
         self.by_id.get(&node_id)
     }
 
-    pub fn get_mut(&mut self, node_id: NodeId) -> Option<&mut Node> {
-        self.by_id.get_mut(&node_id)
-    }
-
     pub fn lookup(&self, name: &str) -> Option<NodeId> {
         self.by_name.get(name).copied()
     }
@@ -128,7 +120,7 @@ impl NodeManager {
 
     pub fn recv_any<'a>(
         &'a mut self,
-    ) -> impl Future<Output = Option<(ProcessEvent, NodeId)>> + Unpin + 'a {
+    ) -> impl Future<Output = Option<(ProcessEventOrExit, NodeId)>> + Unpin + 'a {
         RecvAny {
             nodes: &mut self.by_id,
         }
@@ -176,12 +168,12 @@ impl<'a> IntoIterator for &'a mut NodeManager {
     }
 }
 
-pub struct RecvAny<'a> {
+pub(super) struct RecvAny<'a> {
     nodes: &'a mut HashMap<NodeId, Node>,
 }
 
 impl<'a> Future for RecvAny<'a> {
-    type Output = Option<(ProcessEvent, NodeId)>;
+    type Output = Option<(ProcessEventOrExit, NodeId)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut num_closed = 0;

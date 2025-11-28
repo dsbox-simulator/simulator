@@ -7,10 +7,9 @@ mod wasm;
 mod lua;
 
 mod io_helper;
-mod manager;
-mod handle;
+pub mod manager;
+pub mod handle;
 
-use crate::command::ExecutableCommand;
 use crate::process::{ProcessCommand, ProcessEvent};
 use std::pin::Pin;
 
@@ -22,14 +21,14 @@ type CommandReceiver = tokio::sync::mpsc::UnboundedReceiver<ProcessCommand>;
 pub trait Runner {
     fn run(
         &mut self,
-        command: ExecutableCommand,
+        args: Vec<String>,
         sender: EventSender,
         receiver: CommandReceiver,
     ) -> impl Future<Output = i32> + Send + 'static;
 }
 
 type RunnerFn = dyn FnMut(
-    ExecutableCommand,
+    Vec<String>,
     EventSender,
     CommandReceiver,
 ) -> Pin<Box<dyn Future<Output = i32> + Send + 'static>>;
@@ -50,10 +49,10 @@ impl DynRunner {
 
     pub fn run(
         &mut self,
-        command: ExecutableCommand,
+        args: impl Into<Vec<String>>,
         sender: EventSender,
         receiver: CommandReceiver,
     ) -> Pin<Box<dyn Future<Output = i32> + Send + 'static>> {
-        (self.runner)(command, sender, receiver)
+        (self.runner)(args.into(), sender, receiver)
     }
 }

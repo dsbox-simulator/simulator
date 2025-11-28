@@ -4,4 +4,6 @@ use libproto::Message;
 pub enum ProcessCommand {
     /// Deliver the [`Message`] to the process (i.e write it to its `stdin`).
     Deliver(Message),
+    /// Abort the process, by any means necessary (i.e. a native process via SIGKILL, or similar)
+    Abort,
 }

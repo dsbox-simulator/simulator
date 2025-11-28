@@ -1,6 +1,7 @@
 use crate::capabilities;
 use crate::capabilities::Capability;
-use crate::process::{Process, ProcessCommand, ProcessEvent};
+use crate::process::RunningHandle;
+use crate::process::{ProcessCommand, ProcessEventOrExit};
 use enumflags2::BitFlags;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -13,7 +14,7 @@ use std::task::{Context, Poll};
 #[serde(transparent)]
 pub struct NodeId(usize);
 
-pub struct Node {
+pub(super) struct Node {
     /// the [`NodeId`] of this node
     pub id: NodeId,
     /// if this node was launched by another node sending a [`Launch`](libproto::system::Launch) Message
@@ -27,8 +28,8 @@ pub struct Node {
     pub exited_message_requested: bool,
     /// `true` if this node is still required to send a `register` message to the core. Used for better error messages
     pub requires_registration: bool,
-    /// handle to the process that "runs" this node
-    process: Process,
+    /// handle to the actually running "process" (might be a native process, might be lua code, etc.)
+    handle: RunningHandle,
 }
 
 impl Node {
@@ -38,7 +39,7 @@ impl Node {
         capabilities: BitFlags<Capability>,
         exited_message_requested: bool,
         requires_registration: bool,
-        process: Process,
+        handle: RunningHandle,
     ) -> Self {
         Self {
             id: NodeId::next(),
@@ -47,40 +48,40 @@ impl Node {
             capabilities,
             requires_registration,
             exited_message_requested,
-            process,
+            handle,
         }
     }
 
-    pub fn commandline(&self) -> String {
-        self.process.commandline()
+    pub fn commandline(&self) -> &str {
+        self.handle.commandline()
     }
 
     pub fn send(&self, command: ProcessCommand) -> bool {
-        self.process.send(command)
+        self.handle.send(command)
     }
 
     pub fn has_capability(&self, message_type: impl AsRef<str>) -> bool {
         capabilities::has_capability(self.capabilities, message_type)
     }
 
-    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<ProcessEvent>> {
-        std::pin::pin!(self.process.recv()).poll(cx)
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<ProcessEventOrExit>> {
+        std::pin::pin!(self.handle.recv()).poll(cx)
     }
 
     pub fn has_finished(&self) -> bool {
-        self.process.has_finished()
+        self.handle.has_finished()
     }
 
     pub fn exit_code(&self) -> Option<i32> {
-        self.process.exit_code()
+        self.handle.exit_code()
     }
 
     pub fn begin_shutdown(&mut self) {
-        self.process.begin_shutdown()
+        self.handle.begin_shutdown()
     }
 
     pub async fn terminate(&mut self) {
-        self.process.terminate().await
+        self.handle.terminate().await
     }
 }
 

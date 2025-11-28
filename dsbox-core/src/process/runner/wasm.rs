@@ -1,13 +1,18 @@
-use crate::command::ExecutableCommand;
 use crate::process::ProcessEvent;
-use crate::process::runner::{CommandReceiver, Runner, EventSender, io_helper};
+use crate::process::runner::io_helper::ChildHandle;
+use crate::process::runner::{CommandReceiver, EventSender, Runner, io_helper};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::path::Path;
-use tokio::io::{ReadHalf, SimplexStream, WriteHalf};
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite, ReadHalf, SimplexStream, WriteHalf};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::error::TryRecvError;
+use tokio::task::JoinHandle;
 use wasmtime::component::Component;
 use wasmtime::{
-    CodeBuilder, CodeHint, Config, Engine, Linker, Module, Store, TypedFunc, component,
+    CodeBuilder, CodeHint, Config, Engine, Linker, Module, Store, TypedFunc, UpdateDeadline,
+    component,
 };
 use wasmtime_wasi::cli::{AsyncStdinStream, AsyncStdoutStream};
 use wasmtime_wasi::p1::WasiP1Ctx;
@@ -19,6 +24,9 @@ pub struct WasmRunner {
     /// cache of loaded and compile wasm files, so that they do not need to be loaded and compiled
     /// multiple times for launching multiple processes form the same file
     wasm_cache: HashMap<String, LoadedWasm>,
+    /// handle to the task that periodically increments the epoch counter.
+    /// This task is aborted on `drop`
+    epoch_task: JoinHandle<()>,
 }
 
 #[derive(Clone)]
@@ -33,14 +41,34 @@ enum EntryPoint {
     P3(p3::bindings::Command),
 }
 
+struct WasmChildHandle {
+    stdin: Option<WriteHalf<SimplexStream>>,
+    stdout: Option<ReadHalf<SimplexStream>>,
+    stderr: Option<ReadHalf<SimplexStream>>,
+    task_handle: JoinHandle<i32>,
+    abort: Option<oneshot::Sender<()>>,
+}
+
 impl WasmRunner {
     pub fn new() -> Self {
         let mut config = Config::new();
         config.async_support(true);
+        config.epoch_interruption(true);
         let engine = Engine::new(&config).expect("failed to initialize wasmtime engine");
+        let epoch_task = {
+            let engine = engine.clone();
+            tokio::task::spawn(async move {
+                let interval = Duration::from_millis(200);
+                loop {
+                    tokio::time::sleep(interval).await;
+                    engine.increment_epoch();
+                }
+            })
+        };
         Self {
             engine,
             wasm_cache: HashMap::new(),
+            epoch_task,
         }
     }
 
@@ -67,13 +95,13 @@ impl WasmRunner {
 impl Runner for WasmRunner {
     fn run(
         &mut self,
-        command: ExecutableCommand,
+        args: Vec<String>,
         sender: EventSender,
         receiver: CommandReceiver,
     ) -> impl Future<Output = i32> + 'static {
         let engine = self.engine.clone();
-        let wasm = self.load_file(command.program);
-        let (mut store, stdin, stdout, stderr) = new_store(&engine, command.args);
+        let wasm = self.load_file(args[0].clone());
+        let (mut store, stdin, stdout, stderr) = new_store(&engine, &args[1..]);
         async move {
             let wasm = match wasm {
                 Ok(wasm) => wasm,
@@ -89,20 +117,25 @@ impl Runner for WasmRunner {
                     return -1;
                 }
             };
-            let child = tokio::task::spawn_blocking(move || {
-                tokio::runtime::Handle::current().block_on(run_wasm(entry_point, store))
+            let (abort_tx, abort_rx) = oneshot::channel();
+            let task_handle = tokio::task::spawn_blocking(move || {
+                tokio::runtime::Handle::current().block_on(run_wasm(entry_point, store, abort_rx))
             });
-            io_helper::io_helper(sender, receiver, stdin, stdout, stderr, async move {
-                child.await.unwrap_or(1)
-            })
-            .await
+            let child = WasmChildHandle {
+                stdin: Some(stdin),
+                stdout: Some(stdout),
+                stderr: Some(stderr),
+                task_handle,
+                abort: Some(abort_tx),
+            };
+            io_helper::io_helper(sender, receiver, child).await
         }
     }
 }
 
 fn new_store(
     engine: &Engine,
-    args: Vec<String>,
+    args: &[String],
 ) -> (
     Store<WasiP1Ctx>,
     WriteHalf<SimplexStream>,
@@ -139,7 +172,15 @@ async fn instantiate_wasm(
     }
 }
 
-async fn run_wasm(entry_point: EntryPoint, mut store: Store<WasiP1Ctx>) -> i32 {
+async fn run_wasm(
+    entry_point: EntryPoint,
+    mut store: Store<WasiP1Ctx>,
+    mut abort: oneshot::Receiver<()>,
+) -> i32 {
+    store.epoch_deadline_callback(move |_| match abort.try_recv() {
+        Ok(()) | Err(TryRecvError::Closed) => Ok(UpdateDeadline::Interrupt),
+        Err(TryRecvError::Empty) => Ok(UpdateDeadline::Yield(1)),
+    });
     let result = match entry_point {
         EntryPoint::P1(start_fn) => start_fn.call_async(store, ()).await.map(|_| ()),
         EntryPoint::P2(command) => command.wasi_cli_run().call_run(store).await.map(|_| ()),
@@ -212,5 +253,33 @@ pub fn exit_code(e: wasmtime::Error) -> i32 {
         }
     } else {
         0
+    }
+}
+
+impl ChildHandle for WasmChildHandle {
+    fn stdin(&mut self) -> Option<impl AsyncWrite + Unpin + 'static> {
+        self.stdin.take()
+    }
+
+    fn stdout(&mut self) -> Option<impl AsyncRead + Unpin + 'static> {
+        self.stdout.take()
+    }
+
+    fn stderr(&mut self) -> Option<impl AsyncRead + Unpin + 'static> {
+        self.stderr.take()
+    }
+
+    fn abort(&mut self) {
+        self.abort.take().map(|a| a.send(()).ok());
+    }
+
+    fn wait(&mut self) -> impl Future<Output = i32> {
+        async move { (&mut self.task_handle).await.unwrap_or(1) }
+    }
+}
+
+impl Drop for WasmRunner {
+    fn drop(&mut self) {
+        self.epoch_task.abort();
     }
 }

@@ -3,10 +3,9 @@ mod dsbox_module;
 #[cfg(windows)]
 mod windows;
 
-use crate::command::ExecutableCommand;
+use crate::process::ProcessEvent;
 use crate::process::runner::lua::appdata::DsboxData;
 use crate::process::runner::{CommandReceiver, EventSender, Runner};
-use crate::process::ProcessEvent;
 use mlua::{Error, Lua, LuaOptions, StdLib, Table, Value};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -21,6 +20,10 @@ pub struct LuaRunner {
 /// from a lua script.
 #[derive(Debug, Copy, Clone)]
 pub(self) struct Exit(i32);
+
+/// a custom error type that can be used to communicate an abort from the core
+#[derive(Debug, Copy, Clone)]
+pub(self) struct Abort;
 
 impl LuaRunner {
     pub async fn new(allow_os_libs: bool) -> Self {
@@ -58,7 +61,7 @@ impl LuaRunner {
 
     /// creates a new [`Lua`] instance and sets it up with some globals, like `args`, send and receive
     /// functions, a Message class etc.
-    fn setup_lua(&self, lua_file: &Path, args: Vec<String>) -> mlua::Result<Lua> {
+    fn setup_lua(&self, lua_file: &Path, args: &[String]) -> mlua::Result<Lua> {
         let libs = StdLib::TABLE
             | StdLib::STRING
             | StdLib::UTF8
@@ -164,12 +167,12 @@ impl LuaRunner {
 impl Runner for LuaRunner {
     fn run(
         &mut self,
-        command: ExecutableCommand,
+        args: Vec<String>,
         sender: EventSender,
         receiver: CommandReceiver,
     ) -> impl Future<Output = i32> + 'static {
-        let lua_file = PathBuf::from(command.program);
-        let lua = self.setup_lua(&lua_file, command.args);
+        let lua_file = PathBuf::from(&args[0]);
+        let lua = self.setup_lua(&lua_file, &args[1..]);
 
         async move {
             let lua = match lua {
@@ -219,6 +222,8 @@ fn extract_exit_code(result: Result<i32, Error>) -> Result<i32, Error> {
             if let Error::ExternalError(std_error) = cause.as_ref() {
                 if let Some(exit) = std_error.downcast_ref::<Exit>() {
                     return Ok(exit.0);
+                } else if std_error.is::<Abort>() {
+                    return Ok(0);
                 }
             }
             Err(Error::CallbackError { traceback, cause })
@@ -226,6 +231,8 @@ fn extract_exit_code(result: Result<i32, Error>) -> Result<i32, Error> {
         Err(Error::ExternalError(std_error)) => {
             if let Some(exit) = std_error.downcast_ref::<Exit>() {
                 Ok(exit.0)
+            } else if std_error.is::<Abort>() {
+                Ok(0)
             } else {
                 Err(Error::ExternalError(std_error))
             }
@@ -240,3 +247,10 @@ impl std::fmt::Display for Exit {
     }
 }
 impl std::error::Error for Exit {}
+
+impl std::fmt::Display for Abort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Abort")
+    }
+}
+impl std::error::Error for Abort {}

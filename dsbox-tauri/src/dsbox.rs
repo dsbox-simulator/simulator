@@ -1,5 +1,5 @@
 use async_channel::{Receiver, Sender};
-use dsbox_core::command::ExecutableCommand;
+use dsbox_core::command::RunnerCommand;
 use dsbox_core::core::event::Event;
 use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
@@ -20,12 +20,13 @@ pub struct DsboxState {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Commands {
-    pub test_command: ExecutableCommand,
-    pub server_command: ExecutableCommand,
+    pub test_command: String,
+    pub server_command: String,
 }
 
 impl DsboxState {
     pub fn new(commands: Commands, lua_unsafe: bool) -> Self {
+
         let core = Core::builder(
             commands.test_command.clone(),
             commands.server_command.clone(),
@@ -64,8 +65,8 @@ pub async fn subscribe_events(
 #[tauri::command]
 pub async fn restart(
     state: tauri::State<'_, RwLock<DsboxState>>,
-    test_command: Option<ExecutableCommand>,
-    server_command: Option<ExecutableCommand>,
+    test_command: Option<RunnerCommand>,
+    server_command: Option<RunnerCommand>,
 ) -> tauri::Result<()> {
     let mut core = state.write().await;
     core.remote.send(RemoteCommand::Shutdown).await.ok();

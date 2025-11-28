@@ -1,7 +1,6 @@
-use crate::command::ExecutableCommand;
 use crate::process::event::ProcessEventOrExit;
 use crate::process::runner::{CommandSender, EventReceiver};
-use crate::process::{Process, ProcessCommand, ProcessEvent};
+use crate::process::ProcessCommand;
 use tokio::task::JoinHandle;
 
 pub struct RunningHandle {
@@ -9,7 +8,7 @@ pub struct RunningHandle {
     receiver: EventReceiver,
     join_handle: JoinHandle<i32>,
     exit_code: Option<i32>,
-    command: ExecutableCommand,
+    commandline: String,
 }
 
 impl RunningHandle {
@@ -17,14 +16,14 @@ impl RunningHandle {
         sender: CommandSender,
         receiver: EventReceiver,
         handle: JoinHandle<i32>,
-        command: ExecutableCommand,
+        commandline: String,
     ) -> Self {
         Self {
             sender: Some(sender),
             receiver,
             join_handle: handle,
             exit_code: None,
-            command,
+            commandline,
         }
     }
 
@@ -83,7 +82,7 @@ impl RunningHandle {
     }
 
     /// returns the full commandline (path + args) that was used to launch the process
-    pub fn commandline(&self) -> String {
-        self.command.to_string()
+    pub fn commandline(&self) -> &str {
+        &self.commandline
     }
 }

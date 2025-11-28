@@ -13,7 +13,7 @@ use dsbox_core::core::remote_control::RemoteCommand;
 use dsbox_core::core::Core;
 
 use async_channel::{Receiver, Sender};
-use dsbox_core::command::ExecutableCommand;
+use dsbox_core::command::RunnerCommand;
 use serde::Serialize;
 use serde_json::Value;
 use std::future::poll_fn;
@@ -30,8 +30,8 @@ pub struct App {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Commands {
-    test_command: ExecutableCommand,
-    server_command: ExecutableCommand,
+    test_command: RunnerCommand,
+    server_command: RunnerCommand,
 }
 
 impl App {
@@ -120,7 +120,7 @@ impl App {
         }
         match method {
             "restart" => {
-                dispatch!(restart(test_command: Option<ExecutableCommand>, server_command: Option<ExecutableCommand>))
+                dispatch!(restart(test_command: Option<RunnerCommand>, server_command: Option<RunnerCommand>))
             }
             "break" => dispatch!(break_()),
             "resume" => dispatch!(resume()),
@@ -165,8 +165,8 @@ impl App {
 
     async fn restart(
         &mut self,
-        test_command: Option<ExecutableCommand>,
-        server_command: Option<ExecutableCommand>,
+        test_command: Option<RunnerCommand>,
+        server_command: Option<RunnerCommand>,
     ) -> Result<(), response::Error> {
         if let Some(test_command) = &test_command {
             self.commands.test_command = test_command.clone();

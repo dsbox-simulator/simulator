@@ -32,8 +32,8 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
-use crate::command::ExecutableCommand;
 use crate::capabilities::Capability;
+use crate::command::RunnerCommand;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -43,12 +43,13 @@ use crate::core::remote_control::RemoteCommand;
 use crate::core::timer_manager::{Timer, TimerKind, TimerManager};
 use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
-use crate::process::{Process, ProcessCommand, ProcessEvent};
+use crate::process::RunnerManger;
+use crate::process::RunningHandle;
+use crate::process::{ProcessCommand, ProcessEvent, ProcessEventOrExit};
 use crate::timestamp::{Timestamp, TimestampSource};
 pub use builder::Builder;
 use libproto::system::control::{Break, Control, SubscribeEvents};
 use network::Network;
-use crate::process::launcher::Launcher;
 
 mod builder;
 pub mod error;
@@ -67,34 +68,24 @@ mod version;
 /// by collecting [`ProcessEvent`]s from processes, delivering [`Message`]s and listening for
 /// remote control commands.
 pub struct Core {
-    /// source for logical timestamps within a single run.
-    /// Is automatically reset after a `reset` command is received
-    timestamp_source: TimestampSource,
-    /// Manages all nodes that are participating in the simulation
-    nodes: NodeManager,
-    /// the [`NodeId`] of the test node
-    test_node_id: NodeId,
-    /// the name of the test node
-    test_node_name: String,
-    /// the exit code of the test. Will be returned from [`Core::run`], and in cli mode
-    /// determines the return code of the whole program. Useful for automated testing.
-    test_exit_code: i32,
     /// the name of the simulation core
     /// this name must be used as the source/destination for "core" messages and is used in core logs
     core_name: String,
-    /// launches new processes
-    launcher: Launcher,
+    /// list of commands and node names that should be launched initially
+    launch_initial: Vec<InitialLaunch>,
+    /// Manages all nodes that are participating in the simulation
+    nodes: NodeManager,
     /// registry of commands, that can be launched through [`Launch`] Messages, and their capabilities
-    commands: HashMap<String, (ExecutableCommand, BitFlags<Capability>)>,
+    commands: HashMap<String, (RunnerCommand, BitFlags<Capability>)>,
+    /// runs new nodes
+    runner_manager: RunnerManger,
     /// `true` if the program was started in interactive mode (i.e. with the user interface enabled)
     interactive: bool,
-    /// The core expects each test to immediately send a `register` message
-    /// to the core, so that it can detect if a server program has accidentally been
-    /// started as a test program by the user, and can report accordingly.
-    /// This flag can be used to suppress that behaviour.
-    omit_test_register: bool,
     /// The current execution state (i.e. running/stepping/paused...)
     state: CoreState,
+    /// source for logical timestamps within a single run.
+    /// Is automatically reset after a `reset` command is received
+    timestamp_source: TimestampSource,
     /// Receives [`RemoteCommand`]s for controlling this [`Core`]
     remote_receiver: Receiver<RemoteCommand>,
     /// is cloned and given to whoever wants to remote control this [`Core`].
@@ -111,6 +102,13 @@ pub struct Core {
     timer_manager: TimerManager,
 }
 
+/// describes a node that should be launched initially, on [`Core::run`]
+struct InitialLaunch {
+    pub command: String,
+    pub name: String,
+    pub requires_registration: bool,
+}
+
 /// The execution state for a [`Core`]
 #[derive(Copy, Clone, Eq, PartialEq)]
 enum CoreState {
@@ -122,39 +120,18 @@ enum CoreState {
     Stepping,
 }
 
-
 impl From<Builder> for Core {
     fn from(builder: Builder) -> Self {
         let (remote_sender, remote_receiver) = async_channel::bounded(1);
         let (event_sender, event_receiver) = async_channel::unbounded();
         Self {
-            timestamp_source: TimestampSource::new(),
-            nodes: NodeManager::new(),
-            // TODO: Core::test_node_id should not be needed anymore in the future
-            test_node_id: unsafe { std::mem::transmute(0usize) },
-            test_node_name: builder.test_node_name,
-            test_exit_code: 0,
             core_name: builder.core_name,
-            launcher: Launcher::new(builder.allow_lua_unsafe),
-            commands: HashMap::from([
-                (
-                    "test".to_owned(),
-                    (
-                        builder.test_command,
-                        BitFlags::<Capability>::default()
-                            | Capability::LaunchNodes
-                            | Capability::LaunchAlias
-                            | Capability::Monitor
-                            | Capability::Reset,
-                    ),
-                ),
-                (
-                    "server".to_owned(),
-                    (builder.server_command, BitFlags::<Capability>::default()),
-                ),
-            ]),
+            commands: builder.commands,
+            runner_manager: builder.runner_manager,
+            launch_initial: builder.launch_initial,
+            nodes: NodeManager::new(),
             interactive: builder.interactive,
-            omit_test_register: builder.omit_test_register,
+            timestamp_source: TimestampSource::new(),
             state: if builder.interactive {
                 CoreState::Paused
             } else {
@@ -173,20 +150,27 @@ impl From<Builder> for Core {
 
 impl Core {
     /// returns a new [`Builder`] for configuring and building a new [`Core`]
-    pub fn builder(test_command: ExecutableCommand, server_command: ExecutableCommand) -> Builder {
-        Builder::new(test_command, server_command)
+    pub fn builder() -> Builder {
+        Builder::new()
     }
 
     async fn setup(&mut self) -> Result<(), CoreError> {
-        if self.commands.get("test").unwrap().0.program != "" {
-            // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
-            // is re-started
-            self.event_sender
-                .send(Event::reset(self.timestamp_source.now()))
-                .await
-                .ok();
+        // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
+        // is re-started
+        self.event_sender
+            .send(Event::reset(self.timestamp_source.now()))
+            .await
+            .ok();
 
-            self.test_node_id = self.launch_test_node(self.test_node_name.clone()).await?;
+        for init in std::mem::take(&mut self.launch_initial) {
+            self.launch(
+                &init.command,
+                None,
+                init.requires_registration,
+                false,
+                init.name,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -203,11 +187,11 @@ impl Core {
 
     /// starts the execution. This function consumes the passed [`Core`] because it cannot be restarted
     /// after [`Core::run`] returns.
-    pub async fn run(mut self) -> i32 {
+    pub async fn run(mut self) {
         // launch test node/publish initial reset event
         if let Err(e) = self.setup().await {
             self.log_core_error(e).await;
-            return -1;
+            return;
         }
         loop {
             let num_running = self.nodes.iter().filter(|n| !n.has_finished()).count();
@@ -222,7 +206,6 @@ impl Core {
                 self.log_core_error(e).await;
             }
         }
-        self.test_exit_code
     }
 
     fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
@@ -251,10 +234,10 @@ impl Core {
                 remote_command = self.remote_receiver.recv() => {
                     self.handle_command(remote_command.unwrap()).await?;
                 }
-                process_event = self.nodes.recv_any(), if num_running > 0 => {
-                    if let Some((event, node_id)) = process_event {
+                process_event_or_exit = self.nodes.recv_any(), if num_running > 0 => {
+                    if let Some((event, node_id)) = process_event_or_exit {
                         let ts = self.timestamp_source.now();
-                        self.handle_process_event(ts, node_id, event).await?;
+                        self.handle_process_event_or_exit(ts, node_id, event).await?;
                     }
                 }
                 timer = self.timer_manager.wait_next() => {
@@ -263,6 +246,25 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    /// Handles a single [`ProcessEvent`].
+    async fn handle_process_event_or_exit(
+        &mut self,
+        timestamp: Timestamp,
+        source_id: NodeId,
+        process_event_or_exit: ProcessEventOrExit,
+    ) -> Result<bool, CoreError> {
+        match process_event_or_exit {
+            ProcessEventOrExit::Event(process_event) => {
+                self.handle_process_event(timestamp, source_id, process_event)
+                    .await
+            }
+            ProcessEventOrExit::Exited(exit_code) => {
+                self.process_exited(timestamp, source_id, exit_code).await?;
+                Ok(true)
+            }
+        }
     }
 
     /// Handles a single [`ProcessEvent`].
@@ -286,12 +288,8 @@ impl Core {
                 self.log(timestamp, source_id, None, log_message).await;
                 Ok(true)
             }
-            ProcessEvent::Exited(exit_code) => {
-                self.process_exited(timestamp, source_id, exit_code).await?;
-                Ok(true)
-            }
             ProcessEvent::SerializeError { raw_message, error } => Err(CoreError::SerializeError {
-                source: self.nodes[source_id].commandline(),
+                source: self.nodes[source_id].commandline().to_owned(),
                 raw_message,
                 error,
             }),
@@ -642,7 +640,7 @@ impl Core {
                     .send(Event::node_launched(
                         self.timestamp_source.now(),
                         alias.name,
-                        node.commandline(),
+                        node.commandline().to_owned(),
                     ))
                     .await
                     .ok();
@@ -679,7 +677,7 @@ impl Core {
         let error = match launch_result {
             Ok(node) => {
                 let name = node.name.clone();
-                let commandline = node.commandline();
+                let commandline = node.commandline().to_owned();
                 self.event_sender
                     .send(Event::node_launched(
                         self.timestamp_source.now(),
@@ -745,43 +743,6 @@ impl Core {
         Ok(&mut self.nodes[node_id])
     }
 
-    async fn launch_test_node(&mut self, name: impl Into<String>) -> Result<NodeId, CoreError> {
-        let name = name.into();
-        let node_id = self
-            .launch("test", None, !self.omit_test_register, false, name.clone())
-            .await?
-            .id;
-        let node = &self.nodes[node_id];
-        let commandline = node.commandline();
-        self.event_sender
-            .send(Event::node_launched(
-                self.timestamp_source.now(),
-                name.clone(),
-                commandline,
-            ))
-            .await
-            .ok();
-
-        let timestamp = self.timestamp_source.now();
-        self.dispatch(
-            None,
-            timestamp,
-            Message::new(
-                &self.core_name,
-                &name,
-                None,
-                Init {
-                    name: name.clone(),
-                    core_name: self.core_name.clone(),
-                    core_version: version::current(),
-                    is_test: true,
-                },
-            ),
-        )
-        .await?;
-        Ok(node_id)
-    }
-
     /// launches a new process and creates the corresponding node
     async fn launch(
         &mut self,
@@ -791,14 +752,7 @@ impl Core {
         exited_message_requested: bool,
         name: String,
     ) -> Result<&mut Node, CoreError> {
-        let (command, capabilities) = self
-            .commands
-            .get(command_name)
-            .ok_or_else(|| CoreError::UnknownCommand {
-                command_name: command_name.to_string(),
-            })?
-            .clone();
-        let proc = self.launch_proc(command, name.clone()).await?;
+        let (handle, capabilities) = self.run_process(command_name).await?;
         let node = self
             .nodes
             .add(Node::new(
@@ -807,7 +761,7 @@ impl Core {
                 capabilities,
                 exited_message_requested,
                 requires_registration,
-                proc,
+                handle,
             ))
             .map_err(|_| CoreError::DuplicateNodeName { name })?;
         let commandline = node.commandline();
@@ -821,14 +775,25 @@ impl Core {
         Ok(node)
     }
 
-    async fn launch_proc(&mut self, command: ExecutableCommand, name: String) -> Result<Process, CoreError> {
-        self.launcher
-            .launch(command.clone(), name, self.core_name.clone())
-            .await
-            .map_err(|e| CoreError::LaunchFailed {
-                command: command.to_string(),
-                error: e,
-            })
+    async fn run_process(
+        &mut self,
+        command_name: &str,
+    ) -> Result<(RunningHandle, BitFlags<Capability>), CoreError> {
+        let (command, capabilities) =
+            self.commands
+                .get(command_name)
+                .ok_or_else(|| CoreError::UnknownCommand {
+                    command_name: command_name.to_string(),
+                    available_commands: self.commands.keys().cloned().collect(),
+                })?;
+        let handle = self
+            .runner_manager
+            .run(command)
+            .map_err(|_| CoreError::UnknownRunner {
+                runner_name: command.runner().to_owned(),
+                available_runners: self.runner_manager.available_runners().cloned().collect(),
+            })?;
+        Ok((handle, *capabilities))
     }
 
     /// Sends a log event to all subscribers and writes the line to the current logger implementation.
@@ -913,10 +878,6 @@ impl Core {
             node.commandline()
         );
 
-        if source_id == self.test_node_id {
-            self.test_exit_code = exit_code;
-        }
-
         self.check_exited(source_id).await;
         Ok(())
     }
@@ -955,21 +916,5 @@ impl Core {
             Box::pin(future).await.unwrap();
         }
         self.cleanup_node(node_id);
-    }
-
-    /// split a string into the program and args
-    /// for now, it just splits the string using the space character,
-    /// taking the first element as the program and the remaining elements as the args
-    pub fn split_command(command: impl AsRef<str>) -> ExecutableCommand {
-        Self::make_command(command.as_ref().split(" ").map(|s| s.to_string()))
-    }
-
-    /// make a command from an iterator of strings. The first element becomes the program,
-    /// the remaining elements become the args
-    pub fn make_command(command: impl IntoIterator<Item = String>) -> ExecutableCommand {
-        let mut command = command.into_iter();
-        let program = command.next().unwrap_or_default();
-        let args = command.collect::<Vec<_>>();
-        ExecutableCommand { program, args }
     }
 }

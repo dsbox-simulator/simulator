@@ -1,83 +1,12 @@
 //! Transparent handling of processes, both native, compiled to Webassembly and in the form of a lua script.
 
-use tokio::sync::mpsc::{Receiver, UnboundedSender};
-use tokio::task::JoinHandle;
-
-pub use crate::process::command::ProcessCommand;
-pub use crate::process::event::ProcessEvent;
+pub use command::ProcessCommand;
+pub use event::ProcessEvent;
+pub(crate) use event::ProcessEventOrExit;
+pub(crate) use runner::handle::RunningHandle;
+pub(crate) use runner::manager::RunnerManger;
+pub use runner::Runner;
 
 mod command;
 mod event;
-pub mod launcher;
 mod runner;
-
-/// Handle to a running process
-pub struct Process {
-    sender: Option<UnboundedSender<ProcessCommand>>,
-    receiver: Receiver<ProcessEvent>,
-    join_handle: Option<JoinHandle<()>>,
-    exit_code: Option<i32>,
-    pub command: crate::command::ExecutableCommand,
-}
-
-impl Process {
-    /// Send a [`ProcessCommand`] to the process.
-    pub fn send(&self, value: ProcessCommand) -> bool {
-        if let Some(sender) = &self.sender {
-            sender.send(value).is_ok()
-        } else {
-            false
-        }
-    }
-
-    pub async fn recv(&mut self) -> Option<ProcessEvent> {
-        let event = self.receiver.recv().await?;
-        if let ProcessEvent::Exited(exit_code) = &event {
-            self.exit_code = Some(*exit_code);
-        }
-        Some(event)
-    }
-
-    /// This drops the `command_sender`, so that threads waiting for [`ProcessCommand`]s from the
-    /// [`Core`](crate::core::Core) stop waiting and terminate.
-    pub fn begin_shutdown(&mut self) {
-        if self.sender.is_some() {
-            log::trace!("begin shutdown of process `{}`", self.commandline());
-        }
-        self.sender.take();
-    }
-
-    /// This waits for the tasks that handle the processes IO to finish
-    pub async fn terminate(&mut self) {
-        if let Some(join_handle) = self.join_handle.take() {
-            self.begin_shutdown();
-            self.receiver.close();
-            join_handle.await.ok();
-        }
-    }
-
-    /// Returns `true` if the process has stopped running and all messages have been received
-    pub fn has_finished(&self) -> bool {
-        if !self.receiver.is_empty() {
-            return false;
-        }
-        self.join_handle
-            .as_ref()
-            .map(|h| h.is_finished())
-            .unwrap_or(true)
-    }
-
-    /// returns the exit code of the process, if it has exited.
-    /// The exit code might be `Some` while [`Process::has_finished`] returns false
-    /// if the process has exited, but there are still process events to receive.
-    /// It is however guaranteed to be `Some` if [`Process::has_finished`] returns true,
-    /// by the fact that each process emits a [`ProcessEvent::Exited`] exactly once.
-    pub fn exit_code(&self) -> Option<i32> {
-        self.exit_code
-    }
-
-    /// returns the full commandline (path + args) that was used to launch the process
-    pub fn commandline(&self) -> String {
-        self.command.to_string()
-    }
-}

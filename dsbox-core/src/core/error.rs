@@ -45,6 +45,11 @@ pub enum CoreError {
     /// A command name was not found in the list of registered commands
     UnknownCommand {
         command_name: String,
+        available_commands: Vec<String>,
+    },
+    UnknownRunner {
+        runner_name: String,
+        available_runners: Vec<String>,
     },
     /// An error occurred trying to launch a process.
     LaunchFailed {
@@ -109,8 +114,11 @@ impl Display for CoreError {
             CoreError::DuplicateNodeName { name } => {
                 write!(f, "a node with name `{name}` already exists")
             }
-            CoreError::UnknownCommand { command_name } => {
-                write!(f, "a command with name `{command_name}` was not registered")
+            CoreError::UnknownCommand { command_name,available_commands } => {
+                write!(f, "a command with name `{command_name}` was not registered. Available commands are {available_commands:?}")
+            }
+            CoreError::UnknownRunner {runner_name, available_runners} => {
+                write!(f, "a runner with name `{runner_name}`. Available runners are {available_runners:?}")
             }
             CoreError::LaunchFailed {
                 command,

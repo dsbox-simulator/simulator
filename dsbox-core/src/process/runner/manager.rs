@@ -1,4 +1,4 @@
-use crate::command::ExecutableCommand;
+use crate::command::RunnerCommand;
 use crate::process::runner::handle::RunningHandle;
 use crate::process::runner::{DynRunner, Runner};
 use std::collections::HashMap;
@@ -22,19 +22,28 @@ impl RunnerManger {
         self.registered_runners.insert(name, DynRunner::new(runner));
     }
 
+    pub fn available_runners(&mut self) -> impl Iterator<Item = &String> {
+        self.registered_runners.keys()
+    }
+
     pub fn run(
         &mut self,
-        runner: &str,
-        command: ExecutableCommand,
+        command: &RunnerCommand,
     ) -> Result<RunningHandle, UnknownRunner> {
         let runner = self
             .registered_runners
-            .get_mut(runner)
+            .get_mut(command.runner())
             .ok_or_else(|| UnknownRunner)?;
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
-        let handle = tokio::task::spawn(runner.run(command.clone(), event_sender, command_receiver));
-        Ok(RunningHandle::new(command_sender, event_receiver, handle, command))
+        let handle =
+            tokio::task::spawn(runner.run(command.args(), event_sender, command_receiver));
+        Ok(RunningHandle::new(
+            command_sender,
+            event_receiver,
+            handle,
+            command.args().join(" "),
+        ))
     }
 }
 

@@ -17,14 +17,10 @@ pub fn run(args: cli::Cli) {
                 app.handle()
                     .plugin(tauri_plugin_log::Builder::default().skip_logger().build())?;
             }
-            let test_command = args.test_command.map(Core::split_command)
-                .unwrap_or_default();
-            let server_command = args.server_command.map(Core::make_command)
-                .unwrap_or_default();
             app.manage(RwLock::new(dsbox::DsboxState::new(
                 Commands {
-                    test_command,
-                    server_command,
+                    test_command: args.test_command,
+                    server_command: args.server_command,
                 },
                 args.lua_unsafe,
             )));
