@@ -1,11 +1,12 @@
-use crate::process::runner::io_helper::ChildHandle;
-use crate::process::runner::{io_helper, CommandReceiver, EventSender, Runner};
-use crate::process::ProcessEvent;
+use dsbox_core::{CommandReceiver, EventSender, Runner, ProcessEvent};
+use dsbox_runner_io_helper::{io_helper, ChildHandle};
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::process::{Child, Command};
 
 pub struct NativeRunner;
+
+struct NativeChildHandle(Child);
 
 impl Runner for NativeRunner {
     fn run(
@@ -36,29 +37,29 @@ async fn run_native(
             return -1;
         }
     };
-    io_helper::io_helper(sender, receiver, child).await
+    io_helper(sender, receiver, NativeChildHandle(child)).await
 }
 
-impl ChildHandle for Child {
+impl ChildHandle for NativeChildHandle {
     fn stdin(&mut self) -> Option<impl AsyncWrite + Unpin + 'static> {
-        self.stdin.take()
+        self.0.stdin.take()
     }
 
     fn stdout(&mut self) -> Option<impl AsyncRead + Unpin + 'static> {
-        self.stdout.take()
+        self.0.stdout.take()
     }
 
     fn stderr(&mut self) -> Option<impl AsyncRead + Unpin + 'static> {
-        self.stderr.take()
+        self.0.stderr.take()
     }
 
     fn abort(&mut self) {
-        self.start_kill().ok();
+        self.0.start_kill().ok();
     }
 
     fn wait(&mut self) -> impl Future<Output = i32> {
         async move {
-            self.wait()
+            self.0.wait()
                 .await
                 .map(|s| s.code())
                 .ok()

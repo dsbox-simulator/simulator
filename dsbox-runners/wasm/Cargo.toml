@@ -1,0 +1,12 @@
+[package]
+name = "dsbox-runner-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dsbox-core = { workspace = true }
+dsbox-runner-io-helper = { workspace = true }
+tokio = { workspace = true }
+libc = { workspace = true }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }

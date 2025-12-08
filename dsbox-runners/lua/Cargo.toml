@@ -1,0 +1,13 @@
+[package]
+name = "dsbox-runner-lua"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dsbox-core = { workspace = true }
+libproto = { workspace = true }
+mlua = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+libc = { workspace = true }

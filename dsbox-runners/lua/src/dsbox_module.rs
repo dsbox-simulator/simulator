@@ -1,7 +1,6 @@
 use super::{Abort, Exit};
 
-use crate::process::runner::lua::appdata::DsboxData;
-use crate::process::{ProcessCommand, ProcessEvent};
+use dsbox_core::{ProcessCommand, ProcessEvent};
 use libproto::Message;
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 use mlua::{
@@ -10,6 +9,7 @@ use mlua::{
 };
 use std::sync::Arc;
 use std::time::Duration;
+use crate::appdata::DsboxData;
 
 pub fn init_dsbox_module(lua: &Lua, args: &[String]) -> Result<()> {
     let mod_dsbox = lua.create_table()?;

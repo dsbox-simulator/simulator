@@ -25,6 +25,9 @@ tauri = { workspace = true }
 tauri-plugin-log = { workspace = true }
 tokio = { workspace = true }
 dsbox-core = { workspace = true }
+dsbox-runner-native = { workspace = true }
+dsbox-runner-lua = { workspace = true, optional = true }
+dsbox-runner-wasm = { workspace = true, optional = true}
 libproto = { workspace = true, features = ["system_messages"] }
 clap = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
@@ -34,8 +37,8 @@ enumflags2 = { workspace = true }
 
 
 [features]
-lua = ["dsbox-core/lua"]
-wasm = ["dsbox-core/wasm"]
+lua = ["dep:dsbox-runner-lua"]
+wasm = ["dep:dsbox-runner-wasm"]
 default = ["lua", "wasm"]
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

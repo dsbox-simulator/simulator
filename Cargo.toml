@@ -3,18 +3,25 @@
 members = [
     "dsbox-core",
     "dsbox-tauri",
-    "dsbox",
+    "dsbox-runners/native",
+    "dsbox-runners/io-helper",
+    "dsbox-runners/wasm",
+    "dsbox-runners/lua",
     "libproto",
     "payload_derive",
 ]
 
 resolver = "3"
 
-default-members = ["dsbox"]
+default-members = ["dsbox-tauri"]
 
 [workspace.dependencies]
 # workspace memebers
 dsbox-core = { path = "dsbox-core" }
+dsbox-runner-io-helper = { path = "dsbox-runners/io-helper"}
+dsbox-runner-native = { path = "dsbox-runners/native"}
+dsbox-runner-wasm = { path = "dsbox-runners/wasm"}
+dsbox-runner-lua = { path = "dsbox-runners/lua"}
 libproto = { path = "libproto" }
 payload_derive = { path = "payload_derive" }
 
@@ -33,14 +40,6 @@ shlex = "1.3.0"
 # async
 futures = "0.3.31"
 tokio = "1.48.0"
-
-# web
-axum = { version = "0.8.7", features = ["ws"] }
-flate2 = { version = "1.1.5" }
-mime_guess = { version = "2.0.5" }
-phf = { version = "0.13.1", default-features = false }
-phf_codegen = { version = "0.13.1" }
-tower-http = { version = "0.6.7", features = ["trace"] }
 
 # lua/wasm
 mlua = { version = "0.11.5", features = ["lua54", "async", "serialize", "vendored", "send"] }

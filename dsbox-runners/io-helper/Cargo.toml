@@ -1,0 +1,9 @@
+[package]
+name = "dsbox-runner-io-helper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dsbox-core = { workspace = true }
+libproto = { workspace = true }
+tokio = { workspace = true }

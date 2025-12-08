@@ -1,6 +1,7 @@
-use crate::process::runner::lines_helper::LinesHelper;
-use crate::process::runner::{CommandReceiver, EventSender};
-use crate::process::{ProcessCommand, ProcessEvent};
+mod lines_helper;
+
+use crate::lines_helper::LinesHelper;
+use dsbox_core::{CommandReceiver, EventSender, ProcessCommand, ProcessEvent};
 use libproto::Message;
 use std::io;
 use std::ops::Add;

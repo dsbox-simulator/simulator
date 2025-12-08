@@ -20,7 +20,7 @@ pub fn register_runners(
 ) -> Builder {
     #[cfg(feature = "lua")]
     fn lua_runner(builder: Builder, lua_unsafe: bool) -> Builder {
-        builder.register_runner("lua", dsbox_core::LuaRunner::new(lua_unsafe))
+        builder.register_runner("lua", dsbox_runner_lua::LuaRunner::new(lua_unsafe))
     }
     #[cfg(not(feature = "lua"))]
     fn lua_runner(builder: Builder, _: bool) -> Builder {
@@ -28,7 +28,7 @@ pub fn register_runners(
     }
     #[cfg(feature = "wasm")]
     fn wasm_runner(builder: Builder) -> Builder {
-        builder.register_runner("wasm", dsbox_core::WasmRunner::new())
+        builder.register_runner("wasm", dsbox_runner_wasm::WasmRunner::new())
     }
     #[cfg(not(feature = "wasm"))]
     fn wasm_runner(builder: Builder) -> Builder {
@@ -36,7 +36,7 @@ pub fn register_runners(
     }
 
     let builder = builder
-        .register_runner("native", dsbox_core::NativeRunner)
+        .register_runner("native", dsbox_runner_native::NativeRunner)
         .register_runner("remote_control", remote_control);
 
     let builder = lua_runner(builder, lua_unsafe);

@@ -3,12 +3,11 @@ mod dsbox_module;
 #[cfg(windows)]
 mod windows;
 
-use crate::process::ProcessEvent;
-use crate::process::runner::lua::appdata::DsboxData;
-use crate::process::runner::{CommandReceiver, EventSender, Runner};
+use dsbox_core::{CommandReceiver, EventSender, Runner, ProcessEvent};
 use mlua::{Error, Lua, LuaOptions, StdLib, Table, Value};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use crate::appdata::DsboxData;
 
 pub struct LuaRunner {
     luarocks_path: Option<String>,
@@ -187,8 +186,8 @@ impl Runner for LuaRunner {
             let result = tokio::task::spawn_blocking(|| {
                 chunk.call(()).map(|v: Value| v.as_i32().unwrap_or(0))
             })
-            .await
-            .expect("embedded lua interpreter panicked");
+                .await
+                .expect("embedded lua interpreter panicked");
             log::trace!("lua script `{}` finished", args.join(" "));
 
             let app_data = lua.remove_app_data::<DsboxData>().unwrap();

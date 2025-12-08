@@ -1,6 +1,5 @@
-use crate::process::ProcessEvent;
-use crate::process::runner::io_helper::ChildHandle;
-use crate::process::runner::{CommandReceiver, EventSender, Runner, io_helper};
+use dsbox_core::{CommandReceiver, EventSender, Runner, ProcessEvent};
+use dsbox_runner_io_helper::{io_helper, ChildHandle};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::path::Path;
@@ -131,7 +130,7 @@ impl Runner for WasmRunner {
                 task_handle,
                 abort: Some(abort_tx),
             };
-            io_helper::io_helper(sender, receiver, child).await
+            io_helper(sender, receiver, child).await
         }
     }
 }

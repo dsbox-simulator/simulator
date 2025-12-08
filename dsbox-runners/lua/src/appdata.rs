@@ -1,5 +1,4 @@
-use crate::process::runner::{CommandReceiver, EventSender};
-use crate::process::{ProcessCommand, ProcessEvent};
+use dsbox_core::{CommandReceiver, EventSender, ProcessCommand, ProcessEvent};
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 
