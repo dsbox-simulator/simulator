@@ -38,19 +38,18 @@ pub enum Capability {
 }
 
 pub fn has_capability(capabilities: BitFlags<Capability>, message_type: impl AsRef<str>) -> bool {
-        use libproto::system::*;
-        use libproto::system::control::*;
-        use libproto::Payload;
+    use libproto::Payload;
+    use libproto::system::control::*;
     use libproto::system::event::SubscribeEvents;
+    use libproto::system::*;
     match message_type.as_ref() {
-                Break::TYPE => capabilities.contains(Capability::Break),
-                Launch::TYPE => capabilities.contains(Capability::LaunchNodes),
-                Alias::TYPE => capabilities.contains(Capability::LaunchAlias),
-                Reset::TYPE => capabilities.contains(Capability::Reset),
-                BeginMonitor::TYPE => capabilities.contains(Capability::Monitor),
-                Control::TYPE => capabilities.contains(Capability::ControlCore),
-                SubscribeEvents::TYPE => capabilities.contains(Capability::SubscribeEvents),
-                _ => false
-        }
+        Break::TYPE => capabilities.contains(Capability::Break),
+        Launch::TYPE => capabilities.contains(Capability::LaunchNodes),
+        Alias::TYPE => capabilities.contains(Capability::LaunchAlias),
+        Reset::TYPE => capabilities.contains(Capability::Reset),
+        BeginMonitor::TYPE => capabilities.contains(Capability::Monitor),
+        Control::TYPE => capabilities.contains(Capability::ControlCore),
+        SubscribeEvents::TYPE => capabilities.contains(Capability::SubscribeEvents),
+        _ => false,
+    }
 }
-

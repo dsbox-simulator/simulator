@@ -40,7 +40,7 @@ impl Builder {
     }
 
     /// when starting to run the core, launch a command initially
-    pub fn launch_initial(
+    pub fn launch(
         mut self,
         command: impl Into<String>,
         name: impl Into<String>,
@@ -50,6 +50,24 @@ impl Builder {
             command: command.into(),
             name: name.into(),
             requires_registration,
+            weak: false,
+        });
+        self
+    }
+
+    /// when starting to run the core, launch a command initially. The resulting node
+    /// will not keep the core running, if it is the only node remaining
+    pub fn launch_weak(
+        mut self,
+        command: impl Into<String>,
+        name: impl Into<String>,
+        requires_registration: bool,
+    ) -> Self {
+        self.launch_initial.push(InitialLaunch {
+            command: command.into(),
+            name: name.into(),
+            requires_registration,
+            weak: true,
         });
         self
     }
@@ -70,7 +88,7 @@ impl Builder {
     pub fn register_runner(
         mut self,
         name: impl Into<String>,
-        runner: impl Runner + 'static,
+        runner: impl Runner + Send + Sync + 'static,
     ) -> Self {
         self.runner_manager.register_runner(name.into(), runner);
         self

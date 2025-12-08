@@ -61,4 +61,8 @@ impl DsboxData {
         }
         command
     }
+
+    pub fn close_receiver(&mut self) {
+        self.receiver.close()
+    }
 }

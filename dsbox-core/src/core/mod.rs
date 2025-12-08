@@ -98,6 +98,7 @@ struct InitialLaunch {
     pub command: String,
     pub name: String,
     pub requires_registration: bool,
+    pub weak: bool,
 }
 
 /// The execution state for a [`Core`]
@@ -144,17 +145,38 @@ impl Core {
         // publish an initial "reset" event, so that the webapp can reset its state when "dsbox"
         // is re-started
         let timestamp = self.timestamp_source.now();
-        self.publish_event(Event::reset(timestamp)).await;
+        self.publish_event(Event::reset(timestamp));
 
         for init in std::mem::take(&mut self.launch_initial) {
-            self.launch(
-                &init.command,
+            let node = self
+                .launch(
+                    &init.command,
+                    None,
+                    init.requires_registration,
+                    false,
+                    init.weak,
+                    init.name.clone(),
+                )
+                .await?;
+            let commandline = node.commandline().to_owned();
+            let timestamp = self.timestamp_source.now();
+            self.dispatch(
                 None,
-                init.requires_registration,
-                false,
-                init.name,
+                timestamp,
+                Message::new(
+                    &self.core_name,
+                    &init.name,
+                    None,
+                    Init {
+                        name: init.name.clone(),
+                        core_name: self.core_name.clone(),
+                        core_version: version::current(),
+                    },
+                ),
             )
             .await?;
+            let timestamp = self.timestamp_source.now();
+            self.publish_event(Event::node_launched(timestamp, init.name, commandline))
         }
         Ok(())
     }
@@ -168,11 +190,17 @@ impl Core {
             return;
         }
         loop {
-            let num_running = self.nodes.iter().filter(|n| !n.has_finished()).count();
+            let num_running = self.nodes.len();
+            let strong_running = self.nodes.iter().filter(|n| !n.weak).count();
 
-            if num_running == 0 && self.network.is_empty() {
-                // finish automatically when all nodes have shut down and all messages
-                // have been delivered
+            if strong_running == 0 && self.network.is_empty() {
+                // shut down all remaining (weak) nodes when all strong nodes have shut down
+                // and all messages have been delivered
+                self.begin_shutdown_timeout(|_| true, Duration::from_secs(1));
+            }
+
+            if num_running == 0 {
+                // all nodes have shut down or were terminated: finish running
                 break;
             }
 
@@ -232,7 +260,12 @@ impl Core {
                     .await
             }
             ProcessEventOrExit::Exited(exit_code) => {
-                self.process_exited(timestamp, source_id, exit_code).await?;
+                self.process_exited(timestamp, source_id, Some(exit_code))
+                    .await?;
+                Ok(true)
+            }
+            ProcessEventOrExit::Aborted => {
+                self.process_exited(timestamp, source_id, None).await?;
                 Ok(true)
             }
         }
@@ -303,8 +336,7 @@ impl Core {
             source = self.nodes.lookup(&message.src);
         }
 
-        self.publish_event(Event::send_message(timestamp, message.clone()))
-            .await;
+        self.publish_event(Event::send_message(timestamp, message.clone()));
 
         if message.dest == self.core_name {
             // handle messages to the core immediately, circumventing the network
@@ -334,8 +366,7 @@ impl Core {
             let timestamp = self.timestamp_source.now();
             self.send_monitor_event(timestamp, &message, Some(sent_timestamp.logical))
                 .await;
-            self.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical))
-                .await;
+            self.publish_event(Event::deliver_message(timestamp, sent_timestamp.logical));
             self.nodes[destination_id].send(ProcessCommand::Deliver(message));
             Ok(())
         } else {
@@ -397,6 +428,15 @@ impl Core {
                 name,
             } => self.send_timer_expired(source, msg_id, name).await,
             TimerKind::ExpectRegistry { node_id } => self.ensure_registered(node_id),
+            TimerKind::ShutdownTimeout { node_ids } => {
+                for node_id in node_ids {
+                    let node = &mut self.nodes[node_id];
+                    if !node.has_finished() {
+                        node.terminate();
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
@@ -476,16 +516,7 @@ impl Core {
             Reset::TYPE => {
                 assert_has_capability!(Reset);
                 let source_id = source.expect("the core tried to send itself a reset message");
-                self.terminate(|n| n.launched_by == Some(source_id)).await;
-                let removed_aliases = self.nodes.remove_aliases_of(source_id);
-                self.cleanup_aliases(removed_aliases);
-                let node = &self.nodes[source_id];
-                node.send(ProcessCommand::Deliver(Message::new(
-                    &self.core_name,
-                    &node.name,
-                    None,
-                    ResetFinished {},
-                )));
+                self.initiate_reset(source_id);
                 Ok(())
             }
             Launch::TYPE => {
@@ -530,11 +561,15 @@ impl Core {
             }
             Control::TYPE => {
                 assert_has_capability!(Control);
-                todo!()
+                self.handle_control_message(message.payload::<Control>().unwrap())
+                    .await
             }
             SubscribeEvents::TYPE => {
                 assert_has_capability!(SubscribeEvents);
-                todo!()
+                if let Some(source) = source {
+                    self.event_subscribers.push(source);
+                }
+                Ok(())
             }
             ty => Err(CoreError::UnknownCoreMessage {
                 name: message.src,
@@ -543,37 +578,116 @@ impl Core {
         }
     }
 
-    /// shutdown the nodes that match the given predicate and wait a grace period of 1 second before
-    /// removing the node and collecting all garbage (i.e. outstanding messages, aliases, etc.)
-    async fn terminate<P>(&mut self, predicate: P)
-    where
-        P: FnMut(&&mut Node) -> bool,
-    {
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let nodes = self.nodes.iter_mut().filter(predicate).collect::<Vec<_>>();
-        let node_ids = nodes.iter().map(|n| n.id).collect::<Vec<_>>();
-        let shutdowns = nodes.into_iter().map(|node| node.terminate());
+    fn initiate_reset(&mut self, source_id: NodeId) {
+        let removed_aliases = self.nodes.remove_aliases_of(source_id);
+        self.cleanup_aliases(removed_aliases);
 
-        tokio::time::timeout_at(deadline, futures::future::join_all(shutdowns))
-            .await
-            .ok();
-
-        for node_id in node_ids {
-            self.cleanup_node(node_id)
+        let num_shutdown = self.begin_shutdown_timeout(
+            |node| node.launched_by == Some(source_id),
+            Duration::from_secs(1),
+        );
+        self.nodes[source_id].reset_requested = true;
+        if num_shutdown == 0 {
+            self.finish_reset(source_id);
         }
     }
 
-    fn cleanup_node(&mut self, cleanup_id: NodeId) {
+    fn check_finish_reset(&mut self, source_id: NodeId) {
+        let Some(node) = self.nodes.get(source_id) else {
+            return;
+        };
+        if !node.reset_requested {
+            return;
+        }
+        if self
+            .nodes
+            .iter()
+            .any(|node| node.launched_by == Some(node.id))
+        {
+            return;
+        }
+        self.finish_reset(source_id);
+    }
+
+    fn finish_reset(&mut self, source_id: NodeId) {
+        let node = &mut self.nodes[source_id];
+        node.reset_requested = false;
+        node.send(ProcessCommand::Deliver(Message::new(
+            &self.core_name,
+            &node.name,
+            None,
+            ResetFinished {},
+        )));
+    }
+
+    async fn handle_control_message(&mut self, control_message: Control) -> Result<(), CoreError> {
+        match control_message {
+            Control::Break => self.state = CoreState::Paused,
+            Control::Step => self.state = CoreState::Stepping,
+            Control::Resume => self.state = CoreState::Running,
+            Control::Deliver { sent_timestamp } => {
+                self.deliver_by_timestamp(sent_timestamp).await?
+            }
+            Control::Drop { sent_timestamp } => self.drop_by_timestamp(sent_timestamp).await,
+            Control::Shutdown => {
+                self.begin_shutdown_timeout(|_| true, Duration::from_secs(1));
+            }
+        }
+        Ok(())
+    }
+
+    async fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
+        self.network.remove_one(sent_timestamp);
+        let timestamp = self.timestamp_source.now();
+        self.publish_event(Event::drop_message(timestamp, sent_timestamp));
+    }
+
+    async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {
+        if let Some((timestamp, source_id, message)) = self.network.remove_one(sent_timestamp) {
+            self.deliver(timestamp, source_id, message).await?
+        }
+        Ok(())
+    }
+
+    fn begin_shutdown_timeout<P>(&mut self, predicate: P, timeout: Duration) -> usize
+    where
+        P: FnMut(&&Node) -> bool,
+    {
+        let node_ids = self
+            .nodes
+            .iter()
+            .filter(predicate)
+            .map(|node| {
+                node.begin_shutdown();
+                node.id
+            })
+            .collect::<Vec<_>>();
+        let num_shutdown = node_ids.len();
+        self.timer_manager.add(
+            Instant::now().add(timeout),
+            TimerKind::ShutdownTimeout { node_ids },
+        );
+        num_shutdown
+    }
+
+    fn cleanup_node(&mut self, cleanup_id: NodeId) -> Node {
+        let node = &mut self.nodes[cleanup_id];
+        if !node.has_finished() {
+            node.terminate();
+        }
+
         self.cleanup_aliases(self.nodes.aliases_of(cleanup_id));
 
         // remove the node and all its aliases
-        self.nodes.remove(cleanup_id);
+        let node = self.nodes.remove(cleanup_id);
 
         // remove all active timers for that node
         self.timer_manager.retain(|timer| match &timer.kind {
             TimerKind::TimerService { .. } => true,
             TimerKind::ExpectRegistry { node_id } => *node_id != cleanup_id,
-        })
+            &TimerKind::ShutdownTimeout { .. } => true,
+        });
+        node.unwrap()
     }
 
     fn cleanup_aliases<S: AsRef<str>>(&mut self, aliases: impl AsRef<[S]>) {
@@ -596,6 +710,7 @@ impl Core {
                 aliases.iter().all(|alias| alias.as_ref() != name)
             }
             TimerKind::ExpectRegistry { .. } => true,
+            &TimerKind::ShutdownTimeout { .. } => true,
         })
     }
 
@@ -605,8 +720,7 @@ impl Core {
             Ok(Some(node)) => {
                 let timestamp = self.timestamp_source.now();
                 let commandline = node.commandline().to_owned();
-                self.publish_event(Event::node_launched(timestamp, alias.name, commandline))
-                    .await;
+                self.publish_event(Event::node_launched(timestamp, alias.name, commandline));
                 None
             }
             Ok(None) => None,
@@ -642,8 +756,7 @@ impl Core {
                 let name = node.name.clone();
                 let commandline = node.commandline().to_owned();
                 let timestamp = self.timestamp_source.now();
-                self.publish_event(Event::node_launched(timestamp, name, commandline))
-                    .await;
+                self.publish_event(Event::node_launched(timestamp, name, commandline));
                 None
             }
             Err(e) => Some(e.to_string()),
@@ -664,6 +777,7 @@ impl Core {
     }
 
     /// launches a new node with its corresponding process and middleware processes
+    /// TODO: clean this up an merge all of the launch, launch_single, etc. into one?
     async fn launch_server_node(
         &mut self,
         name: String,
@@ -677,6 +791,7 @@ impl Core {
                 Some(launched_by),
                 false,
                 exited_message_requested,
+                false,
                 name.clone(),
             )
             .await?;
@@ -693,7 +808,6 @@ impl Core {
                     name: name.clone(),
                     core_name: self.core_name.clone(),
                     core_version: version::current(),
-                    is_test: false,
                 },
             ),
         )
@@ -708,6 +822,7 @@ impl Core {
         launched_by: Option<NodeId>,
         requires_registration: bool,
         exited_message_requested: bool,
+        weak: bool,
         name: String,
     ) -> Result<&mut Node, CoreError> {
         let (handle, capabilities) = self.run_process(command_name).await?;
@@ -719,6 +834,7 @@ impl Core {
                 capabilities,
                 exited_message_requested,
                 requires_registration,
+                weak,
                 handle,
             ))
             .map_err(|_| CoreError::DuplicateNodeName { name })?;
@@ -781,8 +897,7 @@ impl Core {
             log::info!("[{}][{}]: {}", source_name, node.name.clone(), message.text);
         }
         let name = node.name.clone();
-        self.publish_event(Event::log(timestamp, name, message))
-            .await;
+        self.publish_event(Event::log(timestamp, name, message));
     }
 
     async fn log_core_error(&mut self, error: CoreError) {
@@ -799,8 +914,7 @@ impl Core {
                     color: Some(LogMarkerColor::Red),
                 }),
             },
-        ))
-        .await;
+        ));
     }
 
     /// Sends a disconnect event to all subscribers and logs the exit code of the process.
@@ -812,32 +926,35 @@ impl Core {
         &mut self,
         timestamp: Timestamp,
         source_id: NodeId,
-        exit_code: i32,
+        exit_code: Option<i32>,
     ) -> Result<(), CoreError> {
         // shutdown all nodes that were launched by this node
-        for node in self
-            .nodes
-            .iter_mut()
-            .filter(|node| node.launched_by == Some(source_id))
-        {
-            node.begin_shutdown();
-        }
+        self.begin_shutdown_timeout(
+            |node| node.launched_by == Some(source_id),
+            Duration::from_secs(1),
+        );
 
         let node = &self.nodes[source_id];
         let name = node.name.clone();
-        self.publish_event(Event::node_disconnected(timestamp, name))
-            .await;
-        log::info!(
-            "[{}] command `{}` exited with code {exit_code}",
-            node.name,
-            node.commandline()
-        );
-
+        self.publish_event(Event::node_disconnected(timestamp, name, exit_code));
+        if let Some(exit_code) = exit_code {
+            log::info!(
+                "[{}] command `{}` exited with code {exit_code}",
+                node.name,
+                node.commandline()
+            );
+        } else {
+            log::info!(
+                "[{}] command `{}` was aborted and did not terminate normally",
+                node.name,
+                node.commandline()
+            );
+        }
         self.check_exited(source_id).await;
         Ok(())
     }
 
-    async fn publish_event(&self, event: Event) {
+    fn publish_event(&self, event: Event) {
         for node in self.event_subscribers.iter().copied() {
             // monitor events are not dispatched via the network. Instead, they are delivered directly
             // to the target node. Among other reasons, this de-clutters the message log (monitor events
@@ -866,11 +983,10 @@ impl Core {
         }
 
         let node = &self.nodes[node_id];
-        if node.exited_message_requested {
+        if node.exited_message_requested
+            && let Some(launched_by) = node.launched_by.and_then(|id| self.nodes.get(id))
+        {
             let timestamp = self.timestamp_source.now();
-            let Some(launched_by) = node.launched_by.and_then(|id| self.nodes.get(id)) else {
-                return;
-            };
             // box the future to because of recursing in an async function
             let future = self.dispatch(
                 None,
@@ -887,6 +1003,9 @@ impl Core {
             );
             Box::pin(future).await.unwrap();
         }
-        self.cleanup_node(node_id);
+        let node = self.cleanup_node(node_id);
+        if let Some(launched_by) = node.launched_by {
+            self.check_finish_reset(launched_by);
+        }
     }
 }

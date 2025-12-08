@@ -1290,7 +1290,9 @@ version = "0.3.0"
 dependencies = [
  "clap",
  "dsbox-core",
+ "enumflags2",
  "env_logger",
+ "libproto",
  "log",
  "serde",
  "serde_json",

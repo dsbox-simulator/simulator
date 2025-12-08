@@ -32,9 +32,9 @@ pub struct PublishEvent {
 pub struct Event {
     /// the timestamp at which this event occurred. The [`Timestamp::logical`] is sometimes used
     /// as an identifier of this [`Event`], as it is always unique.
-    timestamp: Timestamp,
+    pub timestamp: Timestamp,
     /// the specifics of the [`Event`] (what has happened)
-    data: EventData,
+    pub data: EventData,
 }
 
 /// Contains information about a single event (what has happened)
@@ -67,6 +67,8 @@ pub enum EventData {
     NodeDisconnected {
         /// the id of the process that exited. See [`NodeId`]
         name: String,
+        /// the exit code of that node.
+        exit_code: Option<i32>,
     },
     /// Emitted after a process is started
     NodeLaunched {
@@ -126,8 +128,8 @@ impl Event {
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::NodeDisconnected`]
-    pub fn node_disconnected(timestamp: Timestamp, name: String) -> Self {
-        Self::new(timestamp, EventData::NodeDisconnected { name })
+    pub fn node_disconnected(timestamp: Timestamp, name: String, exit_code: Option<i32>) -> Self {
+        Self::new(timestamp, EventData::NodeDisconnected { name, exit_code })
     }
 
     /// creates a new [`Event`] with the given timestamp and [`EventData::Log`]

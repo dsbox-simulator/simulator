@@ -2,8 +2,8 @@ use super::{Abort, Exit};
 
 use crate::process::runner::lua::appdata::DsboxData;
 use crate::process::{ProcessCommand, ProcessEvent};
-use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 use libproto::Message;
+use libproto::services::{LogMarker, LogMarkerColor, LogMessage};
 use mlua::{
     Error, FromLua, FromLuaMulti, Function, IntoLua, Lua, LuaSerdeExt, MultiValue, Number, Result,
     Table, Value,
@@ -81,9 +81,11 @@ fn lua_recv(lua: &Lua, (timeout,): (Option<Number>,)) -> Result<Option<Value>> {
             }
             Ok(Some(value))
         }
-        ProcessCommand::Abort => {
-            Err(Error::ExternalError(Arc::new(Abort)))
+        ProcessCommand::Shutdown => {
+            app_data.close_receiver();
+            Ok(None)
         }
+        ProcessCommand::Abort => Err(Error::ExternalError(Arc::new(Abort))),
     }
 }
 

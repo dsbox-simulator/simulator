@@ -25,10 +25,13 @@ tauri = { workspace = true }
 tauri-plugin-log = { workspace = true }
 tokio = { workspace = true }
 dsbox-core = { workspace = true }
+libproto = { workspace = true, features = ["system_messages"] }
 clap = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-store = { workspace = true }
 which = { workspace = true }
+enumflags2 = { workspace = true }
+
 
 [features]
 lua = ["dsbox-core/lua"]

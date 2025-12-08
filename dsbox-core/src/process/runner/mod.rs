@@ -1,22 +1,24 @@
 mod lines_helper;
-mod native;
+pub mod native;
 #[cfg(feature = "wasm")]
-mod wasm;
+pub mod wasm;
 
 #[cfg(feature = "lua")]
-mod lua;
+pub mod lua;
 
+pub mod callback;
+
+pub mod handle;
 mod io_helper;
 pub mod manager;
-pub mod handle;
 
 use crate::process::{ProcessCommand, ProcessEvent};
 use std::pin::Pin;
 
-type EventSender = tokio::sync::mpsc::Sender<ProcessEvent>;
+pub type EventSender = tokio::sync::mpsc::Sender<ProcessEvent>;
 type EventReceiver = tokio::sync::mpsc::Receiver<ProcessEvent>;
 type CommandSender = tokio::sync::mpsc::UnboundedSender<ProcessCommand>;
-type CommandReceiver = tokio::sync::mpsc::UnboundedReceiver<ProcessCommand>;
+pub type CommandReceiver = tokio::sync::mpsc::UnboundedReceiver<ProcessCommand>;
 
 pub trait Runner {
     fn run(
@@ -27,18 +29,19 @@ pub trait Runner {
     ) -> impl Future<Output = i32> + Send + 'static;
 }
 
-type RunnerFn = dyn FnMut(
-    Vec<String>,
-    EventSender,
-    CommandReceiver,
-) -> Pin<Box<dyn Future<Output = i32> + Send + 'static>>;
+type RunnerFn = dyn (FnMut(
+        Vec<String>,
+        EventSender,
+        CommandReceiver,
+    ) -> Pin<Box<dyn Future<Output = i32> + Send + 'static>>)
+    + Send + Sync;
 
 pub struct DynRunner {
     runner: Box<RunnerFn>,
 }
 
 impl DynRunner {
-    pub fn new(mut runner: impl Runner + 'static) -> Self {
+    pub fn new(mut runner: impl Runner + Send + Sync + 'static) -> Self {
         Self {
             runner: Box::new(move |command, sender, receiver| {
                 let fut = runner.run(command, sender, receiver);

@@ -51,11 +51,6 @@ pub enum CoreError {
         runner_name: String,
         available_runners: Vec<String>,
     },
-    /// An error occurred trying to launch a process.
-    LaunchFailed {
-        command: String,
-        error: std::io::Error,
-    },
     /// A process wrote some text to its standard output, that could not be parsed into a [`Message`].
     SerializeError {
         source: String,
@@ -119,15 +114,6 @@ impl Display for CoreError {
             }
             CoreError::UnknownRunner {runner_name, available_runners} => {
                 write!(f, "a runner with name `{runner_name}`. Available runners are {available_runners:?}")
-            }
-            CoreError::LaunchFailed {
-                command,
-                error: err,
-            } => {
-                write!(
-                    f,
-                    "failed to launch process with command {command:?}: {err}"
-                )
             }
             CoreError::SerializeError {
                 source,

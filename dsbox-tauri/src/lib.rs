@@ -1,13 +1,10 @@
-use dsbox_core::core::Core;
-use crate::dsbox::Commands;
 use tauri::Manager;
 use tokio::sync::RwLock;
-pub mod cli;
-mod dsbox;
-mod util;
+pub mod args;
+pub mod dsbox;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(args: cli::Cli) {
+pub fn run(args: args::Args) {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -17,13 +14,12 @@ pub fn run(args: cli::Cli) {
                 app.handle()
                     .plugin(tauri_plugin_log::Builder::default().skip_logger().build())?;
             }
-            app.manage(RwLock::new(dsbox::DsboxState::new(
-                Commands {
-                    test_command: args.test_command,
-                    server_command: args.server_command,
-                },
-                args.lua_unsafe,
-            )));
+            let state = dsbox::DsboxState::new(
+                args.test_command.unwrap_or_default(),
+                args.server_command.unwrap_or_default().join(" "),
+                args.common.lua_unsafe,
+            );
+            app.manage(RwLock::new(state));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -35,7 +31,7 @@ pub fn run(args: cli::Cli) {
             dsbox::current_commands,
             dsbox::deliver,
             dsbox::drop,
-            util::find_interpreter,
+            dsbox::interpreters::find_interpreter,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

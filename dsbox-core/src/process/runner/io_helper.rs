@@ -24,11 +24,10 @@ pub async fn io_helper(
 ) -> i32 {
     let mut stdout = LinesHelper::new(child.stdout().unwrap());
     let mut stderr = LinesHelper::new(child.stderr().unwrap());
-    let mut stdin = child.stdin().unwrap();
+    let mut stdin = child.stdin();
     let mut exit_code = None;
 
-    while !stdout.is_closed() || !stderr.is_closed() || !receiver.is_closed() || exit_code.is_none()
-    {
+    while !stdout.is_closed() || !stderr.is_closed() || exit_code.is_none() {
         tokio::select! {
             stdout_line = stdout.line(), if !stdout.is_closed() => {
                 handle_message(stdout_line, &sender).await
@@ -36,7 +35,7 @@ pub async fn io_helper(
             stderr_line = stderr.line(), if !stderr.is_closed() => {
                 handle_log(stderr_line, &sender, &mut stderr).await
             },
-            command = receiver.recv(), if !receiver.is_closed() => {
+            command = receiver.recv(), if stdin.is_some() => {
                 handle_command(command, &mut stdin, &mut child).await;
             }
             code = child.wait(), if exit_code.is_none() => {
@@ -83,7 +82,7 @@ async fn handle_log<T: AsyncRead + Unpin>(
 
 async fn handle_command(
     command: Option<ProcessCommand>,
-    mut stdin: impl AsyncWrite + Unpin,
+    stdin: &mut Option<impl AsyncWrite + Unpin>,
     child: &mut impl ChildHandle,
 ) {
     let Some(command) = command else {
@@ -91,10 +90,15 @@ async fn handle_command(
     };
     match command {
         ProcessCommand::Deliver(message) => {
-            let mut message = message.to_string();
-            message.push('\n');
-            stdin.write_all(message.as_bytes()).await.ok();
-            stdin.flush().await.ok();
+            if let Some(stdin) = stdin {
+                let mut message = message.to_string();
+                message.push('\n');
+                stdin.write_all(message.as_bytes()).await.ok();
+                stdin.flush().await.ok();
+            }
+        }
+        ProcessCommand::Shutdown => {
+            stdin.take();
         }
         ProcessCommand::Abort => {
             child.abort();

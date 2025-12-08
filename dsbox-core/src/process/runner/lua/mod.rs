@@ -26,8 +26,8 @@ pub(self) struct Exit(i32);
 pub(self) struct Abort;
 
 impl LuaRunner {
-    pub async fn new(allow_os_libs: bool) -> Self {
-        let (path, cpath) = if let Ok((path, cpath)) = Self::query_luarocks_path().await {
+    pub fn new(allow_os_libs: bool) -> Self {
+        let (path, cpath) = if let Ok((path, cpath)) = Self::query_luarocks_path() {
             (Some(path), Some(cpath))
         } else {
             (None, None)
@@ -39,21 +39,19 @@ impl LuaRunner {
         }
     }
 
-    async fn query_luarocks_path() -> tokio::io::Result<(String, String)> {
-        let path = tokio::process::Command::new("luarocks")
+    fn query_luarocks_path() -> std::io::Result<(String, String)> {
+        let path = std::process::Command::new("luarocks")
             .args(["path", "--lr-path"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?
-            .wait_with_output()
-            .await?;
-        let cpath = tokio::process::Command::new("luarocks")
+            .wait_with_output()?;
+        let cpath = std::process::Command::new("luarocks")
             .args(["path", "--lr-cpath"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?
-            .wait_with_output()
-            .await?;
+            .wait_with_output()?;
         let path = String::from_utf8_lossy(&path.stdout).to_string();
         let cpath = String::from_utf8_lossy(&cpath.stdout).to_string();
         Ok((path, cpath))
@@ -191,6 +189,7 @@ impl Runner for LuaRunner {
             })
             .await
             .expect("embedded lua interpreter panicked");
+            log::trace!("lua script `{}` finished", args.join(" "));
 
             let app_data = lua.remove_app_data::<DsboxData>().unwrap();
             let exit_code = match extract_exit_code(result) {

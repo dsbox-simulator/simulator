@@ -18,7 +18,7 @@ impl RunnerManger {
         }
     }
 
-    pub fn register_runner(&mut self, name: String, runner: impl Runner + 'static) {
+    pub fn register_runner(&mut self, name: String, runner: impl Runner + Send + Sync + 'static) {
         self.registered_runners.insert(name, DynRunner::new(runner));
     }
 
@@ -26,18 +26,14 @@ impl RunnerManger {
         self.registered_runners.keys()
     }
 
-    pub fn run(
-        &mut self,
-        command: &RunnerCommand,
-    ) -> Result<RunningHandle, UnknownRunner> {
+    pub fn run(&mut self, command: &RunnerCommand) -> Result<RunningHandle, UnknownRunner> {
         let runner = self
             .registered_runners
             .get_mut(command.runner())
             .ok_or_else(|| UnknownRunner)?;
         let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
         let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
-        let handle =
-            tokio::task::spawn(runner.run(command.args(), event_sender, command_receiver));
+        let handle = tokio::task::spawn(runner.run(command.args(), event_sender, command_receiver));
         Ok(RunningHandle::new(
             command_sender,
             event_receiver,

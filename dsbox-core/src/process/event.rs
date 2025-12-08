@@ -22,9 +22,12 @@ pub enum ProcessEvent {
 /// The reason this is split into a separate enum is that a process runner
 /// may send [`ProcessEvent`]s to the core, but can only signal the exit (with an exit code)
 /// by returning from the [`crate::process::runner::Runner::run`] implementation
+#[derive(Debug)]
 pub(crate) enum ProcessEventOrExit {
     /// an event happened (a message, log message, etc.)
     Event(ProcessEvent),
     /// The process exited
     Exited(i32),
+    /// The process was aborted by the core
+    Aborted,
 }

@@ -5,6 +5,14 @@ pub use event::ProcessEvent;
 pub(crate) use event::ProcessEventOrExit;
 pub(crate) use runner::handle::RunningHandle;
 pub(crate) use runner::manager::RunnerManger;
+pub use runner::{callback::CallbackRunner, callback::CallbackOnceRunner, native::NativeRunner, CommandReceiver, EventSender};
+
+#[cfg(feature = "lua")]
+pub use runner::lua::LuaRunner;
+
+#[cfg(feature = "wasm")]
+pub use runner::wasm::WasmRunner;
+
 pub use runner::Runner;
 
 mod command;

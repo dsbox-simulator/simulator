@@ -36,7 +36,6 @@ async fn run_native(
             return -1;
         }
     };
-
     io_helper::io_helper(sender, receiver, child).await
 }
 

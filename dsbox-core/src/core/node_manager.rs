@@ -1,7 +1,7 @@
 use crate::core::node::{Node, NodeId};
 use crate::process::ProcessEventOrExit;
-use std::collections::hash_map::{self, Entry};
 use std::collections::HashMap;
+use std::collections::hash_map::{self, Entry};
 use std::fmt::Display;
 use std::future::Future;
 use std::iter::Map;
@@ -28,6 +28,10 @@ impl NodeManager {
             by_name: HashMap::new(),
             by_id: HashMap::new(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_id.len()
     }
 
     pub fn add(&mut self, node: Node) -> Result<&mut Node, DuplicateName> {
@@ -60,11 +64,12 @@ impl NodeManager {
     }
 
     /// remove a node and all of its aliases
-    pub fn remove(&mut self, node_id: NodeId) {
+    pub fn remove(&mut self, node_id: NodeId) -> Option<Node> {
         let Some(node) = self.by_id.remove(&node_id) else {
-            return;
+            return None;
         };
         self.by_name.retain(|_, id| *id != node.id);
+        Some(node)
     }
 
     /// remove all aliases of a node and returns the removed aliases

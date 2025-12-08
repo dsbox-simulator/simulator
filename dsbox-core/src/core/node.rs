@@ -5,7 +5,6 @@ use crate::process::{ProcessCommand, ProcessEventOrExit};
 use enumflags2::BitFlags;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 
@@ -28,6 +27,12 @@ pub(super) struct Node {
     pub exited_message_requested: bool,
     /// `true` if this node is still required to send a `register` message to the core. Used for better error messages
     pub requires_registration: bool,
+    /// `true` if this node has requested a reset. The core will deliver a `ResetFinished` message to this node,
+    /// once all nodes launched by it have exited
+    pub reset_requested: bool,
+    /// if `true` this node will not keep the core running. I.e. if all remaining running nodes
+    /// have `weak == true` the core stops.
+    pub weak: bool,
     /// handle to the actually running "process" (might be a native process, might be lua code, etc.)
     handle: RunningHandle,
 }
@@ -39,6 +44,7 @@ impl Node {
         capabilities: BitFlags<Capability>,
         exited_message_requested: bool,
         requires_registration: bool,
+        weak: bool,
         handle: RunningHandle,
     ) -> Self {
         Self {
@@ -48,6 +54,8 @@ impl Node {
             capabilities,
             requires_registration,
             exited_message_requested,
+            reset_requested: false,
+            weak,
             handle,
         }
     }
@@ -65,7 +73,7 @@ impl Node {
     }
 
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<ProcessEventOrExit>> {
-        std::pin::pin!(self.handle.recv()).poll(cx)
+        self.handle.poll_recv(cx)
     }
 
     pub fn has_finished(&self) -> bool {
@@ -76,12 +84,12 @@ impl Node {
         self.handle.exit_code()
     }
 
-    pub fn begin_shutdown(&mut self) {
+    pub fn begin_shutdown(&self) {
         self.handle.begin_shutdown()
     }
 
-    pub async fn terminate(&mut self) {
-        self.handle.terminate().await
+    pub fn terminate(&mut self) {
+        self.handle.terminate()
     }
 }
 

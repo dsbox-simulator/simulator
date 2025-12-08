@@ -72,6 +72,7 @@ export function isDropMessage(data: EventData): data is DropMessage {
 export interface NodeDisconnected {
     type: "node_disconnected";
     name: string;
+    exit_code?: number;
 }
 
 export function isNodeDisconnected(data: EventData): data is NodeDisconnected {

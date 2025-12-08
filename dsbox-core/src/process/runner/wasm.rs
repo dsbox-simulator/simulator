@@ -26,7 +26,7 @@ pub struct WasmRunner {
     wasm_cache: HashMap<String, LoadedWasm>,
     /// handle to the task that periodically increments the epoch counter.
     /// This task is aborted on `drop`
-    epoch_task: JoinHandle<()>,
+    epoch_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Clone)]
@@ -55,20 +55,11 @@ impl WasmRunner {
         config.async_support(true);
         config.epoch_interruption(true);
         let engine = Engine::new(&config).expect("failed to initialize wasmtime engine");
-        let epoch_task = {
-            let engine = engine.clone();
-            tokio::task::spawn(async move {
-                let interval = Duration::from_millis(200);
-                loop {
-                    tokio::time::sleep(interval).await;
-                    engine.increment_epoch();
-                }
-            })
-        };
+
         Self {
             engine,
             wasm_cache: HashMap::new(),
-            epoch_task,
+            epoch_task: None,
         }
     }
 
@@ -99,6 +90,18 @@ impl Runner for WasmRunner {
         sender: EventSender,
         receiver: CommandReceiver,
     ) -> impl Future<Output = i32> + 'static {
+        if self.epoch_task.is_none() {
+            self.epoch_task = Some({
+                let engine = self.engine.clone();
+                tokio::task::spawn(async move {
+                    let interval = Duration::from_millis(200);
+                    loop {
+                        tokio::time::sleep(interval).await;
+                        engine.increment_epoch();
+                    }
+                })
+            });
+        }
         let engine = self.engine.clone();
         let wasm = self.load_file(args[0].clone());
         let (mut store, stdin, stdout, stderr) = new_store(&engine, &args[1..]);
@@ -118,7 +121,7 @@ impl Runner for WasmRunner {
                 }
             };
             let (abort_tx, abort_rx) = oneshot::channel();
-            let task_handle = tokio::task::spawn_blocking(move || {
+            let task_handle = tokio::task::spawn(async move {
                 tokio::runtime::Handle::current().block_on(run_wasm(entry_point, store, abort_rx))
             });
             let child = WasmChildHandle {
@@ -280,6 +283,6 @@ impl ChildHandle for WasmChildHandle {
 
 impl Drop for WasmRunner {
     fn drop(&mut self) {
-        self.epoch_task.abort();
+        self.epoch_task.as_ref().map(JoinHandle::abort);
     }
 }

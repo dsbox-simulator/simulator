@@ -20,6 +20,9 @@ pub enum TimerKind {
     ExpectRegistry {
         node_id: NodeId,
     },
+    ShutdownTimeout {
+        node_ids: Vec<NodeId>,
+    },
 }
 
 impl TimerManager {
