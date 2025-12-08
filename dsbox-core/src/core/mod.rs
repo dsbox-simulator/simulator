@@ -567,7 +567,7 @@ impl Core {
             SubscribeEvents::TYPE => {
                 assert_has_capability!(SubscribeEvents);
                 if let Some(source) = source {
-                    self.event_subscribers.push(source);
+                    self.subscribe_events(source);
                 }
                 Ok(())
             }
@@ -575,6 +575,28 @@ impl Core {
                 name: message.src,
                 ty: ty.to_owned(),
             }),
+        }
+    }
+
+    fn subscribe_events(&mut self, source: NodeId) {
+        self.event_subscribers.push(source);
+        // send the new subscriber a `node_launched` message for each node currently running,
+        // so that it does not miss any nodes that were launched before subscribing
+        let subscriber = &self.nodes[source];
+        for node in &self.nodes {
+            if node.id == subscriber.id {
+                continue;
+            }
+            let name = node.name.clone();
+            let commandline = node.commandline().to_owned();
+            let timestamp = self.timestamp_source.now();
+            let event = Event::node_launched(timestamp, name, commandline);
+            subscriber.send(ProcessCommand::Deliver(Message::new(
+                &self.core_name,
+                &subscriber.name,
+                None,
+                PublishEvent { event },
+            )));
         }
     }
 
