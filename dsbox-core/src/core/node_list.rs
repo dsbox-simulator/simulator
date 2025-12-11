@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::slice::{Iter, IterMut, SliceIndex};
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
+use tokio::time::Duration;
 
 pub struct NodeList {
     nodes: Vec<NodeRef>,
@@ -112,6 +113,31 @@ impl NodeList {
         RecvAny {
             nodes: &mut self.nodes,
         }
+    }
+
+    pub async fn try_recv_more(
+        &mut self,
+        buf: &mut Vec<(ProcessEvent, NodeId)>,
+        limit: usize,
+        interval: Duration,
+    ) -> (usize, bool) {
+        if limit == 0 {
+            return (0, true);
+        }
+
+        let mut num_received = 0;
+        let closed = loop {
+            let more = tokio::time::timeout(interval, self.recv_any()).await;
+            match more {
+                Ok(Some(more)) => {
+                    buf.push(more);
+                    num_received += 1;
+                }
+                Ok(None) => break true,
+                Err(_) => break false,
+            }
+        };
+        (num_received, !closed)
     }
 
     pub fn resolve_alias(&self, id: NodeId) -> &Node {

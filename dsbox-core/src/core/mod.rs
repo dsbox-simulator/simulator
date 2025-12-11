@@ -33,6 +33,7 @@ use libproto::system::{
 use libproto::{Message, Payload};
 use node::Node;
 
+use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
@@ -44,7 +45,6 @@ use crate::log_color;
 use crate::log_color::log_marker_ansi_color;
 use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
-use crate::Command;
 pub use builder::Builder;
 use network::Network;
 
@@ -312,9 +312,14 @@ impl Core {
                     self.handle_command(remote_command.unwrap()).await?;
                 }
                 process_event = self.nodes.recv_any(), if num_running > 0 => {
-                    if let Some((event, node_id)) = process_event {
-                        let ts = self.timestamp_source.now();
-                        self.handle_process_event(ts, node_id, event).await?;
+                    if let Some(first) = process_event {
+                        let mut events = vec![first];
+                        // try to receive at most 16 more messages that arrive at most 1 millisecond apart
+                        self.nodes.try_recv_more(&mut events, 16, Duration::from_millis(1)).await;
+                        for (event, node_id) in events {
+                            let ts = self.timestamp_source.now();
+                            self.handle_process_event(ts, node_id, event).await?;
+                        }
                     }
                 }
                 timer = self.timer_manager.wait_next() => {

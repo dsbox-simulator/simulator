@@ -23,7 +23,7 @@ pub struct Commands {
 }
 
 impl DsboxState {
-    pub fn new(args: crate::cli::Cli) -> Self {
+    pub fn new(args: crate::args::Args) -> Self {
         let test_command = Core::split_command(args.test_command.unwrap_or_default());
         let server_command = Core::make_command(args.server_command.unwrap_or_default());
         let core = Core::builder(test_command.clone(), server_command.clone())

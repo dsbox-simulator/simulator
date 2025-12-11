@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::process::command::ProcessCommand;
@@ -30,7 +30,7 @@ struct LuaAppData {
     /// a sender to send events to the core
     sender: Sender<ProcessEvent>,
     /// a receiver to receive commands (currently only messages) from the core
-    receiver: Mutex<UnboundedReceiver<ProcessCommand>>,
+    receiver: UnboundedReceiver<ProcessCommand>,
     /// the name of this node (useful for automatically sending log messages with extended information to the core)
     name: String,
     /// the name of the simulation core. Used as the `dest` field for log messages.
@@ -87,7 +87,7 @@ impl LuaLauncher {
         log::trace!("launching lua node `{}`, args: {args:?}", file.display());
         let app_data = LuaAppData {
             sender: event_sender,
-            receiver: Mutex::new(command_receiver),
+            receiver: command_receiver,
             name,
             core_name,
         };
@@ -115,20 +115,16 @@ impl LuaLauncher {
         let path = self.luarocks_path.clone();
         let cpath = self.luarocks_cpath.clone();
         tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Handle::current();
             let lua = Self::setup_lua(&file, &args, allow_os_libs, path, cpath, app_data)
                 .expect("failed to setup lua");
-            rt.block_on(Self::run_lua(lua, &file));
+            Self::run_lua(lua, &file);
             finished.send(()).ok();
         })
     }
 
-    async fn run_lua(lua: Lua, file: &Path) {
+    fn run_lua(lua: Lua, file: &Path) {
         let chunk = lua.load(file);
-        let result = chunk
-            .call_async(())
-            .await
-            .map(|v: Value| v.as_i32().unwrap_or(0));
+        let result = chunk.call(()).map(|v: Value| v.as_i32().unwrap_or(0));
         let app_data = lua.app_data_ref::<LuaAppData>().unwrap();
         let exit_code = match Self::extract_exit_code(result) {
             Ok(exit_code) => exit_code,
@@ -140,8 +136,7 @@ impl LuaLauncher {
                 );
                 app_data
                     .sender
-                    .send(ProcessEvent::Log(message.clone()))
-                    .await
+                    .blocking_send(ProcessEvent::Log(message.clone()))
                     .ok();
                 log::warn!("{}", message);
                 -1
@@ -149,8 +144,7 @@ impl LuaLauncher {
         };
         app_data
             .sender
-            .send(ProcessEvent::Exited(exit_code))
-            .await
+            .blocking_send(ProcessEvent::Exited(exit_code))
             .ok();
     }
 
@@ -206,25 +200,25 @@ impl LuaLauncher {
         let mod_dsbox = lua.create_table()?;
 
         mod_dsbox.set("args", args_table)?;
-        mod_dsbox.set("send", lua.create_async_function(LuaAppData::lua_send)?)?;
-        mod_dsbox.set("recv", lua.create_async_function(LuaAppData::lua_recv)?)?;
+        mod_dsbox.set("send", lua.create_function(LuaAppData::lua_send)?)?;
+        mod_dsbox.set("recv", lua.create_function(LuaAppData::lua_recv)?)?;
         mod_dsbox.set("recv_iter", lua.create_function(LuaAppData::lua_recv_iter)?)?;
         mod_dsbox.set("array", lua.create_function(lua_array)?)?;
         mod_dsbox.set("to_json", lua.create_function(lua_to_json)?)?;
-        mod_dsbox.set("log", lua.create_async_function(LuaAppData::lua_log)?)?;
+        mod_dsbox.set("log", lua.create_function(LuaAppData::lua_log)?)?;
         mod_dsbox.set("clock", lua.create_function(lua_clock)?)?;
         mod_dsbox.set("sleep", lua.create_function(lua_sleep)?)?;
-        mod_dsbox.set("exit", lua.create_async_function(lua_exit)?)?;
+        mod_dsbox.set("exit", lua.create_function(lua_exit)?)?;
         mod_dsbox.set("__exit_metatable", lua.create_table()?)?;
         let message_class = lua.create_table()?;
         message_class.set("new", lua.create_function(message_new)?)?;
         message_class.set("create_reply", lua.create_function(message_create_reply)?)?;
-        message_class.set("reply", lua.create_async_function(message_reply)?)?;
-        message_class.set("send", lua.create_async_function(message_send)?)?;
+        message_class.set("reply", lua.create_function(message_reply)?)?;
+        message_class.set("send", lua.create_function(message_send)?)?;
         mod_dsbox.set("Message", message_class)?;
 
         lua.globals()
-            .set("print", lua.create_async_function(LuaAppData::lua_print)?)?;
+            .set("print", lua.create_function(LuaAppData::lua_print)?)?;
 
         // for some reason the borrow checker does not like having the local variables `package` and `preload`
         // hanging around, so we wrap the following code in a block to make them drop explicitly before returning
@@ -318,7 +312,7 @@ impl LuaLauncher {
 impl LuaAppData {
     /// attempts to deserialize the given Value as a [`Message`] using `mlua`s `serde` support
     /// and sends it to the core
-    async fn lua_send(lua: Lua, message: Value) -> mlua::Result<bool> {
+    fn lua_send(lua: &Lua, message: Value) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let message = match lua.from_value(message.clone()) {
             Ok(message) => message,
@@ -329,26 +323,19 @@ impl LuaAppData {
                         raw_message,
                         error: e.to_string(),
                     })
-                    .await
                     .ok();
                 return Err(Error::RuntimeError(e.to_string()));
             }
         };
-        Ok(app_data
-            .send_event(ProcessEvent::Message(message))
-            .await
-            .is_ok())
+        Ok(app_data.send_event(ProcessEvent::Message(message)).is_ok())
     }
 
     /// waits for a single message to be received by the core
     /// If no more messages are available `nil` is returned.
-    async fn lua_recv(
-        lua: Lua,
-        (timeout,): (Option<mlua::Number>,),
-    ) -> mlua::Result<Option<Value>> {
-        let app_data = lua.app_data_ref::<Self>().unwrap();
+    fn lua_recv(lua: &Lua, (timeout,): (Option<mlua::Number>,)) -> mlua::Result<Option<Value>> {
+        let mut app_data = lua.app_data_mut::<Self>().unwrap();
         let timeout = timeout.map(|t| Duration::from_secs_f64(t));
-        let Some(command) = app_data.recv_command(timeout).await else {
+        let Some(command) = app_data.recv_command(timeout) else {
             return Ok(None);
         };
         match command {
@@ -369,7 +356,7 @@ impl LuaAppData {
         get_dsbox(lua, "recv")
     }
 
-    async fn lua_print(lua: Lua, items: MultiValue) -> mlua::Result<bool> {
+    fn lua_print(lua: &Lua, items: MultiValue) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
         let mut message = String::new();
         let mut first = true;
@@ -385,14 +372,11 @@ impl LuaAppData {
                     .call::<String>(item)?,
             );
         }
-        Ok(app_data
-            .send_event(ProcessEvent::Log(message))
-            .await
-            .is_ok())
+        Ok(app_data.send_event(ProcessEvent::Log(message)).is_ok())
     }
 
-    async fn lua_log(
-        lua: Lua,
+    fn lua_log(
+        lua: &Lua,
         (message, label, color, _rest): (String, Option<String>, Option<String>, MultiValue),
     ) -> mlua::Result<bool> {
         let app_data = lua.app_data_ref::<Self>().unwrap();
@@ -416,22 +400,20 @@ impl LuaAppData {
                     marker,
                 },
             )))
-            .await
             .is_ok())
     }
 
-    async fn send_event(&self, event: ProcessEvent) -> Result<(), SendError<ProcessEvent>> {
-        self.sender.send(event).await
+    fn send_event(&self, event: ProcessEvent) -> Result<(), SendError<ProcessEvent>> {
+        self.sender.blocking_send(event)
     }
 
-    async fn recv_command(&self, timeout: Option<Duration>) -> Option<ProcessCommand> {
-        let mut receiver = self.receiver.lock().await;
+    fn recv_command(&mut self, timeout: Option<Duration>) -> Option<ProcessCommand> {
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, receiver.recv())
-                .await
+            tokio::runtime::Handle::current()
+                .block_on(tokio::time::timeout(timeout, self.receiver.recv()))
                 .unwrap_or_else(|_| None)
         } else {
-            receiver.recv().await
+            self.receiver.blocking_recv()
         }
     }
 }
@@ -486,25 +468,22 @@ fn message_create_reply(
     Ok(new_message)
 }
 
-async fn message_reply(
-    lua: Lua,
+fn message_reply(
+    lua: &Lua,
     (message, r#type, rest): (Table, Value, MultiValue),
 ) -> mlua::Result<bool> {
     let message = message_create_reply(&lua, (message, r#type, rest))?;
-    message_send(lua, (message, MultiValue::new())).await
+    message_send(lua, (message, MultiValue::new()))
 }
 
-async fn message_send(
-    lua: Lua,
-    (mut message, rest): (Table, MultiValue),
-) -> mlua::Result<bool> {
+fn message_send(lua: &Lua, (mut message, rest): (Table, MultiValue)) -> mlua::Result<bool> {
     let message_class: Table = get_dsbox(&lua, "Message")?;
     if message == message_class {
         let (src, dest, r#type, rest) = FromLuaMulti::from_lua_multi(rest, &lua)?;
         message = message_new(&lua, (message_class, src, dest, r#type, rest))?;
     }
     let message = message.into_lua(&lua)?;
-    LuaAppData::lua_send(lua, message).await
+    LuaAppData::lua_send(lua, message)
 }
 
 fn lua_to_json(lua: &Lua, value: Value) -> mlua::Result<String> {
@@ -547,7 +526,7 @@ fn lua_sleep(_: &Lua, seconds: f64) -> mlua::Result<()> {
     Ok(())
 }
 
-async fn lua_exit(_: Lua, exit_code: i32) -> mlua::Result<()> {
+fn lua_exit(_: &Lua, exit_code: i32) -> mlua::Result<()> {
     Err(Error::ExternalError(Arc::new(Exit(exit_code))))
 }
 

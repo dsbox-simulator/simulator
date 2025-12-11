@@ -42,7 +42,7 @@ phf_codegen = { version = "0.13.1" }
 tower-http = { version = "0.6.7", features = ["trace"] }
 
 # lua/wasm
-mlua = { version = "0.11.5", features = ["lua54", "async", "serialize", "vendored"] }
+mlua = { version = "0.11.5", features = ["lua54", "serialize", "vendored"] }
 wasmtime = { version = "39.0.1" }
 wasmtime-wasi = { version = "39.0.1", features = ["p3"] }
 
