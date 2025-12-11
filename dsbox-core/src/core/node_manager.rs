@@ -8,6 +8,7 @@ use std::iter::Map;
 use std::ops::{Index, IndexMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 pub(super) struct NodeManager {
     by_name: HashMap<String, NodeId>,
@@ -129,6 +130,31 @@ impl NodeManager {
         RecvAny {
             nodes: &mut self.by_id,
         }
+    }
+
+    pub async fn try_recv_more(
+        &mut self,
+        buf: &mut Vec<(ProcessEventOrExit, NodeId)>,
+        limit: usize,
+        interval: Duration,
+    ) -> (usize, bool) {
+        if limit == 0 {
+            return (0, true);
+        }
+
+        let mut num_received = 0;
+        let closed = loop {
+            let more = tokio::time::timeout(interval, self.recv_any()).await;
+            match more {
+                Ok(Some(more)) => {
+                    buf.push(more);
+                    num_received += 1;
+                }
+                Ok(None) => break true,
+                Err(_) => break false,
+            }
+        };
+        (num_received, !closed)
     }
 }
 

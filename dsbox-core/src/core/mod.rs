@@ -240,7 +240,7 @@ impl Core {
                         self.nodes.try_recv_more(&mut events, 16, Duration::from_millis(1)).await;
                         for (event, node_id) in events {
                             let ts = self.timestamp_source.now();
-                            self.handle_process_event(ts, node_id, event).await?;
+                            self.handle_process_event_or_exit(ts, node_id, event).await?;
                         }
                     }
                 }
