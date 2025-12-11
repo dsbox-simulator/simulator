@@ -1,4 +1,6 @@
-use clap::{ Parser, Subcommand};
+//! Command line interface for the `dsbox`.
+
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version)]
