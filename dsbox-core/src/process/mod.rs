@@ -4,8 +4,7 @@ use std::ffi::OsStr;
 use std::io::Error;
 use std::path::Path;
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::error::TryRecvError;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 pub use crate::process::command::ProcessCommand;
@@ -182,6 +181,10 @@ impl Process {
         self.receiver.recv().await
     }
 
+    pub fn try_recv(&mut self) -> Result<ProcessEvent, mpsc::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+
     /// This drops the `command_sender`, so that threads waiting for [`ProcessCommand`]s from the
     /// [`Core`](crate::core::Core) stop waiting and terminate.
     pub fn begin_shutdown(&mut self) {
@@ -204,7 +207,7 @@ impl Process {
             return false;
         }
         match self.finished.try_recv() {
-            Err(TryRecvError::Empty) => false,
+            Err(oneshot::error::TryRecvError::Empty) => false,
             _ => true,
         }
     }

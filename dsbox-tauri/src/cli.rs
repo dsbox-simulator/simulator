@@ -19,6 +19,7 @@ async fn run_dsbox(args: crate::args::CliArgs, allow_lua_unsafe: bool) -> ExitCo
     )
     .interactive(false)
     .allow_lua_unsafe(allow_lua_unsafe)
+    .network_order(args.network_order.into())
     .build();
 
     let recorder = if let Some(filename) = args.save_protocol {

@@ -64,6 +64,8 @@ impl Core {
         self.state = state;
     }
 
+    /// Drop the message that was sent at the given timestamp.
+    /// If no message was sent at that timestamp (or was already delivered) nothing happens.
     async fn drop_by_timestamp(&mut self, sent_timestamp: usize) {
         self.network.remove_one(sent_timestamp);
         self.event_sender
@@ -75,9 +77,11 @@ impl Core {
             .ok();
     }
 
+    /// Immediately deliver the message that was sent at the given timestamp.
+    /// If no message was sent at that timestamp (or was already delivered) nothing happens.
     async fn deliver_by_timestamp(&mut self, sent_timestamp: usize) -> Result<(), CoreError> {
-        if let Some((timestamp, source_id, message)) = self.network.remove_one(sent_timestamp) {
-            self.deliver(timestamp, source_id, message).await?
+        if let Some(m) = self.network.remove_one(sent_timestamp) {
+            self.deliver(m).await?
         }
         Ok(())
     }

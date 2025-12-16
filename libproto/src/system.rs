@@ -86,6 +86,23 @@ pub enum MonitorEventKind {
     Delivered,
 }
 
+/// Sent from the test to the core in order to send a message with advanced options
+///
+/// the only option for now is to have the core notify the sender upon delivery of the message
+/// with a [`DeliveryNotice`]
+#[derive(Payload, Serialize, Deserialize)]
+pub struct SendEx {
+    pub delivery_notice: bool,
+    pub message: Message
+}
+
+/// Sent from the core to the sender of a message when that message is delivered, if requested
+/// using [`SendEx`].  distinguish multiple delivery notices, the sender can set the
+/// [`id`](crate::Body) in the message body, in which case the delivery notice will have the
+/// [`in_reply_to`](crate::Body) set.
+#[derive(Payload, Serialize, Deserialize)]
+pub struct DeliveryNotice {}
+
 /// Sent from any node to the core in interactive mode to stop delivery of messages (to be resumed
 /// by the user in the webapp)
 #[derive(Payload, Serialize, Deserialize)]

@@ -28,7 +28,7 @@ use libproto::init::Init;
 use libproto::services::{LogMarker, LogMarkerColor, LogMessage, TimerExpired};
 use libproto::system::{
     BeginMonitor, Break, Exited, Launch, LaunchFinished, MonitorEvent, MonitorEventKind, Register,
-    Reset, ResetFinished,
+    Reset, ResetFinished, SendEx,
 };
 use libproto::{Message, Payload};
 use node::Node;
@@ -37,6 +37,7 @@ use crate::Command;
 use crate::core::error::{CoreError, DispatchErrorKind};
 use crate::core::event::Event;
 use crate::core::monitor::MonitorSession;
+use crate::core::network::{DeliveryNotice, MessageInTransit};
 use crate::core::node::NodeId;
 use crate::core::node_list::{NodeList, NodeRef};
 use crate::core::remote_control::RemoteCommand;
@@ -47,6 +48,7 @@ use crate::process::{Launcher, Process, ProcessCommand, ProcessEvent};
 use crate::timestamp::{Timestamp, TimestampSource};
 pub use builder::Builder;
 use network::Network;
+pub use network::NetworkOrder;
 
 mod builder;
 pub mod error;
@@ -175,7 +177,7 @@ impl From<Builder> for Core {
             event_sender,
             event_receiver,
             monitor_sessions: Vec::new(),
-            network: Network::new(),
+            network: Network::new(builder.network_order),
             timer_manager: TimerManager::new(),
             launch_queue: VecDeque::new(),
             exit_set: HashMap::new(),
@@ -201,7 +203,7 @@ impl Core {
                 CoreState::Running
             };
             self.monitor_sessions = Vec::new();
-            self.network = Network::new();
+            self.network = Network::new(self.network.network_order);
             self.timer_manager = TimerManager::new();
             self.launch_queue = VecDeque::new();
             self.reset_flag = None;
@@ -280,9 +282,9 @@ impl Core {
         self.test_exit_code
     }
 
-    fn get_next_message_for_delivery(&mut self) -> Option<(Timestamp, Option<NodeId>, Message)> {
+    fn get_next_message_for_delivery(&mut self) -> Option<MessageInTransit> {
         if !matches!(self.state, CoreState::Paused) {
-            self.network.remove_oldest()
+            self.network.remove_next()
         } else {
             None
         }
@@ -295,8 +297,13 @@ impl Core {
         //       ends' receiving queue has space for that message? (could probably lead to deadlocks in tricky situations)
         //       other possible solution: regularly check receiving queues of all processes, and if they
         //       reach a total threshold of buffered messages (say, 1,000,000) panic as a last resort?
-        if let Some((sent_timestamp, source_id, message)) = self.get_next_message_for_delivery() {
-            self.deliver(sent_timestamp, source_id, message).await?;
+        if let Some(message) = self.get_next_message_for_delivery() {
+            // before delivering a message, flush all available events from all nodes, to avoid wierd causality issues in the protocol
+            while let Ok((event, node_id)) = self.nodes.try_recv_any() {
+                let ts = self.timestamp_source.now();
+                self.handle_process_event(ts, node_id, event).await?;
+            }
+            self.deliver(message).await?;
             if self.state == CoreState::Stepping {
                 self.state = CoreState::Paused;
             }
@@ -341,7 +348,8 @@ impl Core {
         log::trace!("handle_process_event: {:?}", process_event);
         match process_event {
             ProcessEvent::Message(message) => {
-                self.dispatch(Some(node_id), timestamp, message).await?;
+                self.dispatch(Some(node_id), timestamp, message, DeliveryNotice::None)
+                    .await?;
                 Ok(false)
             }
             ProcessEvent::Log(log) => {
@@ -386,6 +394,7 @@ impl Core {
         mut source: Option<NodeId>,
         timestamp: Timestamp,
         message: Message,
+        delivery_notice: DeliveryNotice,
     ) -> Result<(), CoreError> {
         log::trace!("dispatching message {}", message.to_json());
 
@@ -420,20 +429,29 @@ impl Core {
         if message.src == self.core_name {
             // deliver messages from the core immediately, circumventing the network
             let now = self.timestamp_source.now();
-            self.deliver(now, source.map(|id| id), message).await?;
+            self.deliver(MessageInTransit {
+                sent_timestamp: now,
+                source: source.map(|id| id),
+                message,
+                delivery_notice,
+            })
+            .await?;
         } else {
-            self.network.insert(timestamp, source, message);
+            self.network
+                .insert(timestamp, source, message, delivery_notice);
         }
         Ok(())
     }
 
     /// Delivers a single [`Message`] to the destination node.
-    async fn deliver(
-        &mut self,
-        sent_timestamp: Timestamp,
-        source_id: Option<NodeId>,
-        message: Message,
-    ) -> Result<(), CoreError> {
+    async fn deliver(&mut self, message_in_transit: MessageInTransit) -> Result<(), CoreError> {
+        let MessageInTransit {
+            sent_timestamp,
+            message,
+            source,
+            delivery_notice,
+        } = message_in_transit;
+        let src = message.src.clone();
         log::trace!("deliver {message:?}");
         let result = if let Some(destination_id) =
             self.nodes.lookup_and_resolve(&message.dest).map(|n| n.id)
@@ -451,13 +469,25 @@ impl Core {
             Ok(())
         } else {
             Err(CoreError::DispatchError {
-                name: message.src.clone(),
+                name: src.clone(),
                 message,
                 kind: DispatchErrorKind::DestinationUnknown,
             })
         };
-        if let Some(source_id) = source_id {
+        if let Some(source_id) = source {
             self.maybe_notify_exited(source_id).await;
+        }
+        if let DeliveryNotice::WithReplyId(in_reply_to) = delivery_notice {
+            if let Some(source) = self.nodes.lookup_and_resolve(&src) {
+                let mut message = Message::new(
+                    &self.core_name,
+                    &source.name,
+                    None,
+                    libproto::system::DeliveryNotice {},
+                );
+                message.body.in_reply_to = in_reply_to;
+                source.send(ProcessCommand::Deliver(message));
+            }
         }
         result
     }
@@ -517,7 +547,7 @@ impl Core {
         let mut reply = Message::new(&self.core_name, &source, None, TimerExpired { name });
         reply.body.in_reply_to = msg_id;
         let ts = self.timestamp_source.now();
-        self.dispatch(None, ts, reply).await
+        self.dispatch(None, ts, reply, DeliveryNotice::None).await
     }
 
     /// handles a single core [`Message`] (i.e. [`Launch`] or [`BeginMonitor`]).
@@ -618,6 +648,21 @@ impl Core {
                 self.monitor_sessions.push(session);
                 Ok(())
             }
+            SendEx::TYPE => {
+                assert_is_test!();
+                let send_ex = message.payload::<SendEx>().unwrap();
+                Box::pin(self.dispatch(
+                    source,
+                    timestamp,
+                    send_ex.message,
+                    if send_ex.delivery_notice {
+                        DeliveryNotice::WithReplyId(message.body.id)
+                    } else {
+                        DeliveryNotice::None
+                    },
+                ))
+                .await
+            }
             ty => {
                 let source_id =
                     source.expect("the core tried to send itself an unknown core message");
@@ -704,6 +749,7 @@ impl Core {
                 None,
                 LaunchFinished { error },
             ),
+            DeliveryNotice::None,
         )
         .await
         .expect("sending launch_finished message");
@@ -730,6 +776,7 @@ impl Core {
                     None,
                     ResetFinished {},
                 ),
+                DeliveryNotice::None,
             )
             .await
             .expect("sending reset_finished message");
@@ -774,6 +821,7 @@ impl Core {
                     is_test: false,
                 },
             ),
+            DeliveryNotice::None,
         )
         .await?;
         Ok(self.nodes.resolve_alias_mut(node_id))
@@ -816,6 +864,7 @@ impl Core {
                     is_test: true,
                 },
             ),
+            DeliveryNotice::None,
         )
         .await?;
         Ok(node_id)
@@ -974,6 +1023,7 @@ impl Core {
                         exit_code,
                     },
                 ),
+                DeliveryNotice::None,
             );
             Box::pin(future).await.unwrap();
         }

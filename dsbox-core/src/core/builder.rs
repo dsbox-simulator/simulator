@@ -1,5 +1,6 @@
 use crate::core::Core;
 use libproto::system::Command;
+use crate::core::network::NetworkOrder;
 
 const DEFAULT_CORE_NAME: &'static str = "core";
 const DEFAULT_TEST_NODE_NAME: &'static str = "test";
@@ -13,6 +14,7 @@ pub struct Builder {
     pub(super) omit_test_register: bool,
     pub(super) core_name: String,
     pub(super) test_node_name: String,
+    pub(super) network_order: NetworkOrder,
 }
 
 impl Builder {
@@ -26,6 +28,7 @@ impl Builder {
             omit_test_register: false,
             core_name: DEFAULT_CORE_NAME.to_string(),
             test_node_name: DEFAULT_TEST_NODE_NAME.to_string(),
+            network_order: NetworkOrder::Fifo
         }
     }
 
@@ -71,6 +74,12 @@ impl Builder {
     /// override the name of the test node (default: `"test"`)
     pub fn test_node_name(mut self, test_node_name: impl Into<String>) -> Self {
         self.test_node_name = test_node_name.into();
+        self
+    }
+
+    /// override the network order
+    pub fn network_order(mut self, network_order: NetworkOrder) -> Self {
+        self.network_order = network_order;
         self
     }
 

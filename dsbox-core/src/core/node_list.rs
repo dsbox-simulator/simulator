@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::slice::{Iter, IterMut, SliceIndex};
 use std::task::{Context, Poll};
 use std::vec::IntoIter;
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::time::Duration;
 
 pub struct NodeList {
@@ -113,6 +114,22 @@ impl NodeList {
         RecvAny {
             nodes: &mut self.nodes,
         }
+    }
+
+    /// Try to receive a single event from any node. If no event is available at the moment
+    /// `TryRecvError::Empty` is returned, unless all nodes have disconnected
+    pub fn try_recv_any(&mut self) -> Result<(ProcessEvent, NodeId), TryRecvError> {
+        let mut try_recv_err = TryRecvError::Disconnected;
+        for node in self.nodes.iter_mut().filter_map(|n| n.as_node_mut()) {
+            let recv_result = node.try_recv();
+            match recv_result {
+                Ok(event) => return Ok((event, node.id)),
+                // at least one node has not disconnected: we return `Empty` as a result
+                Err(TryRecvError::Empty) => try_recv_err = TryRecvError::Empty,
+                Err(TryRecvError::Disconnected) => {}
+            }
+        }
+        Err(try_recv_err)
     }
 
     pub async fn try_recv_more(

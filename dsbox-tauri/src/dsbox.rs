@@ -29,6 +29,7 @@ impl DsboxState {
         let core = Core::builder(test_command.clone(), server_command.clone())
             .interactive(true)
             .allow_lua_unsafe(args.lua_unsafe)
+            .network_order(args.network_order.into())
             .build();
         Self {
             remote: core.remote_control(),

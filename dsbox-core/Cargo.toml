@@ -13,6 +13,7 @@ chrono = { workspace = true }
 regex = { workspace = true }
 futures = { workspace = true }
 async-channel = { workspace = true }
+rand = {workspace = true}
 
 mlua = { workspace = true, optional = true }
 

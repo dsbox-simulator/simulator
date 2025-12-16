@@ -1,6 +1,6 @@
 //! Command line interface for the `dsbox`.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version)]
@@ -23,6 +23,9 @@ pub struct Args {
     #[cfg(feature = "lua")]
     #[clap(long, default_value_t = false)]
     pub lua_unsafe: bool,
+
+    #[clap(long, default_value = "fifo")]
+    pub network_order: NetworkOrder,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -48,4 +51,22 @@ pub struct CliArgs {
     /// after the program finished, write all events (as JSON-lines) to the specified file.
     #[clap(long)]
     pub save_protocol: Option<String>,
+
+    #[clap(long, default_value = "fifo")]
+    pub network_order: NetworkOrder,
+}
+
+#[derive(ValueEnum, Debug, Copy, Clone)]
+pub enum NetworkOrder {
+    Fifo,
+    RandomFifoChannels,
+}
+
+impl Into<dsbox_core::NetworkOrder> for NetworkOrder {
+    fn into(self) -> dsbox_core::NetworkOrder {
+        match self {
+            NetworkOrder::Fifo => dsbox_core::NetworkOrder::Fifo,
+            NetworkOrder::RandomFifoChannels => dsbox_core::NetworkOrder::RandomFifoChannels,
+        }
+    }
 }

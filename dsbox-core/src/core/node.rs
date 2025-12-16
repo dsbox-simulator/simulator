@@ -3,7 +3,7 @@ use std::future::Future;
 use std::task::{Context, Poll};
 
 use serde::{Deserialize, Serialize};
-
+use tokio::sync::mpsc::error::TryRecvError;
 use crate::process::{Process, ProcessCommand, ProcessEvent};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Serialize, Deserialize)]
@@ -51,6 +51,10 @@ impl Node {
         cx: &mut Context<'_>,
     ) -> Poll<Option<ProcessEvent>> {
         std::pin::pin!(self.process.recv()).poll(cx)
+    }
+
+    pub fn try_recv(&mut self) -> Result<ProcessEvent, TryRecvError> {
+        self.process.try_recv()
     }
 
     pub fn has_finished(&mut self) -> bool {
