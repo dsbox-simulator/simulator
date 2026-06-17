@@ -39,6 +39,7 @@ jobs:
         with:
           node-version: lts/*
           cache: "npm" # Set this to npm, yarn or pnpm.
+          cache-dependency-path: webapp/package-lock.json
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable # Set this to dtolnay/rust-toolchain@nightly
@@ -47,6 +48,7 @@ jobs:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: install frontend dependencies
+        working-directory: ./wepapp
         run: npm install
 
       - uses: tauri-apps/tauri-action@v0
