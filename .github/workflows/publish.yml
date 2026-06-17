@@ -7,7 +7,9 @@ on:
 
 jobs:
   publish-tauri:
-    permissions: write-all
+    permissions:
+      packages: write
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -50,9 +52,7 @@ jobs:
         working-directory: ./webapp
         run: npm install
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: tauri-apps/tauri-action@v1
         with:
           releaseName: "${{ github.ref_name }} "
           tagName: "${{ github.ref_name }}"
