@@ -52,7 +52,7 @@ jobs:
         working-directory: ./webapp
         run: npm install
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@v0
         with:
           releaseName: "${{ github.ref_name }} "
           tagName: "${{ github.ref_name }}"
