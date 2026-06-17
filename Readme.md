@@ -35,4 +35,4 @@ To create a release executable, use
 cargo tauri build --no-bundle
 ```
 
-For more information on how to create nodes for tests and servers, visit the [wiki](https://gitlab.git.nrw/Felix.Breitweiser/dsbox/-/wikis/home).
+For more information on how to create nodes for tests and servers, visit the [wiki](https://github.com/dsbox-simulator/simulator/wiki).
