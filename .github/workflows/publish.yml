@@ -7,9 +7,6 @@ on:
 
 jobs:
   publish-tauri:
-    permissions:
-      packages: write
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -59,4 +56,5 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
+          token: ${{ secrets.RELEASE_TOKEN }}
           args: ${{ matrix.args }}
