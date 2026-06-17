@@ -50,11 +50,12 @@ jobs:
         run: npm install
 
       - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         with:
           releaseName: "${{ github.ref_name }} "
           tagName: "${{ github.ref_name }}"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          token: ${{ secrets.RELEASE_TOKEN }}
           args: ${{ matrix.args }}
